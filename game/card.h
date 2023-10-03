@@ -90,13 +90,13 @@ std::string SuitToDescription(const Suit suit)
     switch (suit)
     {
         case HEARTS:
-            return "HEARTS";
+            return "Hearts";
         case DIAMONDS:
-            return "DIAMONDS";
+            return "Diamonds";
         case SPADES:
-            return "SPADES";
+            return "Spades";
         case CLUBS:
-            return "CLUBS";
+            return "Clubs";
         default:
             throw std::invalid_argument("Invalid Suit");
     }
