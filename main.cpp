@@ -1,10 +1,15 @@
 #include "game/card.h"
+#include "game/card_collection.h"
 
+using namespace Common::Game;
 
 int main()
 {
-    Common::Game::Card card(Common::Game::Rank::THREE, Common::Game::Suit::HEARTS);
+    CardCollection deck;
+    deck.shuffle();
 
-    std::cout << card.getDescription() << std::endl;
-    std::cout << card.getAbbreviation() << std::endl;
+    std::cout << deck.getAbbreviation() << std::endl;
+
+    printf("Num cards: %lu\n", deck.size());
+
 }

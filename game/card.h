@@ -124,6 +124,10 @@ class Card
 public:
     Card(const Rank rank, const Suit suit) : rank(rank), suit(suit) {}
 
+//    Card(): rank(Rank::ACE), suit(Suit::SPADES) {}
+
+//    Card(Card&& other) noexcept: rank(other.rank), suit(other.suit) {}
+
     std::string getDescription()
     {
         return RankToDescription(rank) + " of " + SuitToDescription(suit);
@@ -135,7 +139,7 @@ public:
     }
 
 private:
-    const Rank rank;
-    const Suit suit;
+    Rank rank;
+    Suit suit;
 };
 }
