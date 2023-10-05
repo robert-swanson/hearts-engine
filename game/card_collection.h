@@ -47,6 +47,18 @@ public:
         return collections;
     }
 
+    CardCollection filter(std::function<bool(Card)> lambdaFilter)
+    {
+        std::vector<Card> filtered;
+        std::copy_if(mCards.begin(), mCards.end(), std::back_inserter(filtered), std::move(lambdaFilter));
+        return {filtered.begin(), filtered.end()};
+    }
+
+    bool contains(std::function<bool(Card)> lambdaFilter)
+    {
+        return std::any_of(mCards.begin(), mCards.end(), lambdaFilter);
+    }
+
     std::vector<Common::Game::Card>::iterator begin()
     {
         return mCards.begin();

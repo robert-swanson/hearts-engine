@@ -144,6 +144,14 @@ public:
         return rank == other.rank and suit == other.suit;
     }
 
+    Rank getRank() const {
+        return rank;
+    }
+
+    Suit getSuit() const {
+        return suit;
+    }
+
 private:
     Rank rank;
     Suit suit;

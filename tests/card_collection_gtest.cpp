@@ -47,3 +47,23 @@ TEST(CardCollection, Divide_Unique)
             seen_cards.insert(card);
         }
 }
+
+TEST(CardCollection, Filter)
+{
+    Common::Game::CardCollection deck;
+    deck.shuffle();
+    ASSERT_EQ(deck.filter([](Card card){return card.getRank() == ACE;}).size(), Common::Constants::NUM_SUITS);
+    ASSERT_EQ(deck.filter([](Card card){return card.getSuit() == HEARTS;}).size(), Common::Constants::NUM_RANKS);
+    ASSERT_EQ(deck.filter([](Card card){return card.getSuit() == HEARTS and card.getRank() == ACE;}).size(), 1);
+    ASSERT_EQ(deck.filter([](Card card){return card.getRank() == TWO and card.getRank() == ACE;}).size(), 0);
+}
+
+TEST(CardCollection, Contains)
+{
+    Common::Game::CardCollection deck;
+    deck.shuffle();
+    ASSERT_TRUE(deck.contains([](Card card){return card.getRank() == ACE;}));
+    ASSERT_TRUE(deck.contains([](Card card){return card.getSuit() == HEARTS;}));
+    ASSERT_TRUE(deck.contains([](Card card){return card.getSuit() == HEARTS and card.getRank() == ACE;}));
+    ASSERT_FALSE(deck.contains([](Card card){return card.getRank() == TWO and card.getRank() == ACE;}));
+}
