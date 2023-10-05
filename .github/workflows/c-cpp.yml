@@ -16,7 +16,7 @@ jobs:
 
     - name: Set up Externals
       run: |
-        setup.sh
+        bash setup.sh
 
     - name: Set up CMake
       uses: lukka/run-cmake@v1
