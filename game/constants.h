@@ -36,4 +36,7 @@ constexpr std::array<Common::Game::Suit, NUM_SUITS> SUITS =
     Common::Game::Suit::CLUBS
 };
 static_assert(sizeof(SUITS) / sizeof(SUITS[0]) == NUM_SUITS);
+
+constexpr size_t NUM_PLAYERS = 4;
+constexpr size_t NUM_CARDS_TO_PASS = 3;
 }
