@@ -10,5 +10,5 @@ int main()
 
     std::cout << deck.getAbbreviation() << std::endl;
 
-    printf("Num cards: %lu\n", deck.size());
+    printf("Num mCards: %lu\n", deck.size());
 }
