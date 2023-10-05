@@ -5,5 +5,11 @@ project(HeartsEngine)
 set (CMAKE_CXX_STANDARD 17)
 
 add_executable(Main main.cpp)
-#set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17") # enable C++17 standard
 
+# Add Google Test
+add_subdirectory(externals/googletest)
+include_directories(\${gtest_SOURCE_DIR}/include \${gtest_SOURCE_DIR})
+
+# Add your test files and link with Google Test
+add_executable(GoogleTest tests/card_collection_gtest.cpp)
+target_link_libraries(GoogleTest gtest gtest_main)

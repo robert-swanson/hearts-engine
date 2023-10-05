@@ -124,10 +124,6 @@ class Card
 public:
     Card(const Rank rank, const Suit suit) : rank(rank), suit(suit) {}
 
-//    Card(): rank(Rank::ACE), suit(Suit::SPADES) {}
-
-//    Card(Card&& other) noexcept: rank(other.rank), suit(other.suit) {}
-
     std::string getDescription()
     {
         return RankToDescription(rank) + " of " + SuitToDescription(suit);
@@ -136,6 +132,16 @@ public:
     std::string getAbbreviation()
     {
         return RankToAbbreviation(rank) + SuitToAbbreviation(suit);
+    }
+
+    bool operator<(const Card& other) const
+    {
+        return rank < other.rank or (rank == other.rank and suit < other.suit);
+    }
+
+    bool operator==(const Card& other) const
+    {
+        return rank == other.rank and suit == other.suit;
     }
 
 private:
