@@ -2,6 +2,12 @@
 
 set -o xtrace
 
+# Make externals if it doesn't exist
+externals_dir="externals"
+if [ ! -d "$gtest_dir" ]; then
+    mkdir $externals_dir
+fi
+
 # Set the directory for Google Test
 gtest_dir="externals/googletest"
 
