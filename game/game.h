@@ -10,7 +10,7 @@ namespace Common::Game
 class Game
 {
 public:
-    explicit Game(std::array<Player, Constants::NUM_PLAYERS> players): mPlayers(std::move(players)), mStartingPlayer(-1), mCurrentPlayer(-1)
+    explicit Game(std::array<Player, Constants::NUM_PLAYERS> players): mPlayers(std::move(players))
     {
     }
 

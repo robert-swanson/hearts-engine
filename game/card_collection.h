@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <utility>
 #include <vector>
+#include <set>
 #include <cassert>
 
 #include "card.h"
@@ -134,6 +135,7 @@ public:
                  cardToRemove.getAbbreviation().c_str(), size());
             cards.erase(itr);
         }
+        return {cards};
     }
 
 

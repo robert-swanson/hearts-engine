@@ -1,10 +1,10 @@
 #pragma once
+
 #include "player.h"
+#include "types.h"
 
 namespace Common::Game
 {
-enum PassDirection {Left, Right, Across, Keeper};
-
 int PlayerToPassTo(int fromPlayer, PassDirection passDirection)
 {
     switch (passDirection)
@@ -23,7 +23,7 @@ int PlayerToPassTo(int fromPlayer, PassDirection passDirection)
 class Round
 {
 public:
-    explicit Round(std::array<Player, Constants::NUM_PLAYERS>& players): mPlayers(players), mStartingPlayer(-1), mCurrentPlayer(-1)
+    explicit Round(std::array<Player, Constants::NUM_PLAYERS> &players): mPlayers(players), mStartingPlayer(-1), mCurrentPlayer(-1)
     {
     }
 
@@ -50,9 +50,9 @@ public:
             return;
 
         std::vector<CardCollection> passedCards;
-        for (const Player& player: mPlayers)
+        for (Player& player: mPlayers)
         {
-            auto cards = player.getCardsToPass();
+            auto cards = player.getCardsToPass(passDirection);
             ASRT_EQ(cards.size(), Constants::NUM_CARDS_TO_PASS);
             passedCards.push_back(cards);
         }
@@ -66,13 +66,13 @@ public:
 
     void startRound()
     {
-        for ()
     }
 
 private:
     std::array<Player, Constants::NUM_PLAYERS> & mPlayers;
     size_t mStartingPlayer;
     size_t mCurrentPlayer;
-    CardCollection table
+    CardCollection table;
 };
+
 }
