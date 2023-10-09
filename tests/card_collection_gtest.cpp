@@ -19,7 +19,6 @@ TEST(CardCollection, DeckIsUnique)
         ASSERT_TRUE(seen_cards.find(card) == seen_cards.end());
         seen_cards.insert(card);
     }
-
     ASSERT_DEATH(deck + deck, ".* in card collection \\(size .*\\) multiple times");
 }
 

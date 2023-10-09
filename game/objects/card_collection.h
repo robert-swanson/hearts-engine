@@ -11,6 +11,7 @@
 #include "card.h"
 #include "constants.h"
 #include "../../util/assertions.h"
+#include "../../util/logging.h"
 
 namespace Common::Game
 {
@@ -27,9 +28,13 @@ public:
         verifyUnique();
     }
 
-    CardCollection(const CardCollection& other): CardCollection(other.mCards.begin(), other.mCards.end()) {}
+    CardCollection(const CardCollection& other): CardCollection(other.mCards.begin(), other.mCards.end()) {
+        verifyUnique();
+    }
 
-    CardCollection(std::vector<Card> cards): mCards(std::move(cards)) {}
+    CardCollection(std::vector<Card> cards): mCards(std::move(cards)) {
+        verifyUnique();
+    }
 
     CardCollection(Card card): mCards({card}) {}
 
@@ -59,7 +64,7 @@ public:
         return collections;
     }
 
-    [[nodiscard]] CardCollection subset(int startI, int endI) const
+    CardCollection subset(int startI, int endI) const
     {
         ASRT_GE(startI, 0);
         ASRT_LE(endI, static_cast<int>(size()));
