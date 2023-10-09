@@ -7,6 +7,7 @@
     do { \
         if (!(condition)) { \
             fprintf(stderr, message, ##__VA_ARGS__); \
+            fprintf(stderr, "\n"); \
             assert(condition); \
         } \
     } while (false)

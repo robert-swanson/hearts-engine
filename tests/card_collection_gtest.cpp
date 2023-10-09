@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "../game/card_collection.h"
+#include "../game/objects/card_collection.h"
 
 using namespace Common::Game;
 

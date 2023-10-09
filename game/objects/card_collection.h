@@ -10,7 +10,7 @@
 
 #include "card.h"
 #include "constants.h"
-#include "../util/assertions.h"
+#include "../../util/assertions.h"
 
 namespace Common::Game
 {
@@ -30,6 +30,8 @@ public:
     CardCollection(const CardCollection& other): CardCollection(other.mCards.begin(), other.mCards.end()) {}
 
     CardCollection(std::vector<Card> cards): mCards(std::move(cards)) {}
+
+    CardCollection(Card card): mCards({card}) {}
 
     static CardCollection ShuffledDeck()
     {
@@ -122,7 +124,14 @@ public:
     {
         std::vector<Card> cards(mCards.begin(), mCards.end());
         cards.insert(cards.end(), other.mCards.begin(), other.mCards.end());
-        return {cards.begin(), cards.end()};
+        return {cards};
+    }
+
+    CardCollection operator+(const Card other) const
+    {
+        std::vector<Card> cards(mCards.begin(), mCards.end());
+        cards.push_back(other);
+        return {cards};
     }
 
     CardCollection operator-(const CardCollection& other) const
@@ -142,6 +151,11 @@ public:
     [[nodiscard]] size_t size() const
     {
         return mCards.size();
+    }
+
+    bool empty() const
+    {
+        return mCards.empty();
     }
 
     std::string getDescription()

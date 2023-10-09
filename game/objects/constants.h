@@ -6,7 +6,6 @@
 namespace Common::Constants
 {
 
-constexpr size_t DECK_SIZE = 52;
 
 constexpr size_t NUM_RANKS = 13;
 constexpr std::array<Common::Game::Rank, NUM_RANKS> RANKS =
@@ -37,6 +36,18 @@ constexpr std::array<Common::Game::Suit, NUM_SUITS> SUITS =
 };
 static_assert(sizeof(SUITS) / sizeof(SUITS[0]) == NUM_SUITS);
 
+constexpr size_t DECK_SIZE = 52;
+static_assert(DECK_SIZE == NUM_RANKS*NUM_SUITS);
+
 constexpr size_t NUM_PLAYERS = 4;
 constexpr size_t NUM_CARDS_TO_PASS = 3;
+constexpr size_t NUM_TRICKS = 13;
+static_assert(NUM_TRICKS == DECK_SIZE / NUM_PLAYERS);
+
+constexpr size_t GAME_END_SCORE = 100;
+constexpr size_t QUEEN_SCORE = 13;
+constexpr size_t MAX_TRICK_SCORE = 26;
+static_assert(MAX_TRICK_SCORE == QUEEN_SCORE + NUM_RANKS);
+
+const auto STARTING_CARD = Common::Game::Card(Game::TWO, Game::CLUBS);
 }
