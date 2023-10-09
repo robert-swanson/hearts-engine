@@ -52,6 +52,11 @@ public:
         printf("Winner = %s\n", mPlayers[winningPlayer].get().getName().c_str());
         return winningPlayer;
     }
+
+    CardCollection getPlayedCards()
+    {
+        return mPlayedCards;
+    }
 private:
     CardCollection legalMovesForPlayer(PlayerRef player)
     {
@@ -80,7 +85,7 @@ private:
             if (leadingPlay)
             {
                 ASRT(legalMoves.contains(Constants::STARTING_CARD), "Starting card not found in first player");
-                return {Constants::STARTING_CARD};
+                return CardCollection{Constants::STARTING_CARD};
             }
             legalMoves = legalMoves.filter([](Card card) {
                 return (card != Card(QUEEN, SPADES));

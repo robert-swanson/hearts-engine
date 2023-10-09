@@ -10,7 +10,7 @@ namespace Common::Game
 class Player
 {
 public:
-    Player(std::string  name) : mName(std::move(name)), mHand(), mDiscarded(), mScore(0) {}
+    Player(std::string  name) : mName(std::move(name)), mHand(), mTrickPlayedCards(), mScore(0) {}
 
     void assignHand(CardCollection hand)
     {
@@ -28,15 +28,31 @@ public:
         mHand = mHand + receivedCards;
     }
 
+    void resetReceivedTrickCards()
+    {
+        mTrickPlayedCards = CardCollection{};
+    }
+
+    void receiveTrick(const CardCollection& trickWinnings)
+    {
+        mTrickPlayedCards = mTrickPlayedCards + trickWinnings;
+    }
+
+
     CardCollection getHand()
     {
         return mHand;
     }
 
+    CardCollection getRecievedTrickCards()
+    {
+        return mTrickPlayedCards;
+    }
+
     Card getPlay(const CardCollection& legalPlays)
     {
         Card play = legalPlays[0];
-        mHand = mHand - play;
+        mHand = mHand - CardCollection{play};
         return play;
     }
 
@@ -58,7 +74,7 @@ public:
 private:
     std::string mName;
     CardCollection mHand;
-    CardCollection mDiscarded;
+    CardCollection mTrickPlayedCards;
     int mScore;
 };
 

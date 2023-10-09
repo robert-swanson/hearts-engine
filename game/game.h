@@ -28,6 +28,13 @@ public:
             updateRankings();
             LOG("Max score %d", mMaxScore);
         }
+
+        LOG("Final rankings:");
+        for (int i = 0; i < Constants::NUM_PLAYERS; i++)
+        {
+            Player & player = mRankings[mRankings.size()-1-i].get();
+            LOG("%d: %s (%d points)", i+1, player.getName().c_str(), player.getScore());
+        }
         return mRankings;
     }
 
@@ -39,17 +46,17 @@ private:
         {
             for (int b = a - 1; b >= 0; b--)
             {
-                if (mPlayers[b].get().getScore() < mPlayers[b+1].get().getScore())
+                if (mRankings[b].get().getScore() < mRankings[b+1].get().getScore())
                 {
-                    PlayerRef temp = mPlayers[b];
-                    mPlayers[b] = mPlayers[b+1];
-                    mPlayers[b+1] = temp;
+                    PlayerRef temp = mRankings[b];
+                    mRankings[b] = mRankings[b+1];
+                    mRankings[b+1] = temp;
                 }
                 else
                     break;
             }
         }
-        mMaxScore = mPlayers[0].get().getScore();
+        mMaxScore = mRankings[0].get().getScore();
     }
 
     PlayerArray mPlayers;

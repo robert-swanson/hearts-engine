@@ -32,11 +32,11 @@ public:
         verifyUnique();
     }
 
-    CardCollection(std::vector<Card> cards): mCards(std::move(cards)) {
+    explicit CardCollection(std::vector<Card> cards): mCards(std::move(cards)) {
         verifyUnique();
     }
 
-    CardCollection(Card card): mCards({card}) {}
+    explicit CardCollection(Card card): mCards({card}) {}
 
     static CardCollection ShuffledDeck()
     {
@@ -77,7 +77,7 @@ public:
     {
         std::vector<Card> filtered;
         std::copy_if(mCards.begin(), mCards.end(), std::back_inserter(filtered), std::move(lambdaFilter));
-        return {filtered};
+        return CardCollection{filtered};
     }
 
     bool contains(std::function<bool(Card)> lambdaFilter)
@@ -129,14 +129,14 @@ public:
     {
         std::vector<Card> cards(mCards.begin(), mCards.end());
         cards.insert(cards.end(), other.mCards.begin(), other.mCards.end());
-        return {cards};
+        return CardCollection{cards};
     }
 
     CardCollection operator+(const Card other) const
     {
         std::vector<Card> cards(mCards.begin(), mCards.end());
         cards.push_back(other);
-        return {cards};
+        return CardCollection{cards};
     }
 
     CardCollection operator-(const CardCollection& other) const
@@ -149,7 +149,7 @@ public:
                  cardToRemove.getAbbreviation().c_str(), size());
             cards.erase(itr);
         }
-        return {cards};
+        return CardCollection{cards};
     }
 
 

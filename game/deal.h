@@ -30,6 +30,7 @@ public:
             mTricks.push_back(trick);
             brokenHearts |= trick.heartsBroken();
             startingPlayer = (trick.getTrickWinner() + startingPlayer) % Constants::NUM_PLAYERS;
+            mPlayers[startingPlayer].get().receiveTrick(trick.getPlayedCards());
         }
         scoreDeal();
     }
@@ -42,7 +43,9 @@ private:
 
         for (int i = 0; i < Constants::NUM_PLAYERS; i++)
         {
-            mPlayers[i].get().assignHand(hands[i]);
+            Player & player = mPlayers[i].get();
+            player.resetReceivedTrickCards();
+            player.assignHand(hands[i]);
         }
 
     }
@@ -113,19 +116,22 @@ private:
         int totalScore = 0;
         for (int playerI = 0; playerI < Constants::NUM_PLAYERS; playerI++)
         {
-            auto hand = mPlayers[playerI].get().getHand();
-            size_t numHearts = hand.filter([](Card card){return card.getSuit() == Suit::HEARTS;}).size();
-            bool queen = hand.contains(Card(QUEEN, SPADES));
-            scores[playerI] = static_cast<int>(numHearts) + queen;
+            auto receivedTrickCards = mPlayers[playerI].get().getRecievedTrickCards();
+            size_t numHearts = receivedTrickCards.filter([](Card card){return card.getSuit() == Suit::HEARTS;}).size();
+            bool queen = receivedTrickCards.contains(Card(QUEEN, SPADES));
+            int score = static_cast<int>(numHearts) + queen * Constants::QUEEN_SCORE;
+            scores[playerI] = score;
+            totalScore += score;
             if (scores[playerI] == Constants::MAX_TRICK_SCORE)
             {
-                for (int & score : scores)
-                    score = Constants::MAX_TRICK_SCORE;
+                for (int & playerScore : scores)
+                    playerScore = Constants::MAX_TRICK_SCORE;
                 scores[playerI] = 0;
                 break;
             }
         }
 
+        ASRT_EQ(totalScore, Constants::MAX_TRICK_SCORE);
         for (int playerI = 0; playerI < Constants::NUM_PLAYERS; playerI++)
         {
             mPlayers[playerI].get().addPoints(scores[playerI]);
