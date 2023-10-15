@@ -116,7 +116,7 @@ private:
         int totalScore = 0;
         for (int playerI = 0; playerI < Constants::NUM_PLAYERS; playerI++)
         {
-            auto receivedTrickCards = mPlayers[playerI].get().getRecievedTrickCards();
+            auto receivedTrickCards = mPlayers[playerI].get().getReceivedTrickCards();
             size_t numHearts = receivedTrickCards.filter([](Card card){return card.getSuit() == Suit::HEARTS;}).size();
             bool queen = receivedTrickCards.contains(Card(QUEEN, SPADES));
             int score = static_cast<int>(numHearts) + queen * Constants::QUEEN_SCORE;

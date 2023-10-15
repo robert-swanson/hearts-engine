@@ -57,10 +57,11 @@ public:
     {
         return mPlayedCards;
     }
-private:
+
     CardCollection legalMovesForPlayer(PlayerRef player)
     {
         CardCollection legalMoves = player.get().getHand();
+        ASRT(!legalMoves.empty(), "Can't get legal move from empty hand");
         bool leadingPlay = mPlayedCards.empty();
         if (not leadingPlay) {
             Card leadingCard = mPlayedCards[0];
@@ -94,6 +95,7 @@ private:
         return legalMoves;
     }
 
+private:
     PlayerArray mPlayers;
     int mTrickIndex;
     bool mBrokenHearts;

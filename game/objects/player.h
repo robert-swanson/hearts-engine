@@ -10,11 +10,11 @@ namespace Common::Game
 class Player
 {
 public:
-    Player(std::string  name) : mName(std::move(name)), mHand(), mTrickPlayedCards(), mScore(0) {}
+    explicit Player(std::string  name) : mName(std::move(name)), mHand(), mTrickPlayedCards(), mScore(0) {}
 
-    void assignHand(CardCollection hand)
+    void assignHand(CardCollection const & hand)
     {
-        mHand = std::move(hand);
+        mHand = hand;
     }
 
     CardCollection getCardsToPass(PassDirection direction) {
@@ -44,7 +44,7 @@ public:
         return mHand;
     }
 
-    CardCollection getRecievedTrickCards()
+    CardCollection getReceivedTrickCards()
     {
         return mTrickPlayedCards;
     }

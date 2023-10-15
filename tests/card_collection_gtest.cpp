@@ -1,5 +1,4 @@
 #include <gtest/gtest.h>
-
 #include "../game/objects/card_collection.h"
 
 using namespace Common::Game;

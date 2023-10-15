@@ -38,13 +38,18 @@ public:
 
     explicit CardCollection(Card card): mCards({card}) {}
 
-    static CardCollection ShuffledDeck()
+    static CardCollection OrderedDeck()
     {
         std::vector<Card> cards;
         for (Suit suit: Common::Constants::SUITS)
             for (Rank rank: Common::Constants::RANKS)
                 cards.emplace_back(rank, suit);
-        auto deck = CardCollection(cards);
+        return CardCollection(cards);
+    }
+
+    static CardCollection ShuffledDeck()
+    {
+        auto deck = OrderedDeck();
         deck.shuffle();
         return deck;
     }
