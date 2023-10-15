@@ -6,14 +6,14 @@ namespace Common::Game
     PassDirection NextPassDirection(PassDirection passDirection)
     {
         switch (passDirection) {
+            case Keeper:
+                return Left;
             case Left:
                 return Right;
             case Right:
                 return Across;
-            case Across:
+            default:
                 return Keeper;
-            case Keeper:
-                return Left;
         }
     }
 }
