@@ -18,10 +18,15 @@ jobs:
       run: |
         bash setup.sh
 
-    - name: Install Protobuf
+    - name: Install Boost
       run: |
-        sudo apt-get install -y protobuf-compiler
-        protoc --version
+        sudo apt-get install -y libboost-all-dev
+        boostversion=$(ls /usr/include/boost | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | tail -1)
+        echo "Boost version: $boostversion"
+
+    - name: Install nlohmann-json
+        run: |
+            sudo apt-get install -y nlohmann-json-dev
 
     - name: Set up CMake
       uses: lukka/run-cmake@v1
