@@ -26,7 +26,7 @@ jobs:
 
     - name: Install nlohmann-json
       run: |
-        sudo apt-get install -y nlohmann-json-dev
+        sudo apt-get install -y nlohmann-json
 
     - name: Set up CMake
       uses: lukka/run-cmake@v1
