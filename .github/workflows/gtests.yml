@@ -21,6 +21,7 @@ jobs:
     - name: Install Protobuf
       run: |
         sudo apt-get install -y protobuf-compiler
+        protobuf-compiler --version
 
     - name: Set up CMake
       uses: lukka/run-cmake@v1
