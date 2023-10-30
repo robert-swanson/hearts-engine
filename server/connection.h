@@ -3,6 +3,10 @@
 #include <vector>
 #include <algorithm>
 #include <arpa/inet.h>
+#include <boost/asio.hpp>
+#include <nlohmann/json.hpp>
+
+using namespace boost::asio;
 
 namespace Common::Server
 {
@@ -12,27 +16,40 @@ enum ConnectionStatus
     DISCONNECTED
 };
 
+using SocketPtr = std::shared_ptr<ip::tcp::socket>;
+using json = nlohmann::json;
+
 class Connection
 {
 public:
-    Connection(int clientSocket, struct sockaddr_in clientAddress):
+    explicit Connection(const SocketPtr& clientSocket):
         clientSocket(clientSocket), clientIP()
     {
         status = ConnectionStatus::CONNECTED;
 
         // Get Client IP and Port
-        socklen_t clientAddressLength = sizeof(clientAddress);
-        int code = getpeername(clientSocket, (struct sockaddr *) &clientAddress, &clientAddressLength);
-        ASRT_EQ(code, SUCCESS_CODE);
-        inet_ntop(AF_INET, &(clientAddress.sin_addr), clientIP, INET_ADDRSTRLEN);
-        clientPort = ntohs(clientAddress.sin_port);
+        ip::tcp::endpoint endpoint = clientSocket->remote_endpoint();
+        clientPort = endpoint.port();
+        strcpy(clientIP, endpoint.address().to_string().c_str());
     }
 
     void start()
     {
         LOG("Connected to %s:%d", clientIP, clientPort);
+        json acceptMessage;
+        acceptMessage["type"] = "accept";
+        std::string responseStr = acceptMessage.dump() + "\n";
+        write(*clientSocket, buffer(responseStr));
+        closeConnection();
     }
 
+
+    void closeConnection()
+    {
+        LOG("Closing connection to %s:%d", clientIP, clientPort);
+        clientSocket->close();
+        status = ConnectionStatus::DISCONNECTED;
+    }
 
     bool isConnected()
     {
@@ -49,7 +66,7 @@ public:
     }
 
 private:
-    int clientSocket;
+    SocketPtr clientSocket;
     char clientIP[INET_ADDRSTRLEN];
     int clientPort;
     ConnectionStatus status;

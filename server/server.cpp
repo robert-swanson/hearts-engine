@@ -6,45 +6,28 @@
 #include "../util/logging.h"
 #include "connection.h"
 #include <future>
+#include <boost/asio.hpp>
 
 using namespace Common::Server;
-
+using namespace boost::asio;
 int main()
 {
-    int serverSocket = socket(AF_INET, SOCK_STREAM, 0);
+    io_service io;
+    ip::tcp::endpoint endpoint(ip::tcp::v4(), SERVER_PORT);
+    ip::tcp::acceptor acceptor(io, endpoint);
 
-    struct sockaddr_in serverAddress{};
-    serverAddress.sin_family = AF_INET;
-    serverAddress.sin_port = htons(SERVER_PORT);
-    serverAddress.sin_addr.s_addr = INADDR_ANY;
-
-    int code = bind(serverSocket, (struct sockaddr *) &serverAddress, sizeof(serverAddress));
-    ASRT_EQ(code, SUCCESS_CODE);
-
-    code = listen(serverSocket, MAX_CONNECTION_BACKLOG);
-    ASRT_EQ(code, SUCCESS_CODE);
-
-    LOG("Server listening on address %d, port %d...", serverAddress.sin_addr.s_addr, serverAddress.sin_port);
     std::vector<Connection> connections;
+    LOG("Server started on port %d...", SERVER_PORT);
     while (true)
     {
-        struct sockaddr_in clientAddress{};
-        socklen_t clientAddressLength = sizeof(clientAddress);
-        int clientSocket = accept(serverSocket, (struct sockaddr *) &clientAddress, &clientAddressLength);
+        SocketPtr socket = std::make_shared<ip::tcp::socket>(io);
+        acceptor.async_accept(*socket, [&](const boost::system::error_code &error) {
+            ASRT(error.value() == SUCCESS_CODE, "Error accepting connection: %s", error.message().c_str());
+            Connection connection = connections.emplace_back(socket);
+            connection.start();
+            Connection::CleanConnections(connections);
+        });
 
-        Connection connection = connections.emplace_back(clientSocket, clientAddress);
-        connection.start();
-
-        Connection::CleanConnections(connections);
+        io.run();
     }
-
-
 }
-
-
-
-
-
-
-
-

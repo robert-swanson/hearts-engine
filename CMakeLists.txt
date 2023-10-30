@@ -22,15 +22,15 @@ add_executable(Trick tests/trick_gtest.cpp)
 target_link_libraries(Trick gtest gtest_main gmock)
 gtest_discover_tests(Trick)
 
-# Protobuf
-find_package(Protobuf REQUIRED)
-file(GLOB PROTO_FILES "server/messages/*.proto")
-protobuf_generate_cpp(PROTO_SRCS PROTO_HDRS ${PROTO_FILES})
-include_directories(${CMAKE_CURRENT_BINARY_DIR}) # This is where protobuf-generated files are located
-include_directories(${PROTOBUF_INCLUDE_DIRS})
+# Boost
+find_package(Boost REQUIRED COMPONENTS system filesystem)
+include_directories(${Boost_INCLUDE_DIRS})
 
+# nlohmann/json
+find_package(nlohmann_json REQUIRED)
+include_directories(${nlohmann_json_INCLUDE_DIRS})
 
 # Server
-add_executable(Server server/server.cpp ${PROTO_SRCS} ${PROTO_HDRS})
-target_link_libraries(Server ${PROTOBUF_LIBRARIES})
+add_executable(Server server/server.cpp)
+target_link_libraries(Server ${Boost_LIBRARIES} ${nlohmann_json_LIBRARIES})
 
