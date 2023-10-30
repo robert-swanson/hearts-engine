@@ -7,5 +7,17 @@ namespace Common::Server
 
     constexpr int SUCCESS_CODE = 0;
     constexpr int MAX_CONNECTIONS = 10;
+
+
 }
 
+namespace Common::Server::Tags
+{
+    constexpr auto TYPE = "type";
+};
+
+namespace Common::Server::MsgTypes
+{
+    constexpr auto SERVER_ACCEPT_CONNECTION = "accept";
+
+}

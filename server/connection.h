@@ -3,8 +3,8 @@
 #include <vector>
 #include <algorithm>
 #include <arpa/inet.h>
-#include <boost/asio.hpp>
-#include <nlohmann/json.hpp>
+#include "types.h"
+#include "messages/server/accept_connection.h"
 
 using namespace boost::asio;
 
@@ -16,8 +16,6 @@ enum ConnectionStatus
     DISCONNECTED
 };
 
-using SocketPtr = std::shared_ptr<ip::tcp::socket>;
-using json = nlohmann::json;
 
 class Connection
 {
@@ -36,10 +34,8 @@ public:
     void start()
     {
         LOG("Connected to %s:%d", clientIP, clientPort);
-        json acceptMessage;
-        acceptMessage["type"] = "accept";
-        std::string responseStr = acceptMessage.dump() + "\n";
-        write(*clientSocket, buffer(responseStr));
+        Message::AcceptConnection msg;
+        write(*clientSocket, buffer(msg.toString()));
         closeConnection();
     }
 
