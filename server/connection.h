@@ -1,6 +1,7 @@
 
 #include <netinet/in.h>
 #include <vector>
+#include <algorithm>
 #include <arpa/inet.h>
 
 namespace Common::Server
