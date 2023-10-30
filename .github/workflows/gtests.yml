@@ -25,8 +25,8 @@ jobs:
         echo "Boost version: $boostversion"
 
     - name: Install nlohmann-json
-        run: |
-            sudo apt-get install -y nlohmann-json-dev
+      run: |
+        sudo apt-get install -y nlohmann-json-dev
 
     - name: Set up CMake
       uses: lukka/run-cmake@v1
