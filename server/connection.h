@@ -5,6 +5,7 @@
 #include <arpa/inet.h>
 #include "types.h"
 #include "messages/server/accept_connection.h"
+#include "messages/client/connection_request.h"
 
 using namespace boost::asio;
 
@@ -33,10 +34,34 @@ public:
 
     void start()
     {
-        LOG("Connected to %s:%d", clientIP, clientPort);
-        Message::AcceptConnection msg;
-        write(*clientSocket, buffer(msg.toString()));
+        auto connectionRequest = receive<Message::ConnectionRequest>();
+        send(Message::ConnectionResponse(ServerStatus::SUCCESS));
+        LOG("\nConnected to '%s' at %s:%d", connectionRequest.getPlayerTag().c_str(), clientIP, clientPort);
+
         closeConnection();
+    }
+    
+    template<typename MessageT>
+    MessageT receive()
+    {
+        char buf[1024];
+        clientSocket->read_some(buffer(buf));
+        json jsonMsg = json::parse(buf);
+        CONDITIONAL_LOG(LOG_ALL_RECEIVED_MESSAGES, "%s", jsonMsg.dump().c_str());
+
+        static_assert(std::is_base_of<Message::Message, MessageT>::value, "MessageT must be a subclass of Message");
+        MessageT msg;
+        msg.initializeFromJson(jsonMsg);
+        return msg;
+    }
+
+    template<typename MessageT>
+    void send(MessageT message)
+    {
+        auto json = message.toJson();
+        auto jsonStr = json.dump();
+        CONDITIONAL_LOG(LOG_ALL_SENT_MESSAGES, "%s", jsonStr.c_str());
+        write(*clientSocket, buffer(jsonStr));
     }
 
 
@@ -45,6 +70,7 @@ public:
         LOG("Closing connection to %s:%d", clientIP, clientPort);
         clientSocket->close();
         status = ConnectionStatus::DISCONNECTED;
+        ASRT_EQ(isConnected(), false);
     }
 
     bool isConnected()
@@ -52,11 +78,11 @@ public:
         return status == ConnectionStatus::CONNECTED;
     }
 
-    static void CleanConnections(std::vector<Connection> &connections)
+    static void CleanConnections(std::vector<std::unique_ptr<Connection>> &connections)
     {
         connections.erase(
-                std::remove_if(connections.begin(), connections.end(), [](Connection connection) {
-                    return !connection.isConnected();
+                std::remove_if(connections.begin(), connections.end(), [](std::unique_ptr<Connection> & connection) {
+                    return !connection->isConnected();
                 }),
                 connections.end());
     }

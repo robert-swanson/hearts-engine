@@ -8,6 +8,13 @@
         fprintf(stdout, "\n"); \
     } while (false)
 
+#define CONDITIONAL_LOG(condition, message, ...) \
+    do { \
+        if (condition) { \
+            LOG(message, ##__VA_ARGS__); \
+        } \
+    } while (false)
+
 #define DIE(message, ...) \
     do { \
         fprintf(stderr, message, ##__VA_ARGS__); \

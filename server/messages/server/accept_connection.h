@@ -7,17 +7,25 @@
 namespace Common::Server::Message
 {
 
-class AcceptConnection : public Message {
+class ConnectionResponse : public Message {
 public:
+    explicit ConnectionResponse(std::string status):
+        status(status)
+    {}
+
     json toJson() override
     {
-        json json;
-        json[Tags::TYPE] = MsgTypes::SERVER_ACCEPT_CONNECTION;
-        return json;
+        return {
+                {Tags::TYPE, ServerMsgTypes::ACCEPT_CONNECTION},
+                {Tags::STATUS, status}
+        };
     }
 
-    void initializeFromJson(json json)
+    void initializeFromJson(json json) override
     {
+        ASRT_EQ(json[Tags::TYPE], ServerMsgTypes::ACCEPT_CONNECTION);
     }
+private:
+    std::string status;
 };
 }
