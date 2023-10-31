@@ -1,4 +1,5 @@
-from api import Connection, Player
+from clients.python.Connection import Connection
+from clients.python.Player import Player
 
 
 def main():
