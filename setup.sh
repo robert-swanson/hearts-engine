@@ -1,32 +1,16 @@
 #!/bin/bash
 
+set -e
 set -o xtrace
+source ./scripts/env_vars.sh
 
-# Make externals if it doesn't exist
-externals_dir="externals"
-if [ ! -d "$gtest_dir" ]; then
-    mkdir $externals_dir
+if [ ! -d "$EXTERNALS_DIR" ]; then
+  mkdir -p "$EXTERNALS_DIR"
 fi
 
-# Set the directory for Google Test
-gtest_dir="externals/googletest"
+source "$SCRIPTS_DIR"/install_gtest.sh
+source "$SCRIPTS_DIR"/install_boost.sh
+source "$SCRIPTS_DIR"/install_json.sh
 
-# Check if the Google Test directory exists
-if [ ! -d "$gtest_dir" ]; then
-    # Google Test directory doesn't exist, so clone it
-    git clone https://github.com/google/googletest.git "$gtest_dir"
-else
-    # Google Test directory already exists, so update it
-    cd "$gtest_dir"
-    git pull
-    cd -
-fi
 
-# Build Google Test
-mkdir -p "$gtest_dir/build"
-cd "$gtest_dir/build"
-cmake ..
-make
-cd -
-
-echo "Google Test integration complete."
+echo "All external dependencies installed to $EXTERNALS_DIR!"
