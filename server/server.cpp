@@ -25,7 +25,7 @@ int main()
     {
         SocketPtr socket = std::make_shared<ip::tcp::socket>(ioContext);
         acceptor.accept(*socket);
-//        Connection::CleanConnections(connections);
+        Connection::CleanConnections(connections);
         auto & connection = connections.emplace_back(std::make_unique<Connection>(socket));
         std::thread(&Connection::start, connection.get()).detach();
     }

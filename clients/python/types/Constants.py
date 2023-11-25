@@ -11,16 +11,20 @@ LOG_ALL_RECEIVED_MESSAGES = False
 class Tags:
     TYPE = "type"
     STATUS = "status"
+    SESSION_ID = "session_id"
 
     PLAYER_TAG = "player_tag"
+    GAME_TYPE = "game_type"
 
 
 class ServerMsgTypes:
     ACCEPT_CONNECTION = "accept"
+    ACCEPT_GAME_SESSION = "accept_game_session"
 
 
 class ClientMsgTypes:
     REQUEST_CONNECTION = "request"
+    REQUEST_GAME_SESSION = "request_game_session"
 
 
 class ServerStatus:

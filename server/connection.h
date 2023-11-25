@@ -34,10 +34,16 @@ public:
 
     void start()
     {
-        auto connectionRequest = receive<Message::ConnectionRequest>();
-        send(Message::ConnectionResponse(ServerStatus::SUCCESS));
-        LOG("\nConnected to '%s' at %s:%d", connectionRequest.getPlayerTag().c_str(), clientIP, clientPort);
-
+        try
+        {
+            auto connectionRequest = receive<Message::ConnectionRequest>();
+            send(Message::ConnectionResponse(ServerStatus::SUCCESS));
+            LOG("\nConnected to '%s' at %s:%d", connectionRequest.getPlayerTag().c_str(), clientIP, clientPort);
+        }
+        catch (std::exception &e)
+        {
+            LOG("Error with client at %s:%d: %s", clientIP, clientPort, e.what());
+        }
         closeConnection();
     }
     
@@ -68,9 +74,15 @@ public:
     void closeConnection()
     {
         LOG("Closing connection to %s:%d", clientIP, clientPort);
-        clientSocket->close();
         status = ConnectionStatus::DISCONNECTED;
-        ASRT_EQ(isConnected(), false);
+        try
+        {
+            clientSocket->close();
+        }
+        catch (std::exception &e)
+        {
+            LOG("Error closing connection to %s:%d: %s", clientIP, clientPort, e.what());
+        }
     }
 
     bool isConnected()

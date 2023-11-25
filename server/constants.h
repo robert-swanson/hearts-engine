@@ -2,7 +2,7 @@
 
 namespace Common::Server
 {
-    // Dependencies in clients/python/constants.py
+    // Dependencies in clients/python/Constants.py
     constexpr uint16_t SERVER_PORT = 40404;
     constexpr int MAX_CONNECTION_BACKLOG = 5;
 
