@@ -4,7 +4,8 @@
 #include "constants.h"
 #include "../util/assertions.h"
 #include "../util/logging.h"
-#include "connection.h"
+#include "api/connection.h"
+#include "api/managed_connection.h"
 #include <future>
 #include <boost/asio.hpp>
 
@@ -18,16 +19,16 @@ int main()
     ip::tcp::endpoint endpoint(ip::tcp::v4(), SERVER_PORT);
     ip::tcp::acceptor acceptor(ioContext, endpoint);
 
-    std::vector<std::unique_ptr<Connection>> connections;
+    std::vector<std::unique_ptr<ManagedConnection>> connections;
     LOG("Server started on port %d...", SERVER_PORT);
 
     while (true)
     {
         SocketPtr socket = std::make_shared<ip::tcp::socket>(ioContext);
         acceptor.accept(*socket);
-        Connection::CleanConnections(connections);
-        auto & connection = connections.emplace_back(std::make_unique<Connection>(socket));
-        std::thread(&Connection::start, connection.get()).detach();
+        ManagedConnection::CleanConnections(connections);
+        auto & connection = connections.emplace_back(std::make_unique<ManagedConnection>(socket));
+        std::thread(&Connection::setup, connection.get()).detach();
     }
 
     return 0;

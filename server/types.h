@@ -7,4 +7,5 @@ namespace Common::Server
 {
 using SocketPtr = std::shared_ptr<boost::asio::ip::tcp::socket>;
 using json = nlohmann::json;
+using PlayerID = std::string;
 }

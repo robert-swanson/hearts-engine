@@ -1,9 +1,8 @@
 import json
 import threading
 
-from clients.python.api.Connection import Connection
 from clients.python.api.ManagedConnection import SessionID, ManagedConnection
-from clients.python.api.player.Player import Player
+from clients.python.types.Player import Player
 from clients.python.types.Constants import GameType, Tags, ClientMsgTypes, ServerStatus, ServerMsgTypes
 
 

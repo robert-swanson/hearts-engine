@@ -1,11 +1,12 @@
+# pragma once
 
 #include <netinet/in.h>
 #include <vector>
 #include <algorithm>
 #include <arpa/inet.h>
-#include "types.h"
-#include "messages/server/accept_connection.h"
-#include "messages/client/connection_request.h"
+#include "../types.h"
+#include "../messages/server/accept_connection.h"
+#include "../messages/client/connection_request.h"
 
 using namespace boost::asio;
 
@@ -32,21 +33,14 @@ public:
         strcpy(clientIP, endpoint.address().to_string().c_str());
     }
 
-    void start()
+protected:
+    void handleConnectionRequest()
     {
-        try
-        {
-            auto connectionRequest = receive<Message::ConnectionRequest>();
-            send(Message::ConnectionResponse(ServerStatus::SUCCESS));
-            LOG("\nConnected to '%s' at %s:%d", connectionRequest.getPlayerTag().c_str(), clientIP, clientPort);
-        }
-        catch (std::exception &e)
-        {
-            LOG("Error with client at %s:%d: %s", clientIP, clientPort, e.what());
-        }
-        closeConnection();
+        auto connectionRequest = receive<Message::ConnectionRequest>();
+        send(Message::ConnectionResponse(ServerStatus::SUCCESS));
+        LOG("\nConnected to '%s' at %s:%d", connectionRequest.getPlayerTag().c_str(), clientIP, clientPort);
     }
-    
+
     template<typename MessageT>
     MessageT receive()
     {
@@ -90,16 +84,7 @@ public:
         return status == ConnectionStatus::CONNECTED;
     }
 
-    static void CleanConnections(std::vector<std::unique_ptr<Connection>> &connections)
-    {
-        connections.erase(
-                std::remove_if(connections.begin(), connections.end(), [](std::unique_ptr<Connection> & connection) {
-                    return !connection->isConnected();
-                }),
-                connections.end());
-    }
-
-private:
+protected:
     SocketPtr clientSocket;
     char clientIP[INET_ADDRSTRLEN];
     int clientPort;

@@ -19,4 +19,27 @@ public:
 
 };
 
+class AnyMessage : public Message
+{
+public:
+    json value;
+
+    json toJson() override
+    {
+        return value;
+    }
+
+    void initializeFromJson(json json) override
+    {
+        value = json;
+    }
+};
+
+class AnySessionMessage : public AnyMessage
+{
+public:
+
+
+};
+
 }
