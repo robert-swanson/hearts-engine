@@ -25,17 +25,23 @@ class ManagedConnection(Connection):
     def end_session(self, session_id: SessionID):
         self.id_to_received_messages.pop(session_id)
 
-    def receive_from_session(self, session_id: SessionID) -> json:
+    def _retrieve_next_message_for_session(self, session_id: SessionID):
         assert session_id not in self.waiting_sessions, f"Session {session_id} already waiting for message"
         self._start_receiver_thread()
 
         self.waiting_sessions.add(session_id)
-        with self.message_received_condition:
+        with self.message_received_condition:  # TODO: does this check once in case its waiting?
             while len(self.id_to_received_messages[session_id]) == 0:
                 self.message_received_condition.wait()
         self.waiting_sessions.remove(session_id)
 
+    def receive_from_session(self, session_id: SessionID) -> json:
+        self._retrieve_next_message_for_session(session_id)
         return self.id_to_received_messages[session_id].pop(0)
+
+    def get_next_message_type_for_session(self, session_id: SessionID) -> str:
+        self._retrieve_next_message_for_session(session_id)
+        return self.id_to_received_messages[session_id][0]["type"]
 
     def _receive_loop(self):
         while len(self.waiting_sessions) > 0:
