@@ -38,14 +38,16 @@ protected:
     {
         auto connectionRequest = receive<Message::ConnectionRequest>();
         send(Message::ConnectionResponse(ServerStatus::SUCCESS));
-        LOG("\nConnected to '%s' at %s:%d", connectionRequest.getPlayerTag().c_str(), clientIP, clientPort);
+        playerID = connectionRequest.getPlayerTag();
+        LOG("\nConnected to '%s' at %s:%d", playerID.c_str(), clientIP, clientPort);
     }
 
     template<typename MessageT>
     MessageT receive()
     {
         char buf[1024];
-        clientSocket->read_some(buffer(buf));
+        size_t bytes_read = clientSocket->read_some(buffer(buf));
+        buf[bytes_read] = '\0';
         json jsonMsg = json::parse(buf);
         CONDITIONAL_LOG(LOG_ALL_RECEIVED_MESSAGES, "%s", jsonMsg.dump().c_str());
 
@@ -79,9 +81,15 @@ protected:
         }
     }
 
+public:
     bool isConnected()
     {
         return status == ConnectionStatus::CONNECTED;
+    }
+
+    PlayerID getPlayerID()
+    {
+        return playerID;
     }
 
 protected:
@@ -89,5 +97,6 @@ protected:
     char clientIP[INET_ADDRSTRLEN];
     int clientPort;
     ConnectionStatus status;
+    PlayerID playerID;
 };
 }

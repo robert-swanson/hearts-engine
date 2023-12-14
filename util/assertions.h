@@ -25,6 +25,9 @@
 #define ASRT_EQ(actual, expected) \
     ASRT_CMP(actual == expected, actual, expected, "==")
 
+#define ASRT_NE(actual, expected) \
+    ASRT_CMP(actual != expected, actual, expected, "!=")
+
 #define ASRT_GT(actual, expected) \
     ASRT_CMP(actual > expected, actual, expected, ">")
 

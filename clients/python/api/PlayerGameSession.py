@@ -26,12 +26,12 @@ class GameSession:
 
     def setup(self) -> SessionID:
         session_request = {
-            Tags.TYPE: ClientMsgTypes.REQUEST_GAME_SESSION,
+            Tags.TYPE: ClientMsgTypes.REQUEST_GAME_REQUEST,
             Tags.GAME_TYPE: self.game_type.value
         }
 
         self.connection.send(session_request)
-        setup = self.connection.receive_status(ServerStatus.SUCCESS, ServerMsgTypes.ACCEPT_GAME_SESSION)
+        setup = self.connection.receive_status(ServerStatus.SUCCESS, ServerMsgTypes.GAME_SESSION_RESPONSE)
         # TODO get other things from setup
         return setup[Tags.SESSION_ID]
 

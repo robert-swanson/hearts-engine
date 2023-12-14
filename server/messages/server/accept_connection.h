@@ -16,14 +16,14 @@ public:
     json toJson() override
     {
         return {
-                {Tags::TYPE, ServerMsgTypes::ACCEPT_CONNECTION},
+                {Tags::TYPE, ServerMsgTypes::CONNECTION_RESPONSE},
                 {Tags::STATUS, status}
         };
     }
 
     void initializeFromJson(json json) override
     {
-        ASRT_EQ(json[Tags::TYPE], ServerMsgTypes::ACCEPT_CONNECTION);
+        ASRT_EQ(json[Tags::TYPE], ServerMsgTypes::CONNECTION_RESPONSE);
     }
 private:
     std::string status;

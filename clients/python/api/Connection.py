@@ -32,7 +32,10 @@ class Connection:
         decoded_data = data.decode("utf-8")
         json_data = json.loads(decoded_data)
         if LOG_ALL_RECEIVED_MESSAGES:
-            print(json_data)
+            print("<<<<<<<")
+            print(json.dumps(json_data, default=str, indent=1))
+            print("<<<<<<<")
+            print()
         return json_data
 
     def receive_status(self, expected_status: str, expected_msg_type: str) -> json:
@@ -44,9 +47,12 @@ class Connection:
         return response
 
     def send(self, json_data: json):
+        json_str = json.dumps(json_data, default=str, indent=1)
         if LOG_ALL_SENT_MESSAGES:
-            print(json_data)
-        json_str = json.dumps(json_data, default=str)
+            print(">>>>>>")
+            print(json_str)
+            print(">>>>>>")
+            print()
         bytes_sent = self.client_socket.send(json_str.encode("utf-8"))
         if bytes_sent != len(json_str):
             raise ConnectionError(f"Expected to send {len(json_str)} bytes, but sent {bytes_sent}")
@@ -57,4 +63,4 @@ class Connection:
             Tags.PLAYER_TAG: self.player_tag
         }
         self.send(connection_request)
-        self.receive_status(ServerStatus.SUCCESS, ServerMsgTypes.ACCEPT_CONNECTION)
+        self.receive_status(ServerStatus.SUCCESS, ServerMsgTypes.CONNECTION_RESPONSE)

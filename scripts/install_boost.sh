@@ -23,7 +23,7 @@ cd -
 
 # Build Boost
 mkdir -p "$BOOST_DIR/__build"
-cd "$GTEST_DIR/build"
+cd "$BOOST_DIR/__build"
 cmake ..
 cmake --build . --target install
 cd -

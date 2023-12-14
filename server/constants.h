@@ -3,7 +3,7 @@
 namespace Common::Server
 {
     // Dependencies in clients/python/Constants.py
-    constexpr uint16_t SERVER_PORT = 40404;
+    constexpr uint16_t SERVER_PORT = 40405;
     constexpr int MAX_CONNECTION_BACKLOG = 5;
 
     constexpr int SUCCESS_CODE = 0;
@@ -16,19 +16,21 @@ namespace Common::Server
 namespace Common::Server::Tags
 {
     constexpr auto TYPE = "type";
+    constexpr auto SESSION_ID = "session_id";
     constexpr auto STATUS = "status";
-
     constexpr auto PLAYER_TAG = "player_tag";
 };
 
 namespace Common::Server::ServerMsgTypes
 {
-    constexpr auto ACCEPT_CONNECTION = "accept";
+    constexpr auto CONNECTION_RESPONSE = "connection_response";
+    constexpr auto GAME_SESSION_RESPONSE = "game_session_response";
 }
 
 namespace Common::Server::ClientMsgTypes
 {
-    constexpr auto CONNECTION_REQUEST = "request";
+    constexpr auto CONNECTION_REQUEST = "connection_request";
+    constexpr auto GAME_SESSION_REQUEST = "game_session_request";
 }
 
 namespace Common::Server::ServerStatus

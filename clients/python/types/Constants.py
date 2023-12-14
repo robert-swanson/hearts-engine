@@ -2,10 +2,10 @@
 from enum import Enum
 
 SERVER_IP = "localhost"
-SERVER_PORT = 40404
+SERVER_PORT = 40405
 
-LOG_ALL_SENT_MESSAGES = False
-LOG_ALL_RECEIVED_MESSAGES = False
+LOG_ALL_SENT_MESSAGES = True
+LOG_ALL_RECEIVED_MESSAGES = True
 
 
 class Tags:
@@ -18,13 +18,13 @@ class Tags:
 
 
 class ServerMsgTypes:
-    ACCEPT_CONNECTION = "accept"
-    ACCEPT_GAME_SESSION = "accept_game_session"
+    CONNECTION_RESPONSE = "connection_response"
+    GAME_SESSION_RESPONSE = "game_session_response"
 
 
 class ClientMsgTypes:
-    REQUEST_CONNECTION = "request"
-    REQUEST_GAME_SESSION = "request_game_session"
+    REQUEST_CONNECTION = "connection_request"
+    REQUEST_GAME_REQUEST = "game_session_request"
 
 
 class ServerStatus:
