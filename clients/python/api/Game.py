@@ -1,27 +1,17 @@
-from typing import List
-
-from clients.python.player.Messenger import Messenger, PassingMessenger
-from clients.python.player.Player import Player
-from clients.python.player.Round import Round, ActiveRound
+from clients.python.api.networking.Messenger import Messenger, PassingMessenger
+from clients.python.players.Player import Player, Game
+from clients.python.api.Round import ActiveRound
 from clients.python.types.Constants import ServerMsgTypes, Tags
-from clients.python.types.PassDirection import PassDirection
-from clients.python.types.PlayerTag import PlayerTag
 
 
-class Game:
-    def __init__(self, player_order: List[PlayerTag]):
-        self.player_order = player_order
-        self.rounds: List[Round] = []
-
-
-class ActiveGame(Game, PassingMessenger):
+class ActiveGame(PassingMessenger, Game):
     def __init__(self, messenger: Messenger, player: Player):
-        super(PassingMessenger).__init__(messenger)
+        super().__init__(messenger)
         self.player = player
 
         start_game_msg = self.messenger.receive_type(ServerMsgTypes.START_GAME)
         player_order = start_game_msg[Tags.PLAYER_ORDER]
-        super(Game).__init__(player_order)
+        super().__init__(player_order)
 
     def run_game(self, player: Player):
         player.initialize_for_game(self)

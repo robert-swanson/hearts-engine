@@ -1,36 +1,23 @@
 from typing import List
 
-from clients.python.player.Messenger import PassingMessenger, Messenger
-from clients.python.player.Player import Player
-from clients.python.player.Trick import ActiveTrick
-from clients.python.types.Card import Card
+from clients.python.api.networking.Messenger import PassingMessenger, Messenger
+from clients.python.players.Player import Player, Round
+from clients.python.api.Trick import ActiveTrick
 from clients.python.types.Constants import ServerMsgTypes, Tags, ClientMsgTypes
 from clients.python.types.PassDirection import PassDirection
 from clients.python.types.PlayerTag import PlayerTag
 
 
-class Round:
-    def __init__(self, round_idx: int, pass_direction: PassDirection, player_order: List[PlayerTag], cards_in_hand: List[Card]):
-        self.round_idx = round_idx
-        self.pass_direction = pass_direction
-        self.player_order = player_order
-        self.cards_in_hand = cards_in_hand
-
-        self.donating_cards: List[Card] = []
-        self.received_cards: List[Card] = []
-        self.tricks: List[ActiveTrick] = []
-
-
-class ActiveRound(Round, PassingMessenger):
+class ActiveRound(PassingMessenger, Round):
     def __init__(self, messenger: Messenger, player: Player, player_order: List[PlayerTag]):
-        super(PassingMessenger).__init__(messenger)
+        super().__init__(messenger)
         self.player = player
 
         round_msg = self.receive_type(ServerMsgTypes.START_ROUND)
         round_idx = int(round_msg[Tags.ROUND_INDEX])
         pass_direction = PassDirection(round_msg[Tags.PASS_DIRECTION])
         cards = round_msg[Tags.CARDS]
-        super(Round).__init__(round_idx, pass_direction, player_order, cards)
+        super().__init__(round_idx, pass_direction, player_order, cards)
 
     def get_receiving_player(self):
         return self.pass_direction.get_receiving_player(self.player_order, self.player.player_tag)

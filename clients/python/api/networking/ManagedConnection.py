@@ -2,7 +2,7 @@ import json
 import threading
 from typing import Dict, Optional, Set, List
 
-from clients.python.api.Connection import Connection
+from clients.python.api.networking.Connection import Connection
 from clients.python.types.Constants import SERVER_IP, SERVER_PORT
 from clients.python.types.PlayerTag import PlayerTag
 

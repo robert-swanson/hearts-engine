@@ -1,7 +1,7 @@
-from clients.python.api.PlayerGameSession import GameSession
-from clients.python.api.ManagedConnection import ManagedConnection
-from clients.python.player.Trick import Trick
-from clients.python.player.Player import Player
+from clients.python.api.networking.PlayerGameSession import GameSession
+from clients.python.api.networking.ManagedConnection import ManagedConnection
+from clients.python.api.Trick import Trick
+from clients.python.players.Player import Player
 from clients.python.types.Card import Card
 from clients.python.types.Constants import GameType
 from clients.python.types.PlayerTag import PlayerTag
@@ -22,7 +22,7 @@ def main():
     tag = PlayerTag("random_player")
     player = RandomPlayer(tag)
     connection = ManagedConnection(tag)
-    for i in range(10):
+    for i in range(1):
         print(f"Starting game {i}")
         thread = GameSession.SpawnNewGameSessionThread(connection, GameType.ANY, player)
         thread.start()

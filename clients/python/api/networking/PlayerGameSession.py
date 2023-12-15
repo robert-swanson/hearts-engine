@@ -1,13 +1,11 @@
 import json
 import threading
 
-from clients.python.api.ManagedConnection import SessionID, ManagedConnection
-from clients.python.player.Game import Game, ActiveGame
-from clients.python.player.Messenger import Messenger
-from clients.python.player.Round import Round
-from clients.python.player.Player import Player
+from clients.python.api.networking.ManagedConnection import SessionID, ManagedConnection
+from clients.python.api.Game import ActiveGame
+from clients.python.api.networking.Messenger import Messenger
+from clients.python.players.Player import Player
 from clients.python.types.Constants import GameType, Tags, ClientMsgTypes, ServerStatus, ServerMsgTypes
-from clients.python.types.PassDirection import PassDirection
 
 
 class GameSession(Messenger):

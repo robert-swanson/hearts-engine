@@ -32,5 +32,8 @@ class PassingMessenger(Messenger):
     def receive_status(self, expected_status: str, expected_msg_type: str) -> json:
         return self.messenger.receive_status(expected_status, expected_msg_type)
 
+    def get_next_message_type(self) -> str:
+        return self.messenger.get_next_message_type()
+
     def send(self, json_data: json):
         self.messenger.send(json_data)
