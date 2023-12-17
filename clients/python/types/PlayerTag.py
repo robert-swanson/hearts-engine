@@ -7,3 +7,6 @@ class PlayerTag:
 
     def __str__(self):
         return self.tag
+
+    def __eq__(self, other):
+        return self.tag == other.tag

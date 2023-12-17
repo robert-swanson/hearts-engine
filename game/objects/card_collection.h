@@ -7,6 +7,7 @@
 #include <vector>
 #include <set>
 #include <cassert>
+#include <nlohmann/json.hpp>
 
 #include "card.h"
 #include "constants.h"
@@ -20,6 +21,14 @@ class CardCollection
 public:
     CardCollection(): mCards()
     {
+    }
+
+    explicit CardCollection(std::vector<std::string> cards)
+    {
+        for (std::string card : cards)
+        {
+            mCards.push_back(Card(card));
+        }
     }
 
     CardCollection(std::vector<Common::Game::Card>::const_iterator start, std::vector<Common::Game::Card>::const_iterator end):
@@ -192,6 +201,16 @@ public:
             description += ", " + card.getAbbreviation();
         });
         return description;
+    }
+
+    std::vector<std::string> getCardsAsStrings() const
+    {
+        std::vector<std::string> cards;
+        for (Card card : mCards)
+        {
+            cards.push_back(card.getAbbreviation());
+        }
+        return cards;
     }
 
 private:

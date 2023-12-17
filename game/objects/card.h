@@ -1,6 +1,7 @@
 #pragma once
 
 #include <iostream>
+#include "../../util/assertions.h"
 
 namespace Common::Game
 {
@@ -80,6 +81,37 @@ std::string RankToAbbreviation(const Rank rank)
     }
 }
 
+Rank RankFromAbbreviation(const std::string& abbreviation)
+{
+    if (abbreviation == "2")
+        return TWO;
+    if (abbreviation == "3")
+        return THREE;
+    if (abbreviation == "4")
+        return FOUR;
+    if (abbreviation == "5")
+        return FIVE;
+    if (abbreviation == "6")
+        return SIX;
+    if (abbreviation == "7")
+        return SEVEN;
+    if (abbreviation == "8")
+        return EIGHT;
+    if (abbreviation == "9")
+        return NINE;
+    if (abbreviation == "T")
+        return TEN;
+    if (abbreviation == "J")
+        return JACK;
+    if (abbreviation == "Q")
+        return QUEEN;
+    if (abbreviation == "K")
+        return KING;
+    if (abbreviation == "A")
+        return ACE;
+    throw std::invalid_argument("Unexpected rank abbreviation");
+}
+
 enum Suit
 {
     HEARTS, DIAMONDS, SPADES, CLUBS
@@ -119,10 +151,30 @@ std::string SuitToAbbreviation(const Suit suit)
     }
 }
 
+Suit SuitFromAbbreviation(const std::string& abbreviation)
+{
+    if (abbreviation == "H")
+        return HEARTS;
+    if (abbreviation == "D")
+        return DIAMONDS;
+    if (abbreviation == "S")
+        return SPADES;
+    if (abbreviation == "C")
+        return CLUBS;
+    throw std::invalid_argument("Unexpected suit abbreviation");
+}
+
 class Card
 {
 public:
     Card(const Rank rank, const Suit suit) : rank(rank), suit(suit) {}
+
+    explicit Card(const std::string& abbreviation)
+    {
+        ASRT_EQ(abbreviation.size(), 2);
+        rank = RankFromAbbreviation(abbreviation.substr(0, 1));
+        suit = SuitFromAbbreviation(abbreviation.substr(1, 1));
+    }
 
     std::string getDescription()
     {

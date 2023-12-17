@@ -5,8 +5,7 @@
 #include <algorithm>
 #include <arpa/inet.h>
 #include "../types.h"
-#include "../messages/server/accept_connection.h"
-#include "../messages/client/connection_request.h"
+#include "../message.h"
 
 using namespace boost::asio;
 
@@ -23,80 +22,78 @@ class Connection
 {
 public:
     explicit Connection(const SocketPtr& clientSocket):
-        clientSocket(clientSocket), clientIP()
+            mClientSocket(clientSocket), mClientIP()
     {
-        status = ConnectionStatus::CONNECTED;
+        mStatus = ConnectionStatus::CONNECTED;
 
         // Get Client IP and Port
         ip::tcp::endpoint endpoint = clientSocket->remote_endpoint();
-        clientPort = endpoint.port();
-        strcpy(clientIP, endpoint.address().to_string().c_str());
+        mClientPort = endpoint.port();
+        strcpy(mClientIP, endpoint.address().to_string().c_str());
     }
 
 protected:
     void handleConnectionRequest()
     {
-        auto connectionRequest = receive<Message::ConnectionRequest>();
-        send(Message::ConnectionResponse(ServerStatus::SUCCESS));
-        playerID = connectionRequest.getPlayerTag();
-        LOG("\nConnected to '%s' at %s:%d", playerID.c_str(), clientIP, clientPort);
+        auto connectionRequest = receive();
+        mPlayerID = connectionRequest.getTag<PlayerID>(Tags::PLAYER_TAG);
+
+        Message::Message connectionResponse = Message::Message(ServerMsgTypes::CONNECTION_RESPONSE, {
+            {Tags::STATUS, ServerStatus::SUCCESS}
+        });
+        send(connectionResponse);
+
+        LOG("\nConnected to '%s' at %s:%d", mPlayerID.c_str(), mClientIP, mClientPort);
     }
 
-    template<typename MessageT>
-    MessageT receive()
+    Message::Message receive()
     {
         char buf[1024];
-        size_t bytes_read = clientSocket->read_some(buffer(buf));
+        size_t bytes_read = mClientSocket->read_some(buffer(buf));
         buf[bytes_read] = '\0';
         json jsonMsg = json::parse(buf);
-        CONDITIONAL_LOG(LOG_ALL_RECEIVED_MESSAGES, "%s", jsonMsg.dump().c_str());
-
-        static_assert(std::is_base_of<Message::Message, MessageT>::value, "MessageT must be a subclass of Message");
-        MessageT msg;
-        msg.initializeFromJson(jsonMsg);
-        return msg;
+        CONDITIONAL_LOG(LOG_ALL_RECEIVED_MESSAGES, "<<< %s", jsonMsg.dump().c_str());
+        return {jsonMsg};
     }
 
-    template<typename MessageT>
-    void send(MessageT message)
+    void send(Message::Message message)
     {
-        auto json = message.toJson();
-        auto jsonStr = json.dump();
-        CONDITIONAL_LOG(LOG_ALL_SENT_MESSAGES, "%s", jsonStr.c_str());
-        write(*clientSocket, buffer(jsonStr));
+        auto jsonStr = message.getJson().dump();
+        CONDITIONAL_LOG(LOG_ALL_SENT_MESSAGES, ">>> %s", jsonStr.c_str());
+        write(*mClientSocket, buffer(jsonStr));
     }
 
 
     void closeConnection()
     {
-        LOG("Closing connection to %s:%d", clientIP, clientPort);
-        status = ConnectionStatus::DISCONNECTED;
+        LOG("Closing mConnection to %s:%d", mClientIP, mClientPort);
+        mStatus = ConnectionStatus::DISCONNECTED;
         try
         {
-            clientSocket->close();
+            mClientSocket->close();
         }
         catch (std::exception &e)
         {
-            LOG("Error closing connection to %s:%d: %s", clientIP, clientPort, e.what());
+            LOG("Error closing mConnection to %s:%d: %s", mClientIP, mClientPort, e.what());
         }
     }
 
 public:
     bool isConnected()
     {
-        return status == ConnectionStatus::CONNECTED;
+        return mStatus == ConnectionStatus::CONNECTED;
     }
 
     PlayerID getPlayerID()
     {
-        return playerID;
+        return mPlayerID;
     }
 
 protected:
-    SocketPtr clientSocket;
-    char clientIP[INET_ADDRSTRLEN];
-    int clientPort;
-    ConnectionStatus status;
-    PlayerID playerID;
+    SocketPtr mClientSocket;
+    char mClientIP[INET_ADDRSTRLEN];
+    int mClientPort;
+    ConnectionStatus mStatus;
+    PlayerID mPlayerID;
 };
 }

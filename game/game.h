@@ -3,7 +3,7 @@
 #include <utility>
 
 #include "objects/player.h"
-#include "deal.h"
+#include "round.h"
 #include "../util/logging.h"
 
 namespace Common::Game
@@ -20,25 +20,48 @@ public:
         LOG("starting game");
         PassDirection passDirection = Left;
         updateRankings();
+        notifyStartGame();
         while (mMaxScore <= Constants::GAME_END_SCORE)
         {
-            Deal deal(mPlayers, passDirection);
-            deal.runDeal();
+            Round round(mCurrentRoundIdx, mPlayers, passDirection);
+            round.runDeal();
             passDirection = NextPassDirection(passDirection);
             updateRankings();
             LOG("Max score %d", mMaxScore);
         }
-
+        notifyEndGame();
         LOG("Final rankings:");
         for (int i = 0; i < Constants::NUM_PLAYERS; i++)
         {
-            Player & player = mRankings[mRankings.size()-1-i].get();
-            LOG("%d: %s (%d points)", i+1, player.getName().c_str(), player.getScore());
+            auto player = mRankings[mRankings.size()-1-i];
+            LOG("%d: %s (%d points)", i+1, player->getName().c_str(), player->getScore());
         }
         return mRankings;
     }
 
 private:
+    void notifyStartGame()
+    {
+        for (PlayerRef & player : mPlayers)
+        {
+            player->notifyStartGame(PlayerArrayToIds(mPlayers));
+        }
+    }
+
+    void notifyEndGame()
+    {
+        std::map<PlayerID, int> playerScores;
+        for (PlayerRef & player : mPlayers)
+        {
+            playerScores[player->getName()] = player->getScore();
+        }
+        for (PlayerRef & player : mPlayers)
+        {
+            player->notifyEndGame(playerScores, mRankings[0]->getName());
+        }
+    }
+
+
     // Sort by decreasing scores
     void updateRankings()
     {
@@ -46,7 +69,7 @@ private:
         {
             for (int b = a - 1; b >= 0; b--)
             {
-                if (mRankings[b].get().getScore() < mRankings[b+1].get().getScore())
+                if (mRankings[b]->getScore() < mRankings[b+1]->getScore())
                 {
                     PlayerRef temp = mRankings[b];
                     mRankings[b] = mRankings[b+1];
@@ -56,11 +79,12 @@ private:
                     break;
             }
         }
-        mMaxScore = mRankings[0].get().getScore();
+        mMaxScore = mRankings[0]->getScore();
     }
 
     PlayerArray mPlayers;
     PlayerArray mRankings;
     int mMaxScore;
+    int mCurrentRoundIdx = 0;
 };
 }

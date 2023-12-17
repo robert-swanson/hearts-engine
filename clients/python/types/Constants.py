@@ -42,7 +42,7 @@ class ServerMsgTypes:
 
 class ClientMsgTypes:
     REQUEST_CONNECTION = "connection_request"
-    REQUEST_GAME_REQUEST = "game_session_request"
+    REQUEST_GAME_SESSION = "game_session_request"
     DONATED_CARDS = "donated_cards"
     DECIDED_MOVE = "decided_move"
 

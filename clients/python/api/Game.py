@@ -2,16 +2,17 @@ from clients.python.api.networking.Messenger import Messenger, PassingMessenger
 from clients.python.players.Player import Player, Game
 from clients.python.api.Round import ActiveRound
 from clients.python.types.Constants import ServerMsgTypes, Tags
+from clients.python.types.PlayerTag import PlayerTag
 
 
 class ActiveGame(PassingMessenger, Game):
     def __init__(self, messenger: Messenger, player: Player):
-        super().__init__(messenger)
+        PassingMessenger.__init__(self, messenger)
         self.player = player
 
         start_game_msg = self.messenger.receive_type(ServerMsgTypes.START_GAME)
-        player_order = start_game_msg[Tags.PLAYER_ORDER]
-        super().__init__(player_order)
+        player_order = [PlayerTag(tag) for tag in start_game_msg[Tags.PLAYER_ORDER]]
+        Game.__init__(self, player_order)
 
     def run_game(self, player: Player):
         player.initialize_for_game(self)

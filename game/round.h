@@ -7,11 +7,11 @@
 namespace Common::Game
 {
 
-class Deal
+class Round
 {
 public:
-    explicit Deal(PlayerArray &players, PassDirection passDirection):
-            mPlayers(players), mPassDirection(passDirection)
+    explicit Round(int roundIndex, PlayerArray &players, PassDirection passDirection):
+            mPlayers(players), mPassDirection(passDirection), mRoundIndex(roundIndex)
     {
     }
 
@@ -19,6 +19,7 @@ public:
     {
         LOG("Starting deal in direction %d", mPassDirection);
         dealCards();
+        notifyStartRound();
         passCards();
         size_t startingPlayer = getStartingPlayer();
         bool brokenHearts = false;
@@ -30,12 +31,34 @@ public:
             mTricks.push_back(trick);
             brokenHearts |= trick.heartsBroken();
             startingPlayer = (trick.getTrickWinner() + startingPlayer) % Constants::NUM_PLAYERS;
-            mPlayers[startingPlayer].get().receiveTrick(trick.getPlayedCards());
+            mPlayers[startingPlayer]->receiveTrick(trick.getPlayedCards());
         }
-        scoreDeal();
+        notifyEndRound();
+        scoreRound();
     }
 
 private:
+    void notifyStartRound()
+    {
+        for (PlayerRef & player : mPlayers)
+        {
+            player->notifyStartRound(mRoundIndex, mPassDirection, player->getHand());
+        }
+    }
+
+    void notifyEndRound()
+    {
+        std::map<PlayerID, int> roundScores;
+        for (PlayerRef & player : mPlayers)
+        {
+            roundScores[player->getName()] = player->getScore();
+        }
+        for (PlayerRef & player : mPlayers)
+        {
+            player->notifyEndRound(roundScores);
+        }
+    }
+
     void dealCards()
     {
         auto fullDeck = CardCollection::ShuffledDeck();
@@ -43,9 +66,8 @@ private:
 
         for (int i = 0; i < Constants::NUM_PLAYERS; i++)
         {
-            Player & player = mPlayers[i].get();
-            player.resetReceivedTrickCards();
-            player.assignHand(hands[i]);
+            mPlayers[i]->resetReceivedTrickCards();
+            mPlayers[i]->assignHand(hands[i]);
         }
 
     }
@@ -56,23 +78,25 @@ private:
             return;
 
         std::vector<CardCollection> passedCards;
-        for (PlayerRef player: mPlayers)
+        for (const auto& player: mPlayers)
         {
-            auto cards = player.get().getCardsToPass(mPassDirection);
+            auto cards = player->getCardsToPass(mPassDirection);
             ASRT_EQ(cards.size(), Constants::NUM_CARDS_TO_PASS);
+            player->removeCardsFromHand(cards);
             passedCards.push_back(cards);
         }
 
         for (int passFrom = 0; passFrom < Constants::NUM_PLAYERS; passFrom++)
         {
             auto passTo = playerToPassTo(passFrom);
-            mPlayers[passTo].get().receiveCards(passedCards[passFrom]);
+            mPlayers[passTo]->receiveCards(passedCards[passFrom]);
+            mPlayers[passTo]->notifyReceivedCards(passedCards[passFrom]);
         }
     }
 
     int playerToPassTo(int fromPlayer)
     {
-        int passTo = fromPlayer;
+        int passTo;
         switch (mPassDirection)
         {
             case Left:
@@ -98,11 +122,11 @@ private:
     {
         for(int playerI = 0; playerI < Constants::NUM_PLAYERS; playerI++)
         {
-            LOG("%s: %s", mPlayers[playerI].get().getName().c_str(), mPlayers[playerI].get().getHand().getAbbreviation().c_str());
+            LOG("%s: %s", mPlayers[playerI]->getName().c_str(), mPlayers[playerI]->getHand().getAbbreviation().c_str());
         }
         for(int playerI = 0; playerI < Constants::NUM_PLAYERS; playerI++)
         {
-            if (mPlayers[playerI].get().getHand().contains(Constants::STARTING_CARD))
+            if (mPlayers[playerI]->getHand().contains(Constants::STARTING_CARD))
             {
                 return playerI;
             }
@@ -110,37 +134,39 @@ private:
         DIE("Unable to find player with starting card");
     }
 
-    void scoreDeal()
+    void scoreRound()
     {
-        int scores[Constants::NUM_PLAYERS];
         int totalScore = 0;
-        for (int playerI = 0; playerI < Constants::NUM_PLAYERS; playerI++)
+        for (const auto& playerRef: mPlayers)
         {
-            auto receivedTrickCards = mPlayers[playerI].get().getReceivedTrickCards();
+            auto receivedTrickCards = playerRef->getReceivedTrickCards();
             size_t numHearts = receivedTrickCards.filter([](Card card){return card.getSuit() == Suit::HEARTS;}).size();
             bool queen = receivedTrickCards.contains(Card(QUEEN, SPADES));
             int score = static_cast<int>(numHearts) + queen * Constants::QUEEN_SCORE;
-            scores[playerI] = score;
+            mRoundScores[playerRef->getName()] = score;
             totalScore += score;
-            if (scores[playerI] == Constants::MAX_TRICK_SCORE)
+
+            if (score == Constants::MAX_TRICK_SCORE)
             {
-                for (int & playerScore : scores)
-                    playerScore = Constants::MAX_TRICK_SCORE;
-                scores[playerI] = 0;
+                for (const auto& player: mPlayers)
+                    mRoundScores[player->getName()] = Constants::MAX_TRICK_SCORE;
+                mRoundScores[playerRef->getName()] = 0;
                 break;
             }
         }
 
         ASRT_EQ(totalScore, Constants::MAX_TRICK_SCORE);
-        for (int playerI = 0; playerI < Constants::NUM_PLAYERS; playerI++)
+        for (const auto& playerRef: mPlayers)
         {
-            mPlayers[playerI].get().addPoints(scores[playerI]);
+            playerRef->addPoints(mRoundScores[playerRef->getName()]);
         }
     }
 
     PlayerArray mPlayers;
     PassDirection mPassDirection;
+    int mRoundIndex;
     std::vector<Trick> mTricks;
+    std::map<PlayerID, int> mRoundScores;
 };
 
 }

@@ -9,9 +9,10 @@ namespace Common::Server
     constexpr int SUCCESS_CODE = 0;
     constexpr int MAX_CONNECTIONS = 10;
 
-    constexpr bool LOG_ALL_SENT_MESSAGES = false;
-    constexpr bool LOG_ALL_RECEIVED_MESSAGES = false;
+    constexpr bool LOG_ALL_SENT_MESSAGES = true;
+    constexpr bool LOG_ALL_RECEIVED_MESSAGES = true;
 }
+
 
 namespace Common::Server::Tags
 {

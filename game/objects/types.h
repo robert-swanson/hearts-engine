@@ -3,6 +3,22 @@
 namespace Common::Game
 {
     enum PassDirection {Left, Right, Across, Keeper};
+    std::string PassDirectionToString(PassDirection passDirection)
+    {
+        switch (passDirection) {
+            case Keeper:
+                return "Keeper";
+            case Left:
+                return "Left";
+            case Right:
+                return "Right";
+            case Across:
+                return "Across";
+            default:
+                return "Unknown";
+        }
+    }
+
     PassDirection NextPassDirection(PassDirection passDirection)
     {
         switch (passDirection) {
@@ -16,6 +32,7 @@ namespace Common::Game
                 return Keeper;
         }
     }
+    using PlayerID = std::string;
 }
 
 

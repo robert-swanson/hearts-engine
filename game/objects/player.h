@@ -4,23 +4,37 @@
 #include <utility>
 #include "card_collection.h"
 #include "types.h"
+#include <map>
 
 namespace Common::Game
 {
 class Player
 {
 public:
-    explicit Player(std::string  name) : mName(std::move(name)), mHand(), mTrickPlayedCards(), mScore(0) {}
+    explicit Player(PlayerID playerId) : mPlayerID(std::move(playerId)), mHand(), mTrickPlayedCards(), mScore(0) {}
+
+
+    // Notifying virtual functions
+    virtual void notifyStartGame(std::vector<PlayerID> playerOrder) = 0;
+    virtual void notifyStartRound(int roundIndex, PassDirection passDirection, CardCollection hand) = 0;
+    virtual CardCollection getCardsToPass(PassDirection direction) = 0;
+    virtual void notifyReceivedCards(const CardCollection& receivedCards) = 0;
+    virtual void notifyStartTrick(int trickIndex, std::vector<PlayerID> playerOrder) = 0;
+    virtual Card getMove(const CardCollection& legalPlays) = 0;
+    virtual void notifyMove(PlayerID playerID, Card card) = 0;
+    virtual void notifyEndTrick(PlayerID winningPlayer) = 0;
+    virtual void notifyEndRound(std::map<PlayerID, int> & roundScores) = 0;
+    virtual void notifyEndGame(std::map<PlayerID, int> & gameScores, PlayerID winner) = 0;
+
 
     void assignHand(CardCollection const & hand)
     {
         mHand = hand;
     }
 
-    CardCollection getCardsToPass(PassDirection direction) {
-        auto cardsToPass = mHand.subset(0, Constants::NUM_CARDS_TO_PASS);
-        mHand = mHand - cardsToPass;
-        return cardsToPass;
+    void removeCardsFromHand(CardCollection const & cards)
+    {
+        mHand = mHand - cards;
     }
 
     void receiveCards(const CardCollection& receivedCards)
@@ -49,14 +63,7 @@ public:
         return mTrickPlayedCards;
     }
 
-    Card getPlay(const CardCollection& legalPlays)
-    {
-        Card play = legalPlays[0];
-        mHand = mHand - CardCollection{play};
-        return play;
-    }
-
-    int getScore() const
+    [[nodiscard]] int getScore() const
     {
         return mScore;
     }
@@ -68,17 +75,21 @@ public:
 
     std::string getName()
     {
-        return mName;
+        return mPlayerID;
+    }
+
+    [[nodiscard]] const CardCollection &getMHand() const {
+        return mHand;
     }
 
 private:
-    std::string mName;
+    std::string mPlayerID;
     CardCollection mHand;
     CardCollection mTrickPlayedCards;
     int mScore;
 };
 
-using PlayerRef = std::reference_wrapper<Player>;
+using PlayerRef = std::shared_ptr<Player>;
 using PlayerArray = std::array<PlayerRef, Constants::NUM_PLAYERS>;
 
 PlayerArray LeftShiftArray(const PlayerArray & arr, size_t offset) {
@@ -89,6 +100,14 @@ PlayerArray LeftShiftArray(const PlayerArray & arr, size_t offset) {
         result[newIndex] = arr[i];
     }
 
+    return result;
+}
+
+std::vector<PlayerID> PlayerArrayToIds(const PlayerArray & arr) {
+    std::vector<PlayerID> result;
+    for (const PlayerRef & player : arr) {
+        result.push_back(player->getName());
+    }
     return result;
 }
 

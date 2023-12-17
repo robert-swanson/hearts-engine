@@ -1,4 +1,4 @@
- once
+#pragma once
 
 #include <utility>
 
@@ -18,15 +18,19 @@ public:
     void RunTrick()
     {
         printf("Trick %d: ", mTrickIndex);
+        notifyStartTrick();
         for (PlayerRef currentPlayer : mPlayers)
         {
             CardCollection legalMoves = legalMovesForPlayer(currentPlayer);
-            Card card = currentPlayer.get().getPlay(legalMoves);
-            printf("%s: %s, ", currentPlayer.get().getName().c_str(), card.getAbbreviation().c_str());
+            Card card = currentPlayer->getMove(legalMoves);
+            currentPlayer->removeCardsFromHand(CardCollection{card});
+            printf("%s: %s, ", currentPlayer->getName().c_str(), card.getAbbreviation().c_str());
             ASRT(legalMoves.contains(card), "Player played illegal card %s", card.getAbbreviation().c_str());
             mPlayedCards = mPlayedCards + card;
             mBrokenHearts |= (card.getSuit() == HEARTS);
+            notifyMove(currentPlayer, card);
         }
+        notifyEndTrick(mPlayers[getTrickWinner()]);
     }
 
     bool heartsBroken() const
@@ -49,7 +53,7 @@ public:
                 winningRank = card.getRank();
             }
         }
-        printf("Winner = %s\n", mPlayers[winningPlayer].get().getName().c_str());
+        printf("Winner = %s\n", mPlayers[winningPlayer]->getName().c_str());
         return winningPlayer;
     }
 
@@ -60,7 +64,7 @@ public:
 
     CardCollection legalMovesForPlayer(PlayerRef player)
     {
-        CardCollection legalMoves = player.get().getHand();
+        CardCollection legalMoves = player->getHand();
         ASRT(!legalMoves.empty(), "Can't get legal move from empty hand");
         bool leadingPlay = mPlayedCards.empty();
         if (not leadingPlay) {
@@ -96,6 +100,30 @@ public:
     }
 
 private:
+    void notifyStartTrick()
+    {
+        for (PlayerRef & player : mPlayers)
+        {
+            player->notifyStartTrick(mTrickIndex, PlayerArrayToIds(mPlayers));
+        }
+    }
+
+    void notifyMove(PlayerRef player, Card card)
+    {
+        for (PlayerRef & otherPlayer : mPlayers)
+        {
+            otherPlayer->notifyMove(player->getName(), card);
+        }
+    }
+
+    void notifyEndTrick(PlayerRef winner)
+    {
+        for (PlayerRef & player : mPlayers)
+        {
+            player->notifyEndTrick(winner->getName());
+        }
+    }
+
     PlayerArray mPlayers;
     int mTrickIndex;
     bool mBrokenHearts;

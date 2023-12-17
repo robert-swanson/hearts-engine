@@ -6,15 +6,17 @@
 #include <arpa/inet.h>
 #include "connection.h"
 #include "../types.h"
-#include "../messages/server/accept_connection.h"
-#include "../messages/client/connection_request.h"
 
 using namespace boost::asio;
 
 namespace Common::Server {
 struct SessionParts
 {
-    std::vector<Common::Server::Message::AnySessionMessage> unprocessedReceivedMessages;
+    SessionParts(): unprocessedReceivedMessages(), waitCondition(), mutex()
+    {
+    }
+
+    std::vector<Common::Server::Message::SessionMessage> unprocessedReceivedMessages;
     std::condition_variable waitCondition;
     std::mutex mutex;
 };
@@ -26,32 +28,33 @@ public:
             Connection::handleConnectionRequest();
         }
         catch (std::exception &e) {
-            LOG("Error with client at %s:%d: %s", this->clientIP, this->clientPort, e.what());
+            LOG("Error with client at %s:%d: %s", this->mClientIP, this->mClientPort, e.what());
         }
     }
 
 
-    void ConnectionListener(const std::function<void(ManagedConnection &)> &new_session_callback) {
+    void ConnectionListener(const std::function<PlayerGameSessionID (ManagedConnection &)> &new_session_callback) {
         try {
             while (true) {
-                auto message = this->receive<Message::AnyMessage>();
-                if (message.value["type"] == ClientMsgTypes::GAME_SESSION_REQUEST) {
-                    new_session_callback(*this);
+                auto message = this->receive();
+                if (message.getJson()["type"] == ClientMsgTypes::GAME_SESSION_REQUEST) {
+                    PlayerGameSessionID sessionID = new_session_callback(*this);
+                    playerGameSessions[sessionID];
                 } else {
-                    auto sessionId = message.value[Tags::SESSION_ID].get<PlayerGameSessionID>();
-                    Message::AnySessionMessage sessionMessage = dynamic_cast<Message::AnySessionMessage &>(message);
+                    auto sessionId = message.getJson()[Tags::SESSION_ID].get<PlayerGameSessionID>();
+                    auto sessionMessage = Message::SessionMessage(message);
                     auto sessionParts = playerGameSessions.find(sessionId);
-                    ASRT(sessionParts != playerGameSessions.end(), "Session ID %d not found", sessionId);
+                    ASRT(sessionParts != playerGameSessions.end(), "Session ID %lld not found", sessionId);
                     sessionParts->second.unprocessedReceivedMessages.push_back(sessionMessage);
                     sessionParts->second.waitCondition.notify_all();
                 }
             }
         }
         catch (std::exception &e) {
-            if (e.what() != std::string("read_some: End of file")) {
-                LOG("Client at %s:%d disconnected", this->clientIP, this->clientPort);
+            if (e.what() == std::string("read_some: End of file")) {
+                LOG("Client at %s:%d disconnected", this->mClientIP, this->mClientPort);
             } else {
-                LOG("Error with client at %s:%d: %s", this->clientIP, this->clientPort, e.what());
+                LOG("Error with client at %s:%d: %s", this->mClientIP, this->mClientPort, e.what());
             }
         }
     }
@@ -65,14 +68,14 @@ public:
                 connections.end());
     }
 
-    void sendOnSession(Message::AnySessionMessage &message) {
-        ASRT(message.value.find(Tags::SESSION_ID) != message.value.end(), "Message has no session ID");
+    void sendOnSession(Message::SessionMessage message) {
+        ASRT(message.getJson().find(Tags::SESSION_ID) != message.getJson().end(), "Message has no session ID");
         send(message);
     }
 
-    Message::AnySessionMessage receiveOnSession(PlayerGameSessionID sessionId) {
+    Message::SessionMessage receiveOnSession(PlayerGameSessionID sessionId) {
         auto sessionParts = playerGameSessions.find(sessionId);
-        ASRT(sessionParts != playerGameSessions.end(), "Session ID %d not found", sessionId);
+        ASRT(sessionParts != playerGameSessions.end(), "Session ID %lld not found", sessionId);
         std::unique_lock<std::mutex> lock(sessionParts->second.mutex);
         sessionParts->second.waitCondition.wait(lock, [&sessionParts] {
             return !sessionParts->second.unprocessedReceivedMessages.empty();

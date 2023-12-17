@@ -9,29 +9,34 @@ class PlayerGameSession
 {
 public:
     explicit PlayerGameSession(PlayerGameSessionID game_session_id, Common::Server::ManagedConnection &connection)
-    : player_id("player"), game_session_id(game_session_id), connection(connection) {}
+    : mPlayerId(connection.getPlayerID()), mGameSessionID(game_session_id), mConnection(connection) {}
 
     void RunGameSession() {
-        Message::AnyMessage message;
-        json j = {{Tags::TYPE, ServerMsgTypes::GAME_SESSION_RESPONSE}, {Tags::STATUS, ServerStatus::SUCCESS}};
-        message.value = j;
-        send(message);
+        send({{
+            {Tags::TYPE, ServerMsgTypes::GAME_SESSION_RESPONSE},
+            {Tags::STATUS, ServerStatus::SUCCESS}
+        }});
     }
 
-    void send(Message::AnyMessage &message)
+    void send(Message::Message message)
     {
-        message.value[Tags::SESSION_ID] = game_session_id;
-        connection.sendOnSession(static_cast<Message::AnySessionMessage &>(message));
+        Message::SessionMessage sessionMessage(message, mGameSessionID);
+        mConnection.sendOnSession(sessionMessage);
     }
 
-    Message::AnyMessage receive(Message::AnyMessage &message)
+    Message::Message receive()
     {
-        return connection.receiveOnSession(game_session_id);
+        return mConnection.receiveOnSession(mGameSessionID);
     }
+
+    [[nodiscard]] PlayerID getPlayerId() const {
+        return mPlayerId;
+    }
+
 private:
-    Common::Server::PlayerID player_id;
-    PlayerGameSessionID game_session_id;
-    ManagedConnection &connection;
+    Common::Server::PlayerID mPlayerId;
+    PlayerGameSessionID mGameSessionID;
+    ManagedConnection &mConnection;
 };
 
 }

@@ -10,14 +10,14 @@ from clients.python.types.PlayerTag import PlayerTag
 
 class ActiveRound(PassingMessenger, Round):
     def __init__(self, messenger: Messenger, player: Player, player_order: List[PlayerTag]):
-        super().__init__(messenger)
+        PassingMessenger.__init__(self, messenger)
         self.player = player
 
         round_msg = self.receive_type(ServerMsgTypes.START_ROUND)
         round_idx = int(round_msg[Tags.ROUND_INDEX])
         pass_direction = PassDirection(round_msg[Tags.PASS_DIRECTION])
         cards = round_msg[Tags.CARDS]
-        super().__init__(round_idx, pass_direction, player_order, cards)
+        Round.__init__(self, round_idx, pass_direction, player_order, cards)
 
     def get_receiving_player(self):
         return self.pass_direction.get_receiving_player(self.player_order, self.player.player_tag)

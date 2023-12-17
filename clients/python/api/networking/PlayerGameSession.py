@@ -13,8 +13,12 @@ class GameSession(Messenger):
         self.connection = connection
         self.game_type = game_type
         self.player = player
-        self.session_id = self.setup()
-        connection.add_session(self.session_id)
+
+        session_request = {
+            Tags.TYPE: ClientMsgTypes.REQUEST_GAME_SESSION,
+            Tags.GAME_TYPE: self.game_type.value
+        }
+        self.session_id = connection.request_session(session_request)
 
         self.current_round = None
 
@@ -28,16 +32,6 @@ class GameSession(Messenger):
         session = GameSession(connection, game_type, player)
         return threading.Thread(target=session.run_game)
 
-    def setup(self) -> SessionID:
-        session_request = {
-            Tags.TYPE: ClientMsgTypes.REQUEST_GAME_REQUEST,
-            Tags.GAME_TYPE: self.game_type.value
-        }
-
-        self.connection.send(session_request)
-        setup = self.connection.receive_status(ServerStatus.SUCCESS, ServerMsgTypes.GAME_SESSION_RESPONSE)
-        return setup[Tags.SESSION_ID]
-
     def receive(self) -> json:
         return self.connection.receive_from_session(self.session_id)
 
@@ -50,7 +44,7 @@ class GameSession(Messenger):
     def receive_status(self, expected_status: str, expected_msg_type: str) -> json:
         response = self.receive_type(expected_msg_type)
         assert response[Tags.STATUS] == expected_status, \
-            f"Expected status {expected_status}, got {response[Tags.STATUS]}"
+            f"Expected mStatus {expected_status}, got {response[Tags.STATUS]}"
         return response
 
     def get_next_message_type(self) -> str:

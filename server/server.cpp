@@ -32,7 +32,7 @@ int main()
         acceptor.accept(*socket);
         ManagedConnection::CleanConnections(connections);
         auto & connection = connections.emplace_back(std::make_unique<ManagedConnection>(socket));
-        std::thread(&ManagedConnection::ConnectionListener, connection.get(), Matcher::HandleNewSession).detach();
+        std::thread(&ManagedConnection::ConnectionListener, connection.get(), Matcher::HandleSessionRequest).detach();
     }
 
     return 0;

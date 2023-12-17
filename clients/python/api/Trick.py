@@ -1,17 +1,18 @@
 from clients.python.api.networking.Messenger import PassingMessenger, Messenger
 from clients.python.players.Player import Player, Trick
 from clients.python.types.Constants import ServerMsgTypes, Tags, ClientMsgTypes
+from clients.python.types.PlayerTag import PlayerTag
 
 
 class ActiveTrick(PassingMessenger, Trick):
     def __init__(self, messenger: Messenger, player: Player):
-        super().__init__(messenger)
+        PassingMessenger.__init__(self, messenger)
         self.player = player
 
         trick_msg = self.receive_type(ServerMsgTypes.START_TRICK)
         trick_idx = int(trick_msg[Tags.TRICK_INDEX])
-        player_order = trick_msg[Tags.PLAYER_ORDER]
-        super().__init__(trick_idx, player_order)
+        player_order = [PlayerTag(tag) for tag in trick_msg[Tags.PLAYER_ORDER]]
+        Trick.__init__(self, trick_idx, player_order)
 
     def run_trick(self, player: Player):
         player.handle_new_trick(self)
