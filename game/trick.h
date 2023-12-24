@@ -17,14 +17,14 @@ public:
 
     void RunTrick()
     {
-        printf("Trick %d: ", mTrickIndex);
+        printf("\n### Trick %d: ", mTrickIndex);
         notifyStartTrick();
         for (PlayerRef currentPlayer : mPlayers)
         {
             CardCollection legalMoves = legalMovesForPlayer(currentPlayer);
             Card card = currentPlayer->getMove(legalMoves);
             currentPlayer->removeCardsFromHand(CardCollection{card});
-            printf("%s: %s, ", currentPlayer->getName().c_str(), card.getAbbreviation().c_str());
+            printf("%s: %s, ", currentPlayer->getTagSession().c_str(), card.getAbbreviation().c_str());
             ASRT(legalMoves.contains(card), "Player played illegal card %s", card.getAbbreviation().c_str());
             mPlayedCards = mPlayedCards + card;
             mBrokenHearts |= (card.getSuit() == HEARTS);
@@ -53,7 +53,7 @@ public:
                 winningRank = card.getRank();
             }
         }
-        printf("Winner = %s\n", mPlayers[winningPlayer]->getName().c_str());
+        printf("Winner = %s\n", mPlayers[winningPlayer]->getTagSession().c_str());
         return winningPlayer;
     }
 
@@ -112,7 +112,7 @@ private:
     {
         for (PlayerRef & otherPlayer : mPlayers)
         {
-            otherPlayer->notifyMove(player->getName(), card);
+            otherPlayer->notifyMove(player->getTagSession(), card);
         }
     }
 
@@ -120,7 +120,7 @@ private:
     {
         for (PlayerRef & player : mPlayers)
         {
-            player->notifyEndTrick(winner->getName());
+            player->notifyEndTrick(winner->getTagSession());
         }
     }
 

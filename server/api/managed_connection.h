@@ -70,6 +70,7 @@ public:
 
     void sendOnSession(Message::SessionMessage message) {
         ASRT(message.getJson().find(Tags::SESSION_ID) != message.getJson().end(), "Message has no session ID");
+        CONDITIONAL_LOG(LOG_ALL_RECEIVED_MESSAGES, "%lld.%u: Sent:\t%s", message.getSessionID(), message.getSeqNum(), message.getMsgType().c_str());
         send(message);
     }
 
@@ -83,6 +84,7 @@ public:
         auto message = sessionParts->second.unprocessedReceivedMessages[0];
         sessionParts->second.unprocessedReceivedMessages.erase(
                 sessionParts->second.unprocessedReceivedMessages.begin());
+        CONDITIONAL_LOG(LOG_ALL_RECEIVED_MESSAGES, "%lld.%u: Received:\t%s", sessionId, message.getSeqNum(), message.getMsgType().c_str());
         return message;
     }
 

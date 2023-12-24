@@ -5,7 +5,8 @@ from typing import Dict, Optional, Set, List
 
 from clients.python.api.networking.Connection import Connection
 from clients.python.types.Constants import SERVER_IP, SERVER_PORT, Tags, ServerMsgTypes, ServerStatus
-from clients.python.types.PlayerTag import PlayerTag
+from clients.python.types.PlayerTagSession import PlayerTag
+from clients.python.types.logger import log_message
 
 SessionID = int
 UNASSIGNED_SESSION: SessionID = -1
@@ -30,7 +31,7 @@ class ManagedConnection(Connection):
             assert game_session_response[Tags.STATUS] == ServerStatus.SUCCESS
             session_id = game_session_response[Tags.SESSION_ID]
             self.id_to_received_messages[session_id] = []
-            return session_id
+            return game_session_response
 
     def end_session(self, session_id: SessionID):
         self.id_to_received_messages.pop(session_id)
@@ -66,8 +67,8 @@ class ManagedConnection(Connection):
     def _start_receiver_thread(self):
         if self.receiver_thread is not None:
             return
-        receiver_thread = threading.Thread(target=self._receive_loop)
-        receiver_thread.start()
+        self.receiver_thread = threading.Thread(target=self._receive_loop)
+        self.receiver_thread.start()
 
     def send_to_session(self, session_id: SessionID, json_data: json) -> None:
         json_data["session_id"] = session_id

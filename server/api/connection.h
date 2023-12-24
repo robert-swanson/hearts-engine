@@ -36,14 +36,14 @@ protected:
     void handleConnectionRequest()
     {
         auto connectionRequest = receive();
-        mPlayerID = connectionRequest.getTag<PlayerID>(Tags::PLAYER_TAG);
+        mPlayerTag = connectionRequest.getTag<PlayerTag>(Tags::PLAYER_TAG);
 
         Message::Message connectionResponse = Message::Message(ServerMsgTypes::CONNECTION_RESPONSE, {
             {Tags::STATUS, ServerStatus::SUCCESS}
         });
         send(connectionResponse);
 
-        LOG("\nConnected to '%s' at %s:%d", mPlayerID.c_str(), mClientIP, mClientPort);
+        LOG("\nConnected to '%s' at %s:%d", mPlayerTag.c_str(), mClientIP, mClientPort);
     }
 
     Message::Message receive()
@@ -52,14 +52,14 @@ protected:
         size_t bytes_read = mClientSocket->read_some(buffer(buf));
         buf[bytes_read] = '\0';
         json jsonMsg = json::parse(buf);
-        CONDITIONAL_LOG(LOG_ALL_RECEIVED_MESSAGES, "<<< %s", jsonMsg.dump().c_str());
+//        CONDITIONAL_LOG(LOG_ALL_RECEIVED_MESSAGES, "<<< %s", jsonMsg.dump().c_str());
         return {jsonMsg};
     }
 
     void send(Message::Message message)
     {
         auto jsonStr = message.getJson().dump();
-        CONDITIONAL_LOG(LOG_ALL_SENT_MESSAGES, ">>> %s", jsonStr.c_str());
+//        CONDITIONAL_LOG(LOG_ALL_SENT_MESSAGES, ">>> %s", jsonStr.c_str());
         write(*mClientSocket, buffer(jsonStr));
     }
 
@@ -84,9 +84,9 @@ public:
         return mStatus == ConnectionStatus::CONNECTED;
     }
 
-    PlayerID getPlayerID()
+    PlayerTag getPlayerTag()
     {
-        return mPlayerID;
+        return mPlayerTag;
     }
 
 protected:
@@ -94,6 +94,6 @@ protected:
     char mClientIP[INET_ADDRSTRLEN];
     int mClientPort;
     ConnectionStatus mStatus;
-    PlayerID mPlayerID;
+    PlayerTag mPlayerTag;
 };
 }

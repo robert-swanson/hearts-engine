@@ -1,12 +1,13 @@
 import json
+import threading
 from enum import Enum
 from socket import socket, AF_INET, SOCK_STREAM
 from typing import List
 
-from clients.python.types.Constants import SERVER_IP, SERVER_PORT, LOG_ALL_RECEIVED_MESSAGES, LOG_ALL_SENT_MESSAGES, \
-    Tags, ClientMsgTypes, ServerMsgTypes, \
+from clients.python.types.Constants import SERVER_IP, SERVER_PORT, Tags, ClientMsgTypes, ServerMsgTypes, \
     ServerStatus
-from clients.python.types.PlayerTag import PlayerTag
+from clients.python.types.PlayerTagSession import PlayerTag
+from clients.python.types.logger import log_message
 
 
 class ConnectionStatus(Enum):
@@ -24,6 +25,7 @@ class Connection:
         self.status = ConnectionStatus.CONNECTED
         self.pending_messages: List[json] = []
         self.logging_session = -1
+        self.sending_lock = threading.Lock()
 
         self.setup()
         print(f"Connected player {player_tag} to {SERVER_IP}:{SERVER_PORT}")
@@ -39,12 +41,7 @@ class Connection:
         else:
             json_data = self.pending_messages.pop(0)
 
-        if self.should_log_message(json_data, False):
-            print("<<<<<<<")
-            print(json.dumps(json_data, default=str, indent=1))
-            print("<<<<<<<")
-            print()
-
+        log_message("Received", json_data, False)
         return json_data
 
     @staticmethod
@@ -52,8 +49,8 @@ class Connection:
         json_objects = []
         previous_split = 0
         while True:
-            next_split = data[previous_split:].find("}{") + 1
-            if next_split == 0:
+            next_split = data[previous_split:].find("}{") + 1 + previous_split
+            if next_split == previous_split:
                 next_split = len(data)
             json_data = json.loads(data[previous_split:next_split])
             json_objects.append(json_data)
@@ -72,26 +69,11 @@ class Connection:
 
     def send(self, json_data: json):
         json_str = json.dumps(json_data, default=str, indent=1)
-        if self.should_log_message(json_data, True):
-            print(">>>>>>")
-            print(json_str)
-            print(">>>>>>")
-            print()
-        bytes_sent = self.client_socket.send(json_str.encode("utf-8"))
-        if bytes_sent != len(json_str):
-            raise ConnectionError(f"Expected to send {len(json_str)} bytes, but sent {bytes_sent}")
-
-    def should_log_message(self, json_data: json, sending: bool) -> bool:
-        if sending and not LOG_ALL_SENT_MESSAGES:
-            return False
-        if not sending and not LOG_ALL_RECEIVED_MESSAGES:
-            return False
-        if Tags.SESSION_ID not in json_data:
-            return False
-        session_id = json_data[Tags.SESSION_ID]
-        if self.logging_session == -1:
-            self.logging_session = session_id
-        return session_id == self.logging_session
+        with self.sending_lock:
+            log_message("Sent", json_data, True)
+            bytes_sent = self.client_socket.send(json_str.encode("utf-8"))
+            if bytes_sent != len(json_str):
+                raise ConnectionError(f"Expected to send {len(json_str)} bytes, but sent {bytes_sent}")
 
     def setup(self):
         connection_request = {

@@ -17,7 +17,7 @@ public:
 
     PlayerArray runGame()
     {
-        LOG("starting game");
+        LOG("\n# Starting Game");
         PassDirection passDirection = Left;
         updateRankings();
         notifyStartGame();
@@ -30,11 +30,11 @@ public:
             LOG("Max score %d", mMaxScore);
         }
         notifyEndGame();
-        LOG("Final rankings:");
+        LOG("## Final rankings:");
         for (int i = 0; i < Constants::NUM_PLAYERS; i++)
         {
             auto player = mRankings[mRankings.size()-1-i];
-            LOG("%d: %s (%d points)", i+1, player->getName().c_str(), player->getScore());
+            LOG("%d: %s (%d points)", i+1, player->getTagSession().c_str(), player->getScore());
         }
         return mRankings;
     }
@@ -53,11 +53,11 @@ private:
         std::map<PlayerID, int> playerScores;
         for (PlayerRef & player : mPlayers)
         {
-            playerScores[player->getName()] = player->getScore();
+            playerScores[player->getTagSession()] = player->getScore();
         }
         for (PlayerRef & player : mPlayers)
         {
-            player->notifyEndGame(playerScores, mRankings[0]->getName());
+            player->notifyEndGame(playerScores, mRankings[0]->getTagSession());
         }
     }
 

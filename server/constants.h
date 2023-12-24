@@ -19,7 +19,9 @@ namespace Common::Server::Tags
     constexpr auto TYPE = "type";
     constexpr auto STATUS = "status";
     constexpr auto SESSION_ID = "session_id";
+    constexpr auto SEQ_NUM = "seq_num";
     constexpr auto PLAYER_TAG = "player_tag";
+    constexpr auto PLAYER_SESSION_ID = "player_session_id";
     constexpr auto GAME_TYPE = "game_type";
     constexpr auto PLAYER_ORDER = "player_order";
     constexpr auto PASS_DIRECTION = "pass_direction";

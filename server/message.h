@@ -39,15 +39,17 @@ protected:
 class SessionMessage : public Message
 {
 public:
-    SessionMessage(Message message, PlayerGameSessionID sessionID):
-        Message(message.getMsgType(), message.getJson()), mSessionID(sessionID)
+    SessionMessage(Message message, PlayerGameSessionID sessionID, uint16_t seqNum):
+        Message(message.getMsgType(), message.getJson()), mSessionID(sessionID), mSeqNum(seqNum)
     {
         mJson[Tags::SESSION_ID] = sessionID;
+        mJson[Tags::SEQ_NUM] = seqNum;
     };
 
     SessionMessage(Message message): Message(message.getMsgType(), message.getJson())
     {
         mSessionID = mJson[Tags::SESSION_ID];
+        mSeqNum = mJson[Tags::SEQ_NUM];
     }
 
     PlayerGameSessionID getSessionID() const
@@ -55,8 +57,14 @@ public:
         return mSessionID;
     }
 
+    uint16_t getSeqNum() const
+    {
+        return mSeqNum;
+    }
+
 private:
     PlayerGameSessionID mSessionID;
+    int16_t mSeqNum;
 };
 
 }

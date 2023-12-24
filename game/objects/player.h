@@ -11,7 +11,7 @@ namespace Common::Game
 class Player
 {
 public:
-    explicit Player(PlayerID playerId) : mPlayerID(std::move(playerId)), mHand(), mTrickPlayedCards(), mScore(0) {}
+    explicit Player(Server::PlayerTagSession playerSession) : mTagSession(std::move(playerSession)), mHand(), mTrickPlayedCards(), mScore(0) {}
 
 
     // Notifying virtual functions
@@ -73,9 +73,9 @@ public:
         mScore += newPoints;
     }
 
-    std::string getName()
+    std::string getTagSession()
     {
-        return mPlayerID;
+        return mTagSession;
     }
 
     [[nodiscard]] const CardCollection &getMHand() const {
@@ -83,7 +83,7 @@ public:
     }
 
 private:
-    std::string mPlayerID;
+    Server::PlayerTagSession mTagSession;
     CardCollection mHand;
     CardCollection mTrickPlayedCards;
     int mScore;
@@ -106,7 +106,7 @@ PlayerArray LeftShiftArray(const PlayerArray & arr, size_t offset) {
 std::vector<PlayerID> PlayerArrayToIds(const PlayerArray & arr) {
     std::vector<PlayerID> result;
     for (const PlayerRef & player : arr) {
-        result.push_back(player->getName());
+        result.push_back(player->getTagSession());
     }
     return result;
 }

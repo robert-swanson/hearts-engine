@@ -1,8 +1,8 @@
+from clients.python.api.Round import ActiveRound
 from clients.python.api.networking.Messenger import Messenger, PassingMessenger
 from clients.python.players.Player import Player, Game
-from clients.python.api.Round import ActiveRound
 from clients.python.types.Constants import ServerMsgTypes, Tags
-from clients.python.types.PlayerTag import PlayerTag
+from clients.python.types.PlayerTagSession import MakePlayerTagSessions, MakePlayerTagSession
 
 
 class ActiveGame(PassingMessenger, Game):
@@ -11,7 +11,7 @@ class ActiveGame(PassingMessenger, Game):
         self.player = player
 
         start_game_msg = self.messenger.receive_type(ServerMsgTypes.START_GAME)
-        player_order = [PlayerTag(tag) for tag in start_game_msg[Tags.PLAYER_ORDER]]
+        player_order = MakePlayerTagSessions(start_game_msg[Tags.PLAYER_ORDER])
         Game.__init__(self, player_order)
 
     def run_game(self, player: Player):
@@ -26,7 +26,8 @@ class ActiveGame(PassingMessenger, Game):
                 break
 
         end_game_msg = self.messenger.receive_type(ServerMsgTypes.END_GAME)
-        players_to_points = end_game_msg[Tags.PLAYER_TO_GAME_POINTS]
-        winner = end_game_msg[Tags.WINNING_PLAYER]
+        players_to_points = {MakePlayerTagSession(tagSession): pts
+                             for tagSession, pts in end_game_msg[Tags.PLAYER_TO_GAME_POINTS].items()}
+        winner = MakePlayerTagSession(end_game_msg[Tags.WINNING_PLAYER])
         player.handle_end_game(players_to_points, winner)
 

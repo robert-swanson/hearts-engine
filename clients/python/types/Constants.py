@@ -4,14 +4,11 @@ from enum import Enum
 SERVER_IP = "localhost"
 SERVER_PORT = 40405
 
-LOG_ALL_SENT_MESSAGES = True
-LOG_ALL_RECEIVED_MESSAGES = True
-
-
 class Tags:
     TYPE = "type"
     STATUS = "status"
     SESSION_ID = "session_id"
+    SEQ_NUM = "seq_num"
     PLAYER_TAG = "player_tag"
     GAME_TYPE = "game_type"
     PLAYER_ORDER = "player_order"

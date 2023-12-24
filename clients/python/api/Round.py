@@ -1,15 +1,15 @@
 from typing import List
 
+from clients.python.api.Trick import ActiveTrick
 from clients.python.api.networking.Messenger import PassingMessenger, Messenger
 from clients.python.players.Player import Player, Round
-from clients.python.api.Trick import ActiveTrick
 from clients.python.types.Constants import ServerMsgTypes, Tags, ClientMsgTypes
 from clients.python.types.PassDirection import PassDirection
-from clients.python.types.PlayerTag import PlayerTag
+from clients.python.types.PlayerTagSession import PlayerTagSession
 
 
 class ActiveRound(PassingMessenger, Round):
-    def __init__(self, messenger: Messenger, player: Player, player_order: List[PlayerTag]):
+    def __init__(self, messenger: Messenger, player: Player, player_order: List[PlayerTagSession]):
         PassingMessenger.__init__(self, messenger)
         self.player = player
 

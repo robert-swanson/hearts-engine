@@ -17,7 +17,7 @@ public:
 
     void runDeal()
     {
-        LOG("Starting deal in direction %d", mPassDirection);
+        LOG("\n## Starting round in direction %d", mPassDirection);
         dealCards();
         notifyStartRound();
         passCards();
@@ -51,7 +51,7 @@ private:
         std::map<PlayerID, int> roundScores;
         for (PlayerRef & player : mPlayers)
         {
-            roundScores[player->getName()] = player->getScore();
+            roundScores[player->getTagSession()] = player->getScore();
         }
         for (PlayerRef & player : mPlayers)
         {
@@ -122,7 +122,7 @@ private:
     {
         for(int playerI = 0; playerI < Constants::NUM_PLAYERS; playerI++)
         {
-            LOG("%s: %s", mPlayers[playerI]->getName().c_str(), mPlayers[playerI]->getHand().getAbbreviation().c_str());
+            LOG("%s: %s", mPlayers[playerI]->getTagSession().c_str(), mPlayers[playerI]->getHand().getAbbreviation().c_str());
         }
         for(int playerI = 0; playerI < Constants::NUM_PLAYERS; playerI++)
         {
@@ -143,14 +143,14 @@ private:
             size_t numHearts = receivedTrickCards.filter([](Card card){return card.getSuit() == Suit::HEARTS;}).size();
             bool queen = receivedTrickCards.contains(Card(QUEEN, SPADES));
             int score = static_cast<int>(numHearts) + queen * Constants::QUEEN_SCORE;
-            mRoundScores[playerRef->getName()] = score;
+            mRoundScores[playerRef->getTagSession()] = score;
             totalScore += score;
 
             if (score == Constants::MAX_TRICK_SCORE)
             {
                 for (const auto& player: mPlayers)
-                    mRoundScores[player->getName()] = Constants::MAX_TRICK_SCORE;
-                mRoundScores[playerRef->getName()] = 0;
+                    mRoundScores[player->getTagSession()] = Constants::MAX_TRICK_SCORE;
+                mRoundScores[playerRef->getTagSession()] = 0;
                 break;
             }
         }
@@ -158,7 +158,7 @@ private:
         ASRT_EQ(totalScore, Constants::MAX_TRICK_SCORE);
         for (const auto& playerRef: mPlayers)
         {
-            playerRef->addPoints(mRoundScores[playerRef->getName()]);
+            playerRef->addPoints(mRoundScores[playerRef->getTagSession()]);
         }
     }
 

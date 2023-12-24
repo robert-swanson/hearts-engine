@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import List
 
-from clients.python.types.PlayerTag import PlayerTag
+from clients.python.types.PlayerTagSession import PlayerTagSession
 
 
 class PassDirection(Enum):
@@ -10,7 +10,7 @@ class PassDirection(Enum):
     ACROSS = "Across"
     KEEPER = "Keeper"
 
-    def _find_other(self, player_order: List[PlayerTag], this_player: PlayerTag):
+    def _find_other(self, player_order: List[PlayerTagSession], this_player: PlayerTagSession):
         this_idx = player_order.index(this_player)
         if self == PassDirection.LEFT:
             return player_order[(this_idx - 1) % len(player_order)]
@@ -35,8 +35,8 @@ class PassDirection(Enum):
         else:
             raise ValueError(f"Unknown pass direction {self}")
 
-    def get_receiving_player(self, player_order: List[PlayerTag], this_player: PlayerTag):
+    def get_receiving_player(self, player_order: List[PlayerTagSession], this_player: PlayerTagSession):
         return self._find_other(player_order, this_player)
 
-    def get_donating_player(self, player_order: List[PlayerTag], this_player: PlayerTag):
+    def get_donating_player(self, player_order: List[PlayerTagSession], this_player: PlayerTagSession):
         return self._invert()._find_other(player_order, this_player)

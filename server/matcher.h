@@ -33,7 +33,7 @@ public:
     {
         auto sessionID = sessionCounter.fetch_add(1, std::memory_order_relaxed);
         auto session = std::make_shared<PlayerGameSession>(sessionID, connection);
-        sessions.emplace(sessionID, *session);
+        sessions.emplace(sessionID, session);
         std::thread(&PlayerGameSession::RunGameSession, session).detach();
         unmatchedPlayers.push_back(sessionID);
         attemptMatch();
@@ -47,8 +47,8 @@ public:
             std::vector<Game::PlayerRef> players{};
             for (int i = 0; i < 4; i++)
             {
-                PlayerGameSession & session = sessions.at(unmatchedPlayers[0]);
-                players.emplace_back(std::make_shared<RemotePlayer>(session.getPlayerId(), session));
+                auto session = sessions.at(unmatchedPlayers[0]);
+                players.emplace_back(std::make_shared<RemotePlayer>(session->getPlayerTagSession(), session));
                 unmatchedPlayers.erase(unmatchedPlayers.begin());
             }
             Game::Game game({players[0], players[1], players[2], players[3]});
@@ -57,7 +57,7 @@ public:
     }
 
 private:
-    std::unordered_map<PlayerGameSessionID, PlayerGameSession> sessions;
+    std::unordered_map<PlayerGameSessionID, std::shared_ptr<PlayerGameSession>> sessions;
     std::atomic<PlayerGameSessionID> sessionCounter;
     std::vector<PlayerGameSessionID> unmatchedPlayers;
 };
