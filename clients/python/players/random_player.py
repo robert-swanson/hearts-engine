@@ -14,6 +14,7 @@ from clients.python.types.logger import log
 class RandomPlayer(Player):
     def __init__(self, player_tag: PlayerTagSession):
         super().__init__(player_tag)
+        self.hand = []
 
     # Game
     def initialize_for_game(self, game: Game) -> None:
@@ -44,19 +45,14 @@ class RandomPlayer(Player):
 
     # Moves
     def handle_move(self, player: PlayerTagSession, card: Card) -> None:
-        """Handle a move from any player (including this one)"""
         pass
 
     def get_move(self, trick: Trick, legal_moves: List[Card]) -> Card:
         return legal_moves[0]
 
 
-def main():
+if __name__ == '__main__':
     with ManagedConnection("random_player") as connection:
         for i in range(4):
             GameSession.SpawnNewThread(connection, GameType.ANY, RandomPlayer)
         GameSession.WaitForThreadsToFinish()
-
-
-if __name__ == '__main__':
-    main()
