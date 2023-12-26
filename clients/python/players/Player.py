@@ -1,5 +1,5 @@
 from abc import ABC
-from typing import List, Optional
+from typing import List, Optional, Dict
 
 from clients.python.types.Card import Card
 from clients.python.types.PassDirection import PassDirection
@@ -48,7 +48,7 @@ class Player(ABC):
     def handle_new_round(self, round: Round) -> None:
         pass
 
-    def handle_finished_round(self, round: Round) -> None:
+    def handle_finished_round(self, round: Round, round_points: Dict[PlayerTagSession, int]) -> None:
         pass
 
     def get_cards_to_pass(self, pass_dir: PassDirection, receiving_player: PlayerTagSession) -> List[Card]:

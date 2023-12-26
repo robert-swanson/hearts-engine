@@ -15,6 +15,9 @@ class PlayerTag:
     def __eq__(self, other):
         return self.tag == other.tag
 
+    def __hash__(self):
+        return hash(self.tag)
+
 
 class PlayerTagSession:
     def __init__(self, player_tag: PlayerTag, session_id: int):
@@ -29,11 +32,14 @@ class PlayerTagSession:
     def __repr__(self):
         return f"{self.player_tag}({self.session_id}))"
 
+    def __hash__(self):
+        return hash((self.player_tag, self.session_id))
+
 
 PLAYER_TAG_PATTERN = re.compile(r"(.*)\((.*)\)")
 
 
-def MakePlayerTagSession(string: str):
+def MakePlayerTagSession(string: str) -> PlayerTagSession:
     match = re.match(PLAYER_TAG_PATTERN, string)
     assert match is not None, f"Could not parse player tag {string}"
     return PlayerTagSession(PlayerTag(match.group(1)), int(match.group(2)))

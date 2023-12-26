@@ -4,6 +4,7 @@ from enum import Enum
 SERVER_IP = "localhost"
 SERVER_PORT = 40405
 
+
 class Tags:
     TYPE = "type"
     STATUS = "status"

@@ -5,7 +5,7 @@ from clients.python.api.networking.Messenger import PassingMessenger, Messenger
 from clients.python.players.Player import Player, Round
 from clients.python.types.Constants import ServerMsgTypes, Tags, ClientMsgTypes
 from clients.python.types.PassDirection import PassDirection
-from clients.python.types.PlayerTagSession import PlayerTagSession
+from clients.python.types.PlayerTagSession import PlayerTagSession, MakePlayerTagSession
 
 
 class ActiveRound(PassingMessenger, Round):
@@ -46,5 +46,8 @@ class ActiveRound(PassingMessenger, Round):
             self.tricks.append(trick)
             trick.run_trick(player)
 
-        self.player.handle_finished_round(self)
+        end_round_msg = self.receive_type(ServerMsgTypes.END_ROUND)
+        round_points = {MakePlayerTagSession(tagSession): pts
+                        for tagSession, pts in end_round_msg[Tags.PLAYER_TO_ROUND_POINTS].items()}
+        self.player.handle_finished_round(self, round_points)
 

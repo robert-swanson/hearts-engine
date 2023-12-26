@@ -1,6 +1,6 @@
 import json
 import threading
-from typing import Dict, TypeVar, Type
+from typing import Dict, TypeVar, Type, List
 
 from clients.python.api.Game import ActiveGame
 from clients.python.api.networking.ManagedConnection import ManagedConnection
@@ -10,6 +10,8 @@ from clients.python.types.PlayerTagSession import PlayerTagSession
 from clients.python.types.logger import log_message, log
 
 T = TypeVar('T', bound='Player')
+
+GameSessionThreads: Dict[PlayerTagSession, threading.Thread] = {}
 
 
 class GameSession(Messenger):
@@ -31,8 +33,8 @@ class GameSession(Messenger):
         self.session_id = response[Tags.SESSION_ID]
 
         self.current_round = None
-        player_session = PlayerTagSession(connection.player_tag, self.session_id)
-        self.player = player_cls(player_session)
+        self.player_session = PlayerTagSession(connection.player_tag, self.session_id)
+        self.player = player_cls(self.player_session)
 
     def _get_seqnum_and_increment(self) -> int:
         next_seq_num = self._next_seqnum
@@ -44,10 +46,22 @@ class GameSession(Messenger):
             self.connection.end_session(self.session_id)
 
     @staticmethod
-    def SpawnNewGameSessionThread(connection: ManagedConnection, game_type: GameType, player_cls: Type[T]) \
+    def SpawnNewThread(connection: ManagedConnection, game_type: GameType, player_cls: Type[T]
+                       ) -> None:
+        return GameSession.GetNewThread(connection, game_type, player_cls).start()
+
+    @staticmethod
+    def GetNewThread(connection: ManagedConnection, game_type: GameType, player_cls: Type[T]) \
             -> threading.Thread:
         session = GameSession(connection, game_type, player_cls)
-        return threading.Thread(target=session.run_game)
+        thread = threading.Thread(target=session.run_game)
+        GameSessionThreads[session.player_session] = thread
+        return thread
+
+    @staticmethod
+    def WaitForThreadsToFinish() -> None:
+        for thread in GameSessionThreads.values():
+            thread.join()
 
     def receive(self) -> json:
         if self._next_seqnum in self._seqnum_to_pending_received_message:
@@ -68,10 +82,10 @@ class GameSession(Messenger):
                     self._seqnum_to_pending_received_message[msg_seqnum] = msg
 
     def receive_type(self, expected_msg_type: str) -> json:
-        response = self.receive()
-        assert response[Tags.TYPE] == expected_msg_type, \
-            f"{self} expected message type '{expected_msg_type}', got '{response[Tags.TYPE]}'"
-        return response
+        msg = self.receive()
+        assert msg[Tags.TYPE] == expected_msg_type, \
+            f"{self.session_id}.{msg[Tags.SEQ_NUM]} expected message type '{expected_msg_type}', but got '{msg[Tags.TYPE]}'"
+        return msg
 
     def receive_status(self, expected_status: str, expected_msg_type: str) -> json:
         response = self.receive_type(expected_msg_type)
@@ -92,4 +106,4 @@ class GameSession(Messenger):
         game.run_game(self.player)
 
     def __repr__(self):
-        return f"GameSession({self.session_id}.{self._next_seqnum})"
+        return f"{self.player_session} (next {self.session_id}.{self._next_seqnum})"

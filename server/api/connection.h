@@ -48,6 +48,7 @@ protected:
 
     Message::Message receive()
     {
+        // TODO: Handle receiving multiple messages at once
         char buf[1024];
         size_t bytes_read = mClientSocket->read_some(buffer(buf));
         buf[bytes_read] = '\0';

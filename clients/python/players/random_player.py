@@ -1,13 +1,14 @@
-from typing import List
+from typing import List, Dict
 
-from clients.python.api.networking.PlayerGameSession import GameSession
-from clients.python.api.networking.ManagedConnection import ManagedConnection
 from clients.python.api.Trick import Trick
+from clients.python.api.networking.ManagedConnection import ManagedConnection
+from clients.python.api.networking.PlayerGameSession import GameSession
 from clients.python.players.Player import Player, Game, Round
 from clients.python.types.Card import Card
 from clients.python.types.Constants import GameType
 from clients.python.types.PassDirection import PassDirection
-from clients.python.types.PlayerTagSession import PlayerTag, PlayerTagSession
+from clients.python.types.PlayerTagSession import PlayerTagSession
+from clients.python.types.logger import log
 
 
 class RandomPlayer(Player):
@@ -16,16 +17,16 @@ class RandomPlayer(Player):
 
     # Game
     def initialize_for_game(self, game: Game) -> None:
-        pass
+        log(f"Starting game for {self.player_tag}")
 
     def handle_end_game(self, players_to_points: dict[PlayerTagSession, int], winner: PlayerTagSession) -> None:
-        pass
+        log(f"Ending game for {self.player_tag}")
 
     # Round
     def handle_new_round(self, round: Round) -> None:
         self.hand = round.cards_in_hand
 
-    def handle_finished_round(self, round: Round) -> None:
+    def handle_finished_round(self, round: Round, round_points: Dict[PlayerTagSession, int]) -> None:
         pass
 
     def get_cards_to_pass(self, pass_dir: PassDirection, receiving_player: PlayerTagSession) -> List[Card]:
@@ -51,11 +52,10 @@ class RandomPlayer(Player):
 
 
 def main():
-    tag = PlayerTag("random_player")
-    connection = ManagedConnection(tag)
-    for i in range(4):
-        thread = GameSession.SpawnNewGameSessionThread(connection, GameType.ANY, RandomPlayer)
-        thread.start()
+    with ManagedConnection("random_player") as connection:
+        for i in range(4):
+            GameSession.SpawnNewThread(connection, GameType.ANY, RandomPlayer)
+        GameSession.WaitForThreadsToFinish()
 
 
 if __name__ == '__main__':

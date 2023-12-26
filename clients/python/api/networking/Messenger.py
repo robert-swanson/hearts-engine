@@ -18,6 +18,9 @@ class Messenger(ABC):
     def send(self, json_data: json):
         pass
 
+    def close(self) -> None:
+        pass
+
 
 class PassingMessenger(Messenger):
     def __init__(self, messenger: Messenger):
@@ -37,3 +40,6 @@ class PassingMessenger(Messenger):
 
     def send(self, json_data: json):
         self.messenger.send(json_data)
+
+    def close(self) -> None:
+        self.messenger.close()

@@ -1,13 +1,13 @@
 import json
 import threading
 from enum import Enum
-from socket import socket, AF_INET, SOCK_STREAM
+from socket import socket, AF_INET, SOCK_STREAM, timeout
 from typing import List
 
 from clients.python.types.Constants import SERVER_IP, SERVER_PORT, Tags, ClientMsgTypes, ServerMsgTypes, \
     ServerStatus
 from clients.python.types.PlayerTagSession import PlayerTag
-from clients.python.types.logger import log_message
+from clients.python.types.logger import log_message, log
 
 
 class ConnectionStatus(Enum):
@@ -22,8 +22,10 @@ class Connection:
         self.port = port
         self.client_socket = socket(AF_INET, SOCK_STREAM)
         self.client_socket.connect((SERVER_IP, SERVER_PORT))
+        self.client_socket.settimeout(1)
         self.status = ConnectionStatus.CONNECTED
         self.pending_messages: List[json] = []
+        self.incomplete_message: bytes = b""
         self.logging_session = -1
         self.sending_lock = threading.Lock()
 
@@ -32,12 +34,23 @@ class Connection:
 
     def receive(self) -> json:
         if len(self.pending_messages) == 0:
-            data = self.client_socket.recv(1024)
+            data = self.incomplete_message
+            try:
+                data += self.client_socket.recv(1024)
+            except timeout:
+                return None
+
             if data == b'':
                 raise ConnectionError("Server closed connection while waiting for data")
-            json_objects = self._get_json_objects(data.decode("utf-8"))
+            try:
+                json_objects = self._get_json_objects(data.decode("utf-8"))
+            except json.decoder.JSONDecodeError:
+                self.incomplete_message = data
+                log(f"Received incomplete message, attempting to receive more data, current data: {data}")
+                return self.receive()
             json_data = json_objects[0]
             self.pending_messages = json_objects[1:]
+            self.incomplete_message = b""
         else:
             json_data = self.pending_messages.pop(0)
 
@@ -52,7 +65,12 @@ class Connection:
             next_split = data[previous_split:].find("}{") + 1 + previous_split
             if next_split == previous_split:
                 next_split = len(data)
-            json_data = json.loads(data[previous_split:next_split])
+            json_str = data[previous_split:next_split]
+            try:
+                json_data = json.loads(json_str)
+            except json.decoder.JSONDecodeError as e:
+                log(f"Error decoding str as json: {json_str}")
+                raise e
             json_objects.append(json_data)
             if next_split == len(data):
                 break
