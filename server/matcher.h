@@ -34,7 +34,7 @@ public:
         auto sessionID = sessionCounter.fetch_add(1, std::memory_order_relaxed);
         auto session = std::make_shared<PlayerGameSession>(sessionID, connection);
         sessions.emplace(sessionID, session);
-        std::thread(&PlayerGameSession::RunGameSession, session).detach();
+        session->Setup();
         unmatchedPlayers.push_back(sessionID);
         attemptMatch();
         return sessionID;

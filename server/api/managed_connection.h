@@ -50,11 +50,12 @@ public:
                 }
             }
         }
-        catch (std::exception &e) {
-            if (e.what() == std::string("read_some: End of file")) {
+        catch (boost::system::system_error &e) {
+            if (std::string(e.what()).find("End of file") != std::string::npos) {
                 LOG("Client at %s:%d disconnected", this->mClientIP, this->mClientPort);
             } else {
                 LOG("Error with client at %s:%d: %s", this->mClientIP, this->mClientPort, e.what());
+                throw e;
             }
         }
     }

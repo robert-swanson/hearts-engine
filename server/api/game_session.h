@@ -13,7 +13,7 @@ public:
     explicit PlayerGameSession(PlayerGameSessionID game_session_id, Common::Server::ManagedConnection &connection)
     : mGameSessionID(game_session_id),  mPlayerTagSession(MakePlayerTagSession(connection.getPlayerTag(), game_session_id)), mConnection(connection) {}
 
-    void RunGameSession() {
+    void Setup() {
         send({{
             {Tags::TYPE, ServerMsgTypes::GAME_SESSION_RESPONSE},
             {Tags::STATUS, ServerStatus::SUCCESS}
