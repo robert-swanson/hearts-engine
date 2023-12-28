@@ -9,13 +9,11 @@ from clients.python.types.Constants import GameType, Tags, ClientMsgTypes
 from clients.python.types.PlayerTagSession import PlayerTagSession
 from clients.python.types.logger import log_message, log
 
-T = TypeVar('T', bound='Player')
-
-GameSessionThreads: Dict[PlayerTagSession, threading.Thread] = {}
+Player_T = TypeVar('Player_T', bound='Player')
 
 
 class GameSession(Messenger):
-    def __init__(self, connection: ManagedConnection, game_type: GameType, player_cls: Type[T]):
+    def __init__(self, connection: ManagedConnection, game_type: GameType, player_cls: Type[Player_T]):
         self.connection = connection
         self.game_type = game_type
 
@@ -44,24 +42,6 @@ class GameSession(Messenger):
     def __del__(self):
         if hasattr(self, "session_id") and self.session_id is not None:
             self.connection.end_session(self.session_id)
-
-    @staticmethod
-    def SpawnNewThread(connection: ManagedConnection, game_type: GameType, player_cls: Type[T]
-                       ) -> None:
-        return GameSession.GetNewThread(connection, game_type, player_cls).start()
-
-    @staticmethod
-    def GetNewThread(connection: ManagedConnection, game_type: GameType, player_cls: Type[T]) \
-            -> threading.Thread:
-        session = GameSession(connection, game_type, player_cls)
-        thread = threading.Thread(target=session.run_game)
-        GameSessionThreads[session.player_session] = thread
-        return thread
-
-    @staticmethod
-    def WaitForThreadsToFinish() -> None:
-        for thread in GameSessionThreads.values():
-            thread.join()
 
     def receive(self) -> json:
         if self._next_seqnum in self._seqnum_to_pending_received_message:

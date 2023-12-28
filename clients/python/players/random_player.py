@@ -3,6 +3,7 @@ from typing import List, Dict
 from clients.python.api.Trick import Trick
 from clients.python.api.networking.ManagedConnection import ManagedConnection
 from clients.python.api.networking.PlayerGameSession import GameSession
+from clients.python.api.networking.SessionHelpers import MakeAndRunMultipleSessions, WaitForAllSessionsToFinish
 from clients.python.players.Player import Player, Game, Round
 from clients.python.types.Card import Card
 from clients.python.types.Constants import GameType
@@ -52,7 +53,8 @@ class RandomPlayer(Player):
 
 
 if __name__ == '__main__':
-    with ManagedConnection("random_player") as connection:
-        for i in range(4):
-            GameSession.SpawnNewThread(connection, GameType.ANY, RandomPlayer)
-        GameSession.WaitForThreadsToFinish()
+    for g in range(2):
+        with ManagedConnection("random_player") as connection:
+            MakeAndRunMultipleSessions(connection, GameType.ANY, RandomPlayer, 4)
+            MakeAndRunMultipleSessions(connection, GameType.ANY, RandomPlayer, 4)
+
