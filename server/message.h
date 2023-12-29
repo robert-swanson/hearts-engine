@@ -1,6 +1,7 @@
 #pragma once
 
 #include "types.h"
+#include "constants.h"
 
 namespace Common::Server::Message
 {
@@ -19,7 +20,7 @@ public:
         return mMsgType;
     }
 
-    const json & getJson()
+    const json & getJson() const
     {
         return mJson;
     }

@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cstdio>
 #include <cstdlib>
+#include <iostream>
 
 #define ASRT(condition, message, ...) \
     do { \

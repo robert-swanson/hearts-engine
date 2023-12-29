@@ -20,6 +20,6 @@ def should_log_message(json_data: json) -> bool:
 def log_message(prefix: str, msg: json, verbose=False):
     if should_log_message(msg) and False:
         if verbose:
-            log(f"{prefix:15}{msg[Tags.SESSION_ID]}.{msg[Tags.SEQ_NUM]}\t {msg[Tags.TYPE]:20} \t\t\t {msg}")
+            log(f"{prefix:15}{msg[Tags.SESSION_ID]}.{msg[Tags.SEQ_NUM]}\t {msg[Tags.TYPE]:20}\t\t\t{msg}")
         else:
             log(f"{prefix:15}{msg[Tags.SESSION_ID]}.{msg[Tags.SEQ_NUM]}")

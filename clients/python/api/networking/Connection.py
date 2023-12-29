@@ -46,7 +46,7 @@ class Connection:
                 json_objects = self._get_json_objects(data.decode("utf-8"))
             except json.decoder.JSONDecodeError:
                 self.incomplete_message = data
-                log(f"Received incomplete message, attempting to receive more data, current data: {data}")
+                # log(f"Received incomplete message, attempting to receive more data, current data: {data}")
                 return self.receive()
             json_data = json_objects[0]
             self.pending_messages = json_objects[1:]
@@ -69,7 +69,7 @@ class Connection:
             try:
                 json_data = json.loads(json_str)
             except json.decoder.JSONDecodeError as e:
-                log(f"Error decoding str as json: {json_str}")
+                # log(f"Error decoding str as json: {json_str}")
                 raise e
             json_objects.append(json_data)
             if next_split == len(data):

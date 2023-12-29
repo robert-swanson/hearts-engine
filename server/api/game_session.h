@@ -27,7 +27,7 @@ public:
     void send(Message::Message message)
     {
         Message::SessionMessage sessionMessage(std::move(message), mGameSessionID, getSeqNumAndIncrement());
-        mConnection.sendOnSession(sessionMessage);
+        mConnection.sendOnSession(sessionMessage, mGameSessionID);
     }
 
     Message::Message receive()
@@ -37,6 +37,11 @@ public:
         ASRT_EQ(sessionMessage.getSessionID(), mGameSessionID);
         ASRT(sessionMessage.getSeqNum() == expectedSeqNum, "Expected %lld.%u, but got %lld.%u", mGameSessionID, expectedSeqNum, sessionMessage.getSessionID(), sessionMessage.getSeqNum());
         return sessionMessage;
+    }
+
+    void setMessageLogger(const std::shared_ptr<Common::MessageLogger>& messageLogger)
+    {
+        mConnection.setMessageLogger(mGameSessionID, messageLogger);
     }
 
     [[nodiscard]] PlayerTagSession getPlayerTagSession() const {

@@ -2,18 +2,17 @@
 
 namespace Common::Server
 {
-    // Dependencies in clients/python/Constants.py
-    constexpr uint16_t SERVER_PORT = 40405;
-    constexpr int MAX_CONNECTION_BACKLOG = 5;
-
-    constexpr int SUCCESS_CODE = 0;
-    constexpr int MAX_CONNECTIONS = 10;
-
     constexpr bool LOG_ALL_SENT_MESSAGES = true;
     constexpr bool LOG_ALL_RECEIVED_MESSAGES = true;
 }
 
+namespace Common::Env
+{
+    constexpr auto SERVER_PORT = "SERVER_PORT";
+}
 
+
+// Dependencies in clients/python/Constants.py
 namespace Common::Server::Tags
 {
     constexpr auto TYPE = "type";
