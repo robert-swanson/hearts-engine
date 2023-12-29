@@ -55,6 +55,5 @@ class RandomPlayer(Player):
 if __name__ == '__main__':
     for g in range(2):
         with ManagedConnection("random_player") as connection:
-            MakeAndRunMultipleSessions(connection, GameType.ANY, RandomPlayer, 4)
-            MakeAndRunMultipleSessions(connection, GameType.ANY, RandomPlayer, 4)
+            MakeAndRunMultipleSessions(connection, GameType.ANY, RandomPlayer, 16)
 

@@ -29,10 +29,13 @@ public:
     void Log(const char *message, ...) {
         va_list args;
         va_start(args, message);
-        vfprintf(mLogFile, message, args);
+        {
+            std::lock_guard<std::mutex> lock(mLoggingMutex);
+            vfprintf(mLogFile, message, args);
+            fprintf(mLogFile, "\n");
+        }
         va_end(args);
-        std::lock_guard<std::mutex> lock(mLoggingMutex);
-        fprintf(mLogFile, "\n");
+        fflush(mLogFile);
     }
 
 protected:
