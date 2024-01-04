@@ -63,28 +63,13 @@ private:
     MessageLogger() = default;
 };
 
-class GameLogger : ThreadSafeLogger {
+class GameLogger : public ThreadSafeLogger {
 public:
     GameLogger(const GameLogger &) = delete;
 
     explicit GameLogger(FILE *logFile) : ThreadSafeLogger(logFile) {}
 
     GameLogger(const std::filesystem::path& logFilePath) : ThreadSafeLogger(logFilePath) {}
-
-    void logGameEvent(const char *message, ...)
-    {
-        Log("%s", message);
-    }
-
-    void logRoundEvent(const char *message, ...)
-    {
-        Log("\t%s", message);
-    }
-
-    void logTrickEvent(const char *message, ...)
-    {
-        Log("\t\t%s", message);
-    }
 };
 
 

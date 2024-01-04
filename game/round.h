@@ -19,7 +19,7 @@ public:
 
     void runDeal()
     {
-        mGameLogger->logRoundEvent("Starting round %d in direction %d", mRoundIndex, mPassDirection);
+        mGameLogger->Log("\tStarting round %d in direction %d", mRoundIndex, mPassDirection);
         dealCards();
         notifyStartRound();
         passCards();
@@ -32,14 +32,25 @@ public:
             trick.RunTrick();
             mTricks.push_back(trick);
             brokenHearts |= trick.heartsBroken();
-            startingPlayer = (trick.getTrickWinner() + startingPlayer) % Constants::NUM_PLAYERS;
+            startingPlayer = (trick.getTrickWinnerIdx() + startingPlayer) % Constants::NUM_PLAYERS;
             mPlayers[startingPlayer]->receiveTrick(trick.getPlayedCards());
         }
         notifyEndRound();
         scoreRound();
+        logRoundScores();
     }
 
 private:
+    void logRoundScores()
+    {
+        std::string msg = "\t\tRound scores: ";
+        for (const auto& playerRef: mPlayers)
+        {
+            msg += playerRef->getTagSession() + ": " + std::to_string(mRoundScores[playerRef->getTagSession()]) + ", ";
+        }
+        mGameLogger->Log(msg.c_str());
+    }
+
     void notifyStartRound()
     {
         for (PlayerRef & player : mPlayers)
@@ -122,11 +133,6 @@ private:
 
     int getStartingPlayer()
     {
-        for(int playerI = 0; playerI < Constants::NUM_PLAYERS; playerI++)
-        {
-            mGameLogger->logRoundEvent("%s: %s", mPlayers[playerI]->getTagSession().c_str(),
-                                       mPlayers[playerI]->getHand().getAbbreviation().c_str());
-        }
         for(int playerI = 0; playerI < Constants::NUM_PLAYERS; playerI++)
         {
             if (mPlayers[playerI]->getHand().contains(Constants::STARTING_CARD))

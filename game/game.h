@@ -18,7 +18,13 @@ public:
 
     PlayerArray runGame()
     {
-        mGameLogger->logGameEvent("Starting game");
+        std::string msg = "Player order: ";
+        for (const auto& playerRef: mPlayers)
+        {
+            msg += playerRef->getTagSession() + ", ";
+        }
+        mGameLogger->Log(msg.c_str());
+
         PassDirection passDirection = Left;
         updateRankings();
         notifyStartGame();
@@ -28,14 +34,14 @@ public:
             round.runDeal();
             passDirection = NextPassDirection(passDirection);
             updateRankings();
-            mGameLogger->logGameEvent("Max score %d", mMaxScore);
+            mCurrentRoundIdx++;
         }
         notifyEndGame();
-        mGameLogger->logGameEvent("Final scores:");
+        mGameLogger->Log("Final scores:");
         for (int i = 0; i < Constants::NUM_PLAYERS; i++)
         {
             auto player = mRankings[mRankings.size()-1-i];
-            mGameLogger->logGameEvent("%d: %s (%d points)", i+1, player->getTagSession().c_str(), player->getScore());
+            mGameLogger->Log("%d: %s (%d points)", i+1, player->getTagSession().c_str(), player->getScore());
         }
         return mRankings;
     }

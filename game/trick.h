@@ -17,20 +17,20 @@ public:
 
     void RunTrick()
     {
-        mGameLogger->logTrickEvent("Starting trick %d", mTrickIndex);
         notifyStartTrick();
         for (PlayerRef currentPlayer : mPlayers)
         {
             CardCollection legalMoves = legalMovesForPlayer(currentPlayer);
             Card card = currentPlayer->getMove(legalMoves);
             currentPlayer->removeCardsFromHand(CardCollection{card});
-            mGameLogger->logTrickEvent("%s: %s", currentPlayer->getTagSession().c_str(), card.getAbbreviation().c_str());
             ASRT(legalMoves.contains(card), "Player played illegal card %s", card.getAbbreviation().c_str());
             mPlayedCards = mPlayedCards + card;
             mBrokenHearts |= (card.getSuit() == HEARTS);
             notifyMove(currentPlayer, card);
         }
-        notifyEndTrick(mPlayers[getTrickWinner()]);
+        determineTrickWinner();
+        notifyEndTrick(mPlayers[mTrickWinnerIdx]);
+        logTrick();
     }
 
     bool heartsBroken() const
@@ -38,7 +38,7 @@ public:
         return mBrokenHearts;
     }
 
-    int getTrickWinner()
+    void determineTrickWinner()
     {
         int winningPlayer = 0;
         Suit trickSuit = mPlayedCards[0].getSuit();
@@ -53,8 +53,12 @@ public:
                 winningRank = card.getRank();
             }
         }
-        mGameLogger->logTrickEvent("Winner: %s", mPlayers[winningPlayer]->getTagSession().c_str());
-        return winningPlayer;
+        mTrickWinnerIdx = winningPlayer;
+    }
+
+    int getTrickWinnerIdx() const
+    {
+        return mTrickWinnerIdx;
     }
 
     CardCollection getPlayedCards()
@@ -100,6 +104,22 @@ public:
     }
 
 private:
+
+    void logTrick()
+    {
+        std::string msg = "\t\tTrick " + std::to_string(mTrickIndex) + ": [ ";
+        for (auto card : mPlayedCards)
+        {
+            msg += card.getAbbreviation() + " ";
+        }
+        msg += "] Winner: " + mPlayers[mTrickWinnerIdx]->getTagSession();
+        if (mBrokenHearts)
+        {
+            msg += " (HB)";
+        }
+        mGameLogger->Log(msg.c_str());
+    }
+
     void notifyStartTrick()
     {
         for (PlayerRef & player : mPlayers)
@@ -129,5 +149,6 @@ private:
     bool mBrokenHearts;
     CardCollection mPlayedCards;
     std::shared_ptr<GameLogger> mGameLogger;
+    int mTrickWinnerIdx = -1;
 };
 }
