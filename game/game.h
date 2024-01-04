@@ -11,30 +11,31 @@ namespace Common::Game
 class Game
 {
 public:
-    explicit Game(PlayerArray players): mPlayers(players), mRankings(players), mMaxScore(0)
+    explicit Game(PlayerArray players, std::shared_ptr<GameLogger> gameLogger):
+    mPlayers(players), mRankings(players), mMaxScore(0), mGameLogger(std::move(gameLogger))
     {
     }
 
     PlayerArray runGame()
     {
-        LOG("\n# Starting Game");
+        mGameLogger->logGameEvent("Starting game");
         PassDirection passDirection = Left;
         updateRankings();
         notifyStartGame();
         while (mMaxScore <= Constants::GAME_END_SCORE)
         {
-            Round round(mCurrentRoundIdx, mPlayers, passDirection);
+            Round round(mCurrentRoundIdx, mPlayers, passDirection, mGameLogger);
             round.runDeal();
             passDirection = NextPassDirection(passDirection);
             updateRankings();
-            LOG("Max score %d", mMaxScore);
+            mGameLogger->logGameEvent("Max score %d", mMaxScore);
         }
         notifyEndGame();
-        LOG("## Final rankings:");
+        mGameLogger->logGameEvent("Final scores:");
         for (int i = 0; i < Constants::NUM_PLAYERS; i++)
         {
             auto player = mRankings[mRankings.size()-1-i];
-            LOG("%d: %s (%d points)", i+1, player->getTagSession().c_str(), player->getScore());
+            mGameLogger->logGameEvent("%d: %s (%d points)", i+1, player->getTagSession().c_str(), player->getScore());
         }
         return mRankings;
     }
@@ -86,5 +87,6 @@ private:
     PlayerArray mRankings;
     int mMaxScore;
     int mCurrentRoundIdx = 0;
+    std::shared_ptr<GameLogger> mGameLogger;
 };
 }

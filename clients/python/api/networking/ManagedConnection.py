@@ -64,7 +64,7 @@ class ManagedConnection(Connection):
                     if len(self.waiting_sessions) == 0:
                         break
                     else:
-                        continue
+                        raise ConnectionError(f"Timeout while waiting for message, waiting for {self.waiting_sessions}")
                 session_id = message[Tags.SESSION_ID]
                 with self.message_received_condition:
                     if message[Tags.TYPE] == ServerMsgTypes.GAME_SESSION_RESPONSE:

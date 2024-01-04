@@ -10,21 +10,21 @@ namespace Common::Game
 class Trick
 {
 public:
-    explicit Trick(PlayerArray players, int trickIndex, bool brokenHearts):
-            mPlayers(players), mTrickIndex(trickIndex), mBrokenHearts(brokenHearts), mPlayedCards()
+    explicit Trick(PlayerArray players, int trickIndex, bool brokenHearts, std::shared_ptr<GameLogger> gameLogger):
+            mPlayers(players), mTrickIndex(trickIndex), mBrokenHearts(brokenHearts), mPlayedCards(), mGameLogger(std::move(gameLogger))
     {
     }
 
     void RunTrick()
     {
-        printf("\n### Trick %d: ", mTrickIndex);
+        mGameLogger->logTrickEvent("Starting trick %d", mTrickIndex);
         notifyStartTrick();
         for (PlayerRef currentPlayer : mPlayers)
         {
             CardCollection legalMoves = legalMovesForPlayer(currentPlayer);
             Card card = currentPlayer->getMove(legalMoves);
             currentPlayer->removeCardsFromHand(CardCollection{card});
-            printf("%s: %s, ", currentPlayer->getTagSession().c_str(), card.getAbbreviation().c_str());
+            mGameLogger->logTrickEvent("%s: %s", currentPlayer->getTagSession().c_str(), card.getAbbreviation().c_str());
             ASRT(legalMoves.contains(card), "Player played illegal card %s", card.getAbbreviation().c_str());
             mPlayedCards = mPlayedCards + card;
             mBrokenHearts |= (card.getSuit() == HEARTS);
@@ -53,7 +53,7 @@ public:
                 winningRank = card.getRank();
             }
         }
-        printf("Winner = %s\n", mPlayers[winningPlayer]->getTagSession().c_str());
+        mGameLogger->logTrickEvent("Winner: %s", mPlayers[winningPlayer]->getTagSession().c_str());
         return winningPlayer;
     }
 
@@ -128,5 +128,6 @@ private:
     int mTrickIndex;
     bool mBrokenHearts;
     CardCollection mPlayedCards;
+    std::shared_ptr<GameLogger> mGameLogger;
 };
 }

@@ -19,7 +19,7 @@ public:
 
     explicit ThreadSafeLogger(const std::filesystem::path& logFilePath) {
         std::filesystem::create_directories(logFilePath.parent_path());
-        ASRT(!std::filesystem::exists(logFilePath), "Log file %s already exists", logFilePath.c_str());
+        ASRT(!std::filesystem::exists(logFilePath), "log file %s already exists", logFilePath.c_str());
         mLogFile = fopen(logFilePath.c_str(), "w");
         if (mLogFile == nullptr) {
             DIE("Failed to open log file %s", logFilePath.c_str());
@@ -63,17 +63,35 @@ private:
     MessageLogger() = default;
 };
 
+class GameLogger : ThreadSafeLogger {
+public:
+    GameLogger(const GameLogger &) = delete;
+
+    explicit GameLogger(FILE *logFile) : ThreadSafeLogger(logFile) {}
+
+    GameLogger(const std::filesystem::path& logFilePath) : ThreadSafeLogger(logFilePath) {}
+
+    void logGameEvent(const char *message, ...)
+    {
+        Log("%s", message);
+    }
+
+    void logRoundEvent(const char *message, ...)
+    {
+        Log("\t%s", message);
+    }
+
+    void logTrickEvent(const char *message, ...)
+    {
+        Log("\t\t%s", message);
+    }
+};
+
 
 #define LOG(message, ...) \
     do {                  \
         Common::PrintLogger.Log(message, ##__VA_ARGS__); \
     } while (false)
 
-#define CONDITIONAL_LOG(condition, message, ...) \
-    do { \
-        if (condition) { \
-            LOG(message, ##__VA_ARGS__); \
-        } \
-    } while (false)
 
 }

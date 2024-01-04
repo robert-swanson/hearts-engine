@@ -53,7 +53,7 @@ class RandomPlayer(Player):
 
 
 if __name__ == '__main__':
-    for g in range(2):
+    for g in range(10):
         with ManagedConnection("random_player") as connection:
             MakeAndRunMultipleSessions(connection, GameType.ANY, RandomPlayer, 16)
 

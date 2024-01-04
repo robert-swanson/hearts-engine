@@ -1,5 +1,7 @@
 #pragma once
 
+#include <utility>
+
 #include "objects/player.h"
 #include "objects/types.h"
 #include "trick.h"
@@ -10,14 +12,14 @@ namespace Common::Game
 class Round
 {
 public:
-    explicit Round(int roundIndex, PlayerArray &players, PassDirection passDirection):
-            mPlayers(players), mPassDirection(passDirection), mRoundIndex(roundIndex)
+    explicit Round(int roundIndex, PlayerArray &players, PassDirection passDirection, std::shared_ptr<GameLogger> gameLogger):
+            mPlayers(players), mPassDirection(passDirection), mRoundIndex(roundIndex), mGameLogger(std::move(gameLogger))
     {
     }
 
     void runDeal()
     {
-        LOG("\n## Starting round in direction %d", mPassDirection);
+        mGameLogger->logRoundEvent("Starting round %d in direction %d", mRoundIndex, mPassDirection);
         dealCards();
         notifyStartRound();
         passCards();
@@ -26,7 +28,7 @@ public:
         for (int trickIndex = 0; trickIndex < Constants::NUM_TRICKS; trickIndex++)
         {
             PlayerArray trickPlayerOrder = LeftShiftArray(mPlayers, startingPlayer);
-            Trick trick(trickPlayerOrder, trickIndex, brokenHearts);
+            Trick trick(trickPlayerOrder, trickIndex, brokenHearts, mGameLogger);
             trick.RunTrick();
             mTricks.push_back(trick);
             brokenHearts |= trick.heartsBroken();
@@ -122,7 +124,8 @@ private:
     {
         for(int playerI = 0; playerI < Constants::NUM_PLAYERS; playerI++)
         {
-            LOG("%s: %s", mPlayers[playerI]->getTagSession().c_str(), mPlayers[playerI]->getHand().getAbbreviation().c_str());
+            mGameLogger->logRoundEvent("%s: %s", mPlayers[playerI]->getTagSession().c_str(),
+                                       mPlayers[playerI]->getHand().getAbbreviation().c_str());
         }
         for(int playerI = 0; playerI < Constants::NUM_PLAYERS; playerI++)
         {
@@ -167,6 +170,7 @@ private:
     int mRoundIndex;
     std::vector<Trick> mTricks;
     std::map<PlayerID, int> mRoundScores;
+    std::shared_ptr<GameLogger> mGameLogger;
 };
 
 }

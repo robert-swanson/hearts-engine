@@ -2,8 +2,8 @@
 
 namespace Common::Server
 {
-    constexpr bool LOG_ALL_SENT_MESSAGES = true;
-    constexpr bool LOG_ALL_RECEIVED_MESSAGES = true;
+    constexpr auto MESSAGE_LOG_FILENAME = "messages.log";
+    constexpr auto GAME_LOG_FILENAME = "game.log";
 }
 
 namespace Common::Env

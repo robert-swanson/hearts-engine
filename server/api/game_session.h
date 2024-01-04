@@ -48,6 +48,10 @@ public:
         return mPlayerTagSession;
     }
 
+    [[nodiscard]] PlayerGameSessionID getGameSessionID() const {
+        return mGameSessionID;
+    }
+
 
 private:
     uint16_t getSeqNumAndIncrement()
