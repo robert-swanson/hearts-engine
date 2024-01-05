@@ -10,8 +10,8 @@ namespace Common::Server
 class PlayerGameSession
 {
 public:
-    explicit PlayerGameSession(PlayerGameSessionID game_session_id, Common::Server::ManagedConnection &connection)
-    : mGameSessionID(game_session_id),  mPlayerTagSession(MakePlayerTagSession(connection.getPlayerTag(), game_session_id)), mConnection(connection) {}
+    explicit PlayerGameSession(PlayerGameSessionID game_session_id, PlayerTag playerTag, Common::Server::ManagedConnection &connection)
+    : mGameSessionID(game_session_id),  mPlayerTagSession(MakePlayerTagSession(playerTag, game_session_id)), mConnection(connection), mPlayerTag(playerTag) {}
 
     void Setup() {
         send({{
@@ -61,6 +61,7 @@ private:
         return oldSeqNum;
     }
 
+    PlayerTag mPlayerTag;
     PlayerGameSessionID mGameSessionID;
     Common::Server::PlayerTagSession mPlayerTagSession;
     ManagedConnection &mConnection;

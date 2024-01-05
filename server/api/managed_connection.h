@@ -35,12 +35,12 @@ public:
     }
 
 
-    void ConnectionListener(const std::function<PlayerGameSessionID (ManagedConnection &)> &new_session_callback) {
+    void ConnectionListener(const std::function<PlayerGameSessionID (ManagedConnection &, Message::Message)> &new_session_callback) {
         try {
             while (true) {
                 auto message = this->receive();
                 if (message.getJson()["type"] == ClientMsgTypes::GAME_SESSION_REQUEST) {
-                    PlayerGameSessionID sessionID = new_session_callback(*this);
+                    PlayerGameSessionID sessionID = new_session_callback(*this, message);
                     playerGameSessions[sessionID];
                 } else {
                     auto sessionId = message.getJson()[Tags::SESSION_ID].get<PlayerGameSessionID>();

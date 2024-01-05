@@ -13,10 +13,8 @@ UNASSIGNED_SESSION: SessionID = -1
 
 
 class ManagedConnection(Connection):
-    def __init__(self, player_tag: Union[PlayerTag, str], ip=SERVER_IP, port=SERVER_PORT):
-        if type(player_tag) is not PlayerTag:
-            player_tag = PlayerTag(str(player_tag))
-        super().__init__(player_tag, ip, port)
+    def __init__(self, ip=SERVER_IP, port=SERVER_PORT):
+        super().__init__(ip, port)
 
         self.session_lock = threading.Lock()
         self.receiver_thread_lock = threading.Lock()

@@ -36,14 +36,13 @@ protected:
     void handleConnectionRequest()
     {
         auto connectionRequest = receive();
-        mPlayerTag = connectionRequest.getTag<PlayerTag>(Tags::PLAYER_TAG);
 
         Message::Message connectionResponse = Message::Message(ServerMsgTypes::CONNECTION_RESPONSE, {
             {Tags::STATUS, ServerStatus::SUCCESS}
         });
         send(connectionResponse);
 
-        LOG("\nConnected to '%s' at %s:%d", mPlayerTag.c_str(), mClientIP, mClientPort);
+        LOG("\nConnected to %s:%d", mClientIP, mClientPort);
     }
 
     Message::Message receive()
@@ -94,11 +93,6 @@ public:
         return mStatus == ConnectionStatus::CONNECTED;
     }
 
-    PlayerTag getPlayerTag()
-    {
-        return mPlayerTag;
-    }
-
 private:
     std::string getFirstMessage(std::string buffer)
     {
@@ -117,7 +111,6 @@ protected:
     char mClientIP[INET_ADDRSTRLEN];
     int mClientPort;
     ConnectionStatus mStatus;
-    PlayerTag mPlayerTag;
 
 private:
     std::string mUnprocessedData;

@@ -30,4 +30,5 @@ class ActiveGame(PassingMessenger, Game):
                              for tagSession, pts in end_game_msg[Tags.PLAYER_TO_GAME_POINTS].items()}
         winner = MakePlayerTagSession(end_game_msg[Tags.WINNING_PLAYER])
         player.handle_end_game(players_to_points, winner)
+        self.winner = winner
 

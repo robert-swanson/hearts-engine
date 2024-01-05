@@ -3,13 +3,14 @@ from typing import List, Optional, Dict
 
 from clients.python.types.Card import Card
 from clients.python.types.PassDirection import PassDirection
-from clients.python.types.PlayerTagSession import PlayerTagSession
+from clients.python.types.PlayerTagSession import PlayerTagSession, PlayerTag
 
 
 class Game:
     def __init__(self, player_order: List[PlayerTagSession]):
         self.player_order = player_order
         self.rounds: List[Round] = []
+        self.winner: Optional[PlayerTagSession] = None
 
 
 class Round:
@@ -34,6 +35,8 @@ class Trick:
 
 
 class Player(ABC):
+    player_tag: PlayerTag = None
+
     def __init__(self, player_tag: PlayerTagSession):
         self.player_tag = player_tag
 

@@ -25,15 +25,16 @@ public:
         return Matcher::instance;
     }
 
-    static PlayerGameSessionID HandleSessionRequest(ManagedConnection &connection)
+    static PlayerGameSessionID HandleSessionRequest(ManagedConnection &connection, Message::Message message)
     {
-        return GetInstance().createPlayerGameSession(connection);
+        auto playerTag = message.getTag<PlayerTag>(Tags::PLAYER_TAG);
+        return GetInstance().createPlayerGameSession(connection, playerTag);
     }
 
-    PlayerGameSessionID createPlayerGameSession(ManagedConnection &connection)
+    PlayerGameSessionID createPlayerGameSession(ManagedConnection &connection, const PlayerTag& playerTag)
     {
         auto sessionID = sessionCounter.fetch_add(1, std::memory_order_relaxed);
-        auto session = std::make_shared<PlayerGameSession>(sessionID, connection);
+        auto session = std::make_shared<PlayerGameSession>(sessionID, playerTag, connection);
         allSessions.emplace(sessionID, session);
         session->Setup();
         unmatchedPlayers.push_back(sessionID);

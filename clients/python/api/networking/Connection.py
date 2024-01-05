@@ -16,8 +16,7 @@ class ConnectionStatus(Enum):
 
 
 class Connection:
-    def __init__(self, player_tag: PlayerTag, ip=SERVER_IP, port=SERVER_PORT):
-        self.player_tag = player_tag
+    def __init__(self, ip=SERVER_IP, port=SERVER_PORT):
         self.host = ip
         self.port = port
         self.client_socket = socket(AF_INET, SOCK_STREAM)
@@ -30,7 +29,7 @@ class Connection:
         self.sending_lock = threading.Lock()
 
         self.setup()
-        print(f"Connected player {player_tag} to {SERVER_IP}:{SERVER_PORT}")
+        print(f"Connected to {SERVER_IP}:{SERVER_PORT}")
 
     def receive(self) -> json:
         if len(self.pending_messages) == 0:
@@ -66,12 +65,7 @@ class Connection:
             if next_split == previous_split:
                 next_split = len(data)
             json_str = data[previous_split:next_split]
-            try:
-                json_data = json.loads(json_str)
-            except json.decoder.JSONDecodeError as e:
-                # log(f"Error decoding str as json: {json_str}")
-                raise e
-            json_objects.append(json_data)
+            json_objects.append(json.loads(json_str))
             if next_split == len(data):
                 break
             previous_split = next_split
@@ -79,6 +73,8 @@ class Connection:
 
     def receive_status(self, expected_status: str, expected_msg_type: str) -> json:
         response = self.receive()
+        if response is None:
+            raise ConnectionError("Server closed connection while waiting for status")
         assert response[Tags.TYPE] == expected_msg_type, \
             f"Expected message type {expected_msg_type}, got {response[Tags.TYPE]}"
         assert response[Tags.STATUS] == expected_status, \
@@ -96,7 +92,6 @@ class Connection:
     def setup(self):
         connection_request = {
             Tags.TYPE: ClientMsgTypes.REQUEST_CONNECTION,
-            Tags.PLAYER_TAG: self.player_tag
         }
         self.send(connection_request)
         self.receive_status(ServerStatus.SUCCESS, ServerMsgTypes.CONNECTION_RESPONSE)

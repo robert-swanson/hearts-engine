@@ -2,9 +2,9 @@ from typing import List, Dict
 
 from clients.python.api.Trick import Trick
 from clients.python.api.networking.ManagedConnection import ManagedConnection
-from clients.python.api.networking.PlayerGameSession import GameSession
-from clients.python.api.networking.SessionHelpers import MakeAndRunMultipleSessions, WaitForAllSessionsToFinish
+from clients.python.api.networking.SessionHelpers import RunGame
 from clients.python.players.Player import Player, Game, Round
+from clients.python.players.random_player import RandomPlayer
 from clients.python.types.Card import Card
 from clients.python.types.Constants import GameType
 from clients.python.types.PassDirection import PassDirection
@@ -12,8 +12,8 @@ from clients.python.types.PlayerTagSession import PlayerTagSession
 from clients.python.types.logger import log
 
 
-class RandomPlayer(Player):
-    player_tag = "random_player"
+class RobPlayer(Player):
+    player_tag = "rob_player"
 
     def __init__(self, player_tag: PlayerTagSession):
         super().__init__(player_tag)
@@ -55,7 +55,8 @@ class RandomPlayer(Player):
 
 
 if __name__ == '__main__':
-    for g in range(10):
-        with ManagedConnection("random_player") as connection:
-            MakeAndRunMultipleSessions(connection, GameType.ANY, RandomPlayer, 16)
-
+    players = [RobPlayer, RandomPlayer, RandomPlayer, RandomPlayer]
+    for g in range(1):
+        with ManagedConnection("rob_player") as connection:
+            results = RunGame(connection, GameType.ANY, players)[1]
+            print(results.winner)

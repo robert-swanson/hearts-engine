@@ -1,21 +1,23 @@
 import json
 import threading
-from typing import Dict, TypeVar, Type, List
+from typing import Dict, TypeVar, Type, List, Optional, Union
 
 from clients.python.api.Game import ActiveGame
 from clients.python.api.networking.ManagedConnection import ManagedConnection
 from clients.python.api.networking.Messenger import Messenger
+from clients.python.players.Player import Game
 from clients.python.types.Constants import GameType, Tags, ClientMsgTypes
-from clients.python.types.PlayerTagSession import PlayerTagSession
+from clients.python.types.PlayerTagSession import PlayerTagSession, PlayerTag
 from clients.python.types.logger import log_message, log
 
 Player_T = TypeVar('Player_T', bound='Player')
 
 
 class GameSession(Messenger):
-    def __init__(self, connection: ManagedConnection, game_type: GameType, player_cls: Type[Player_T]):
+    def __init__(self, connection: ManagedConnection, player_tag: Union[PlayerTag, str], game_type: GameType, player_cls: Type[Player_T]):
         self.connection = connection
         self.game_type = game_type
+        self.player_tag = player_tag if type(player_tag) is PlayerTag else PlayerTag(str(player_tag))
 
         self._next_seqnum = 0
         self._usage_lock = threading.Lock()
@@ -23,6 +25,7 @@ class GameSession(Messenger):
 
         session_request = {
             Tags.TYPE: ClientMsgTypes.REQUEST_GAME_SESSION,
+            Tags.PLAYER_TAG: self.player_tag,
             Tags.SEQ_NUM: self._get_seqnum_and_increment(),
             Tags.GAME_TYPE: self.game_type.value
         }
@@ -31,8 +34,9 @@ class GameSession(Messenger):
         self.session_id = response[Tags.SESSION_ID]
 
         self.current_round = None
-        self.player_session = PlayerTagSession(connection.player_tag, self.session_id)
+        self.player_session = PlayerTagSession(self.player_tag, self.session_id)
         self.player = player_cls(self.player_session)
+        self.game_results: Optional[Game] = None
 
     def _get_seqnum_and_increment(self) -> int:
         next_seq_num = self._next_seqnum
@@ -84,6 +88,10 @@ class GameSession(Messenger):
     def run_game(self):
         game = ActiveGame(self, self.player)
         game.run_game(self.player)
+        self.game_results = game
+
+    def get_results(self) -> Game:
+        return self.game_results
 
     def __repr__(self):
         return f"{self.player_session} (next {self.session_id}.{self._next_seqnum})"
