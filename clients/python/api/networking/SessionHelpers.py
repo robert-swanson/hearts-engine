@@ -40,3 +40,10 @@ def RunGame(connection: ManagedConnection, game_type: GameType, players_cls: Lis
     [thread.join() for thread, _ in thread_sessions]
     return [session.get_results() for _, session in thread_sessions]
 
+
+def RunMultipleGames(connection: ManagedConnection, game_type: GameType, players_cls: List[Type[Player_T]], num_games: int) -> List[List[Game]]:
+    assert len(players_cls) == 4, "Must have 4 players"
+    thread_sessions = [ [MakeSession(connection, game_type, player_cls) for player_cls in players_cls] for _ in range(num_games)]
+    [[thread.start() for thread, _ in thread_sessions] for thread_sessions in thread_sessions]
+    [[thread.join() for thread, _ in thread_sessions] for thread_sessions in thread_sessions]
+    return [[session.get_results() for _, session in thread_sessions] for thread_sessions in thread_sessions]

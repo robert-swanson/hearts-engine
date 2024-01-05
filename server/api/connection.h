@@ -45,30 +45,39 @@ protected:
         LOG("\nConnected to %s:%d", mClientIP, mClientPort);
     }
 
+    std::string readBytes()
+    {
+        std::vector<char> buf(1024);
+        size_t bytes_read = mClientSocket->read_some(buffer(buf));
+        return std::string(buf.begin(), buf.end());
+    }
+
     Message::Message receive()
     {
-        std::string buffStr;
-        if (!mUnprocessedData.empty())
+        auto msgStr = getFirstMessage(mUnprocessedData.empty() ? readBytes() : mUnprocessedData);
+        try
         {
-            buffStr = mUnprocessedData;
+            json jsonMsg = json::parse(msgStr);
+            return {jsonMsg};
         }
-        else
+        catch (json::parse_error &e)
         {
-            char buf[1024];
-            size_t bytes_read = mClientSocket->read_some(buffer(buf));
-            buf[bytes_read] = '\0';
-            buffStr = buf;
+            if (mUnprocessedData.empty())
+            {
+                mUnprocessedData = msgStr + readBytes();
+                return receive();
+            }
+            else
+            {
+                LOG("Error parsing message: %s", e.what());
+                throw e;
+            }
         }
-        auto msgStr = getFirstMessage(buffStr);
-        json jsonMsg = json::parse(msgStr);
-//        CONDITIONAL_LOG(LOG_ALL_RECEIVED_MESSAGES, "<<< %s", jsonMsg.dump().c_str());
-        return {jsonMsg};
     }
 
     void send(Message::Message message)
     {
         auto jsonStr = message.getJson().dump();
-//        CONDITIONAL_LOG(LOG_ALL_SENT_MESSAGES, ">>> %s", jsonStr.c_str());
         write(*mClientSocket, buffer(jsonStr));
     }
 
@@ -102,8 +111,9 @@ private:
             mUnprocessedData = "";
             return buffer;
         }
-        mUnprocessedData = buffer.substr(splitIdx + 1);
-        return buffer.substr(0, splitIdx + 1);
+        splitIdx++;
+        mUnprocessedData = buffer.substr(splitIdx);
+        return buffer.substr(0, splitIdx);
     }
 
 protected:

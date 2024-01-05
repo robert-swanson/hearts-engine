@@ -2,7 +2,7 @@ from typing import List, Dict
 
 from clients.python.api.Trick import Trick
 from clients.python.api.networking.ManagedConnection import ManagedConnection
-from clients.python.api.networking.SessionHelpers import RunGame
+from clients.python.api.networking.SessionHelpers import RunGame, RunMultipleGames
 from clients.python.players.Player import Player, Game, Round
 from clients.python.players.random_player import RandomPlayer
 from clients.python.types.Card import Card
@@ -21,10 +21,10 @@ class RobPlayer(Player):
 
     # Game
     def initialize_for_game(self, game: Game) -> None:
-        log(f"Starting game for {self.player_tag}")
+        pass
 
     def handle_end_game(self, players_to_points: dict[PlayerTagSession, int], winner: PlayerTagSession) -> None:
-        log(f"Ending game for {self.player_tag}")
+        pass
 
     # Round
     def handle_new_round(self, round: Round) -> None:
@@ -56,7 +56,14 @@ class RobPlayer(Player):
 
 if __name__ == '__main__':
     players = [RobPlayer, RandomPlayer, RandomPlayer, RandomPlayer]
-    for g in range(1):
-        with ManagedConnection("rob_player") as connection:
-            results = RunGame(connection, GameType.ANY, players)[1]
-            print(results.winner)
+    total_games = 0
+    games_won = 0
+
+    with ManagedConnection("rob_player") as connection:
+        games = RunMultipleGames(connection, GameType.ANY, players, 16)
+        for game_result in games:
+            if "rob_player" in str(game_result[0].winner):
+                games_won += 1
+            total_games += 1
+
+    print(f"Games won: {games_won}/{total_games} ({games_won/total_games*100}%)")

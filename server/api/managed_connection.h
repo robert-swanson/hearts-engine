@@ -36,6 +36,7 @@ public:
 
 
     void ConnectionListener(const std::function<PlayerGameSessionID (ManagedConnection &, Message::Message)> &new_session_callback) {
+        LOG("Started listening thread for client at %s:%d", this->mClientIP, this->mClientPort);
         try {
             while (true) {
                 auto message = this->receive();
@@ -55,7 +56,11 @@ public:
         catch (boost::system::system_error &e) {
             if (std::string(e.what()).find("End of file") != std::string::npos) {
                 LOG("Client at %s:%d disconnected", this->mClientIP, this->mClientPort);
-            } else {
+            }
+            else if (std::string(e.what()).find("Connection reset by peer") != std::string::npos) {
+                LOG("Client at %s:%d forcefully disconnected", this->mClientIP, this->mClientPort);
+            }
+            else {
                 LOG("Error with client at %s:%d: %s", this->mClientIP, this->mClientPort, e.what());
                 throw e;
             }

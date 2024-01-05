@@ -21,10 +21,10 @@ class RandomPlayer(Player):
 
     # Game
     def initialize_for_game(self, game: Game) -> None:
-        log(f"Starting game for {self.player_tag}")
+        pass
 
     def handle_end_game(self, players_to_points: dict[PlayerTagSession, int], winner: PlayerTagSession) -> None:
-        log(f"Ending game for {self.player_tag}")
+        pass
 
     # Round
     def handle_new_round(self, round: Round) -> None:
