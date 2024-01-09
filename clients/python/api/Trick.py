@@ -18,11 +18,11 @@ class ActiveTrick(PassingMessenger, Trick):
         player.handle_new_trick(self)
 
         for current_player in self.player_order:
-            if current_player == self.player.player_tag:
+            if current_player == self.player.player_tag_session:
                 move_request_msg = self.receive_type(ServerMsgTypes.MOVE_REQUEST)
                 legal_moves = move_request_msg[Tags.LEGAL_MOVES]
                 move = self.player.get_move(self, legal_moves)
-                assert move in legal_moves, f"Player {self.player.player_tag} tried to play {move} but it was not legal"
+                assert move in legal_moves, f"Player {self.player.player_tag_session} tried to play {move} but it was not legal"
                 decided_move_msg = {
                     Tags.TYPE: ClientMsgTypes.DECIDED_MOVE,
                     Tags.CARD: move

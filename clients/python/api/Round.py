@@ -3,6 +3,7 @@ from typing import List
 from clients.python.api.Trick import ActiveTrick
 from clients.python.api.networking.Messenger import PassingMessenger, Messenger
 from clients.python.players.Player import Player, Round
+from clients.python.types.Card import Card
 from clients.python.types.Constants import ServerMsgTypes, Tags, ClientMsgTypes
 from clients.python.types.PassDirection import PassDirection
 from clients.python.types.PlayerTagSession import PlayerTagSession, MakePlayerTagSession
@@ -16,14 +17,14 @@ class ActiveRound(PassingMessenger, Round):
         round_msg = self.receive_type(ServerMsgTypes.START_ROUND)
         round_idx = int(round_msg[Tags.ROUND_INDEX])
         pass_direction = PassDirection(round_msg[Tags.PASS_DIRECTION])
-        cards = round_msg[Tags.CARDS]
+        cards = [Card(c) for c in round_msg[Tags.CARDS]]
         Round.__init__(self, round_idx, pass_direction, player_order, cards)
 
     def get_receiving_player(self):
-        return self.pass_direction.get_receiving_player(self.player_order, self.player.player_tag)
+        return self.pass_direction.get_receiving_player(self.player_order, self.player.player_tag_session)
 
     def get_donating_player(self):
-        return self.pass_direction.get_donating_player(self.player_order, self.player.player_tag)
+        return self.pass_direction.get_donating_player(self.player_order, self.player.player_tag_session)
 
     def run_round(self, player: Player):
         assert player is self.player

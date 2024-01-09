@@ -5,7 +5,7 @@ from clients.python.api.networking.ManagedConnection import ManagedConnection
 from clients.python.api.networking.SessionHelpers import RunGame, RunMultipleGames
 from clients.python.players.Player import Player, Game, Round
 from clients.python.players.random_player import RandomPlayer
-from clients.python.types.Card import Card
+from clients.python.types.Card import Card, SortCardsByRank, Suit
 from clients.python.types.Constants import GameType
 from clients.python.types.PassDirection import PassDirection
 from clients.python.types.PlayerTagSession import PlayerTagSession
@@ -34,7 +34,7 @@ class RobPlayer(Player):
         pass
 
     def get_cards_to_pass(self, pass_dir: PassDirection, receiving_player: PlayerTagSession) -> List[Card]:
-        return self.hand[:3]
+        return SortCardsByRank(self.hand)[:3]
 
     def receive_passed_cards(self, cards: List[Card], pass_dir: PassDirection, donating_player: PlayerTagSession) -> None:
         pass
@@ -51,6 +51,31 @@ class RobPlayer(Player):
         pass
 
     def get_move(self, trick: Trick, legal_moves: List[Card]) -> Card:
+        legal_moves = SortCardsByRank(legal_moves)
+
+        suit_to_cards = {suit: [c for c in legal_moves if c.suit == suit] for suit in Suit}
+        suit_to_cards = {suit: cards for suit, cards in suit_to_cards.items() if len(cards) > 0}
+        fewest_suit, cards = sorted(suit_to_cards.items(), key=lambda kv: kv[1])[0]
+        if len(trick.moves) == 0:
+            return SortCardsByRank(cards)[0]
+        else:
+            if legal_moves[0].suit == trick.get_suit():
+                current_winning_card = SortCardsByRank([c for c in trick.moves if c.suit == trick.get_suit()], reverse=True)[0]
+                sorted_non_winning_cards = [c for c in legal_moves if c < current_winning_card]
+                if len(sorted_non_winning_cards) > 0:
+                    return sorted_non_winning_cards[-1]
+                elif len(trick.moves) == 3:
+                    return legal_moves[-1]
+                else:
+                    return legal_moves[0]
+            else: # won't win trick
+
+
+
+
+
+
+
         return legal_moves[0]
 
 

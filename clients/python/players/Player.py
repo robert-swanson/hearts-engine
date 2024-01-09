@@ -1,7 +1,7 @@
 from abc import ABC
 from typing import List, Optional, Dict
 
-from clients.python.types.Card import Card
+from clients.python.types.Card import Card, Suit
 from clients.python.types.PassDirection import PassDirection
 from clients.python.types.PlayerTagSession import PlayerTagSession, PlayerTag
 
@@ -30,15 +30,21 @@ class Trick:
         self.trick_idx = trick_idx
         self.player_order = player_order
 
-        self.moves = []
+        self.moves: List[Card] = []
         self.winner: Optional[PlayerTagSession] = None
+
+    def get_suit(self) -> Optional[Suit]:
+        if len(self.moves) == 0:
+            return None
+        else:
+            return self.moves[0].suit
 
 
 class Player(ABC):
     player_tag: PlayerTag = None
 
-    def __init__(self, player_tag: PlayerTagSession):
-        self.player_tag = player_tag
+    def __init__(self, player_tag_session: PlayerTagSession):
+        self.player_tag_session = player_tag_session
 
     # Game
     def initialize_for_game(self, game: Game) -> None:
