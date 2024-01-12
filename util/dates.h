@@ -2,9 +2,9 @@
 
 namespace Common::Dates
 {
-static std::string GetStrDate(const std::string& delimiter)
+static std::string GetStrDate(const char delimiter)
 {
-    time_t now = time(0);
+    time_t now = time(nullptr);
     tm *ltm = localtime(&now);
     std::string year = std::to_string(1900 + ltm->tm_year);
     std::string month = std::to_string(1 + ltm->tm_mon);
@@ -12,14 +12,16 @@ static std::string GetStrDate(const std::string& delimiter)
     return year + delimiter + month + delimiter + day;
 }
 
-static std::string GetStrTime(const std::string& delimiter)
+static std::string GetStrTime(const char delimiter)
 {
-    time_t now = time(0);
+    time_t now = time(nullptr);
     tm *ltm = localtime(&now);
     std::string hour = std::to_string(ltm->tm_hour);
     std::string minute = std::to_string(ltm->tm_min);
     std::string second = std::to_string(ltm->tm_sec);
-    return hour + delimiter + minute + delimiter + second;
+    char time[9];
+    snprintf(time, 9, "%02d%c%02d%c%02d", ltm->tm_hour, delimiter, ltm->tm_min, delimiter, ltm->tm_sec);
+    return {time};
 }
 
 }

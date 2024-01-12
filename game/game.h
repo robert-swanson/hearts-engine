@@ -18,32 +18,41 @@ public:
 
     PlayerArray runGame()
     {
-        std::string msg = "Player order: ";
-        for (const auto& playerRef: mPlayers)
+        try
         {
-            msg += playerRef->getTagSession() + ", ";
-        }
-        mGameLogger->Log(msg.c_str());
+            std::string msg = "Player order: ";
+            for (const auto& playerRef: mPlayers)
+            {
+                msg += playerRef->getTagSession() + ", ";
+            }
+            mGameLogger->Log(msg.c_str());
 
-        PassDirection passDirection = Left;
-        updateRankings();
-        notifyStartGame();
-        while (mMaxScore <= Constants::GAME_END_SCORE)
-        {
-            Round round(mCurrentRoundIdx, mPlayers, passDirection, mGameLogger);
-            round.runDeal();
-            passDirection = NextPassDirection(passDirection);
+            PassDirection passDirection = Left;
             updateRankings();
-            mCurrentRoundIdx++;
+            notifyStartGame();
+            while (mMaxScore <= Constants::GAME_END_SCORE)
+            {
+                Round round(mCurrentRoundIdx, mPlayers, passDirection, mGameLogger);
+                round.runDeal();
+                passDirection = NextPassDirection(passDirection);
+                updateRankings();
+                mCurrentRoundIdx++;
+            }
+            notifyEndGame();
+            mGameLogger->Log("Final scores:");
+            for (int i = 0; i < Constants::NUM_PLAYERS; i++)
+            {
+                auto player = mRankings[mRankings.size()-1-i];
+                mGameLogger->Log("%d: %s (%d points)", i+1, player->getTagSession().c_str(), player->getScore());
+            }
+            return mRankings;
         }
-        notifyEndGame();
-        mGameLogger->Log("Final scores:");
-        for (int i = 0; i < Constants::NUM_PLAYERS; i++)
+        catch (const std::exception& e)
         {
-            auto player = mRankings[mRankings.size()-1-i];
-            mGameLogger->Log("%d: %s (%d points)", i+1, player->getTagSession().c_str(), player->getScore());
+            // TODO: Handle client side errors without crashing the game (cheatable exploit)
+            mGameLogger->Log("Game %s crash due to: %s", mPlayers[0]->getTagSession().c_str(), e.what());
+            return mPlayers;
         }
-        return mRankings;
     }
 
 private:
@@ -64,7 +73,7 @@ private:
         }
         for (PlayerRef & player : mPlayers)
         {
-            player->notifyEndGame(playerScores, mRankings[0]->getTagSession());
+            player->notifyEndGame(playerScores, mRankings[3]->getTagSession());
         }
     }
 

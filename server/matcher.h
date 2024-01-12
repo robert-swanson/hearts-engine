@@ -46,11 +46,11 @@ public:
     {
         if (unmatchedPlayers.size() >= 4)
         {
-            auto logPath = makeGameLogDirPath(unmatchedPlayers[0]);
-            LOG("Starting game with log file %s", logPath.c_str());
+            std::string msgLoggerName = std::to_string(unmatchedPlayers[0]) + "_" + MESSAGE_LOG_NAME + ".log";
+            auto messageLogger = std::make_shared<MessageLogger>(makeGameLogDirPath(MESSAGE_LOG_NAME) / msgLoggerName);
 
-            std::shared_ptr<MessageLogger> messageLogger = std::make_shared<MessageLogger>(logPath/MESSAGE_LOG_FILENAME);
-            std::shared_ptr<GameLogger> gameLogger = std::make_shared<GameLogger>(logPath/GAME_LOG_FILENAME);
+            std::string gameLoggerName = std::to_string(unmatchedPlayers[0]) + "_" + GAME_LOG_NAME + ".log";
+            auto gameLogger = std::make_shared<GameLogger>(makeGameLogDirPath(GAME_LOG_NAME) / gameLoggerName);
 
             std::vector<Game::PlayerRef> players{};
             for (int i = 0; i < 4; i++)
@@ -67,10 +67,10 @@ public:
     }
 
 private:
-    static std::filesystem::path makeGameLogDirPath(PlayerGameSessionID anySessionID)
+    static std::filesystem::path makeGameLogDirPath(const std::string & logDirName)
     {
         std::filesystem::path logPath = ENV_STRING("LOG_DIR");
-        return logPath / Dates::GetStrDate("-") / Dates::GetStrTime("/") / std::to_string(anySessionID);
+        return logPath / logDirName / Dates::GetStrDate('-') / Dates::GetStrTime(':');
     }
 
 private:

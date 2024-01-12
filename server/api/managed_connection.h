@@ -36,7 +36,6 @@ public:
 
 
     void ConnectionListener(const std::function<PlayerGameSessionID (ManagedConnection &, Message::Message)> &new_session_callback) {
-        LOG("Started listening thread for client at %s:%d", this->mClientIP, this->mClientPort);
         try {
             while (true) {
                 auto message = this->receive();
@@ -60,9 +59,11 @@ public:
             else if (std::string(e.what()).find("Connection reset by peer") != std::string::npos) {
                 LOG("Client at %s:%d forcefully disconnected", this->mClientIP, this->mClientPort);
             }
+            else if (std::string(e.what()).find("Broken pipe") != std::string::npos) {
+                LOG("Client at %s:%d broke the pipe", this->mClientIP, this->mClientPort);
+            }
             else {
                 LOG("Error with client at %s:%d: %s", this->mClientIP, this->mClientPort, e.what());
-                throw e;
             }
         }
     }

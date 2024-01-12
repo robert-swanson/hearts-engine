@@ -27,11 +27,25 @@ int main(int argc, char **argv)
 
     while (true)
     {
-        SocketPtr socket = std::make_shared<ip::tcp::socket>(ioContext);
-        acceptor.accept(*socket);
-        ManagedConnection::CleanConnections(connections);
-        auto & connection = connections.emplace_back(std::make_unique<ManagedConnection>(socket));
-        std::thread(&ManagedConnection::ConnectionListener, connection.get(), Matcher::HandleSessionRequest).detach();
+        try
+        {
+            SocketPtr socket = std::make_shared<ip::tcp::socket>(ioContext);
+            acceptor.accept(*socket);
+            auto & connection = connections.emplace_back(std::make_unique<ManagedConnection>(socket));
+            std::thread(&ManagedConnection::ConnectionListener, connection.get(), Matcher::HandleSessionRequest).detach();
+            ManagedConnection::CleanConnections(connections);
+        }
+        catch (boost::system::system_error &e)
+        {
+            if (std::string(e.what()).find("Broken pipe") != std::string::npos)
+            {
+                LOG("Client broke the pipe while connecting");
+            }
+            else
+            {
+                LOG("Error: %s", e.what());
+            }
+        }
     }
 
     return 0;
