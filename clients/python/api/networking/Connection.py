@@ -1,11 +1,12 @@
 import json
 import threading
+from datetime import time
 from enum import Enum
 from socket import socket, AF_INET, SOCK_STREAM, timeout
 from typing import List
 
 from clients.python.types.Constants import SERVER_IP, SERVER_PORT, Tags, ClientMsgTypes, ServerMsgTypes, \
-    ServerStatus
+    ServerStatus, MICRO_TIMEOUT, LOG_CONNECTION_EVENTS
 from clients.python.types.PlayerTagSession import PlayerTag
 from clients.python.types.logger import log_message, log
 
@@ -21,7 +22,7 @@ class Connection:
         self.port = port
         self.client_socket = socket(AF_INET, SOCK_STREAM)
         self.client_socket.connect((SERVER_IP, SERVER_PORT))
-        self.client_socket.settimeout(1)
+        self.client_socket.settimeout(MICRO_TIMEOUT)
         self.status = ConnectionStatus.CONNECTED
         self.pending_messages: List[json] = []
         self.incomplete_message: bytes = b""
@@ -53,7 +54,8 @@ class Connection:
         else:
             json_data = self.pending_messages.pop(0)
 
-        log_message("Received", json_data, False)
+        if LOG_CONNECTION_EVENTS:
+            log_message("Connection Received", json_data, False)
         return json_data
 
     @staticmethod
@@ -84,8 +86,9 @@ class Connection:
     def send(self, json_data: json):
         json_str = json.dumps(json_data, default=str, indent=1)
         with self.sending_lock:
-            log_message("Sent", json_data, True)
             bytes_sent = self.client_socket.send(json_str.encode("utf-8"))
+            if LOG_CONNECTION_EVENTS:
+                log_message("Connection Sent", json_data, True)
             if bytes_sent != len(json_str):
                 raise ConnectionError(f"Expected to send {len(json_str)} bytes, but sent {bytes_sent}")
 

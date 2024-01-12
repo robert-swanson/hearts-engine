@@ -3,7 +3,7 @@ from typing import List
 from clients.python.api.Trick import ActiveTrick
 from clients.python.api.networking.Messenger import PassingMessenger, Messenger
 from clients.python.players.Player import Player, Round
-from clients.python.types.Card import Card
+from clients.python.types.Card import Card, StrListToCards
 from clients.python.types.Constants import ServerMsgTypes, Tags, ClientMsgTypes
 from clients.python.types.PassDirection import PassDirection
 from clients.python.types.PlayerTagSession import PlayerTagSession, MakePlayerTagSession
@@ -17,7 +17,7 @@ class ActiveRound(PassingMessenger, Round):
         round_msg = self.receive_type(ServerMsgTypes.START_ROUND)
         round_idx = int(round_msg[Tags.ROUND_INDEX])
         pass_direction = PassDirection(round_msg[Tags.PASS_DIRECTION])
-        cards = [Card(c) for c in round_msg[Tags.CARDS]]
+        cards = StrListToCards(round_msg[Tags.CARDS])
         Round.__init__(self, round_idx, pass_direction, player_order, cards)
 
     def get_receiving_player(self):
@@ -39,7 +39,7 @@ class ActiveRound(PassingMessenger, Round):
             self.send(donated_cards_msg)
 
             received_cards_msg = self.receive_type(ServerMsgTypes.RECEIVED_CARDS)
-            self.received_cards = received_cards_msg[Tags.CARDS]
+            self.received_cards = StrListToCards(received_cards_msg[Tags.CARDS])
             self.player.receive_passed_cards(self.received_cards, self.pass_direction, self.get_donating_player())
 
         for trick_idx in range(13):

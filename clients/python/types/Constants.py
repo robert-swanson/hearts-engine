@@ -1,8 +1,18 @@
 # Defined in server/constants.h
 from enum import Enum
 
+# Connection
 SERVER_IP = "localhost"
 SERVER_PORT = 40405
+MICRO_TIMEOUT = 1  # Seconds or None
+MACRO_TIMEOUT = None
+
+# Logging
+MESSAGE_LOGGING_ENABLED = True  # Can disable all message logging
+LOG_CONNECTION_EVENTS = False  # Should the connection thread log with messages are sent/received
+
+# Threading
+MAX_CONCURRENT_SESSIONS = 4
 
 
 class Tags:

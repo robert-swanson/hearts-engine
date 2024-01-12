@@ -1,3 +1,4 @@
+from collections import defaultdict
 from enum import Enum
 from typing import NamedTuple, Dict, Collection, List
 
@@ -63,6 +64,21 @@ class Card:
     def __repr__(self):
         return f"{self.rank.value}{self.suit.value}"
 
+    def __gt__(self, other):
+        return self.rank > other.rank or (self.rank == other.rank and self.suit > other.suit)
+
+    def __lt__(self, other):
+        return self.rank < other.rank or (self.rank == other.rank and self.suit < other.suit)
+
+    def get_point_value(self):
+        if self == Card("QS"):
+            return 13
+        return 1 if self.suit == Suit.HEARTS else 0
+
+
+def StrListToCards(cards: Collection[str]) -> List[Card]:
+    return [Card(c) for c in cards]
+
 
 def SortCardsByRank(cards: Collection[Card], reverse=False) -> List[Card]:
     return sorted(cards, key=lambda card: (card.rank, card.suit), reverse=reverse)
@@ -70,3 +86,10 @@ def SortCardsByRank(cards: Collection[Card], reverse=False) -> List[Card]:
 
 def SortCardsBySuit(cards: Collection[Card], reverse=False) -> List[Card]:
     return sorted(cards, key=lambda card: (card.suit, card.rank), reverse=reverse)
+
+
+def GroupCardsBySuit(cards: Collection[Card]) -> Dict[Suit, List[Card]]:
+    suit_to_cards = defaultdict(list)
+    for card in cards:
+        suit_to_cards[card.suit].append(card)
+    return suit_to_cards

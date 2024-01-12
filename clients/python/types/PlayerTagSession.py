@@ -30,7 +30,7 @@ class PlayerTagSession:
         return self.player_tag == other.player_tag and self.session_id == other.session_id
 
     def __repr__(self):
-        return f"{self.player_tag}({self.session_id}))"
+        return f"{self.player_tag}({self.session_id})"
 
     def __hash__(self):
         return hash((self.player_tag, self.session_id))

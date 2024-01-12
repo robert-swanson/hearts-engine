@@ -1,11 +1,12 @@
-from typing import List, Dict
+import time
+from typing import List, Dict, Optional
 
 from clients.python.api.Trick import Trick
 from clients.python.api.networking.ManagedConnection import ManagedConnection
 from clients.python.api.networking.SessionHelpers import RunGame, RunMultipleGames
 from clients.python.players.Player import Player, Game, Round
 from clients.python.players.random_player import RandomPlayer
-from clients.python.types.Card import Card, SortCardsByRank, Suit
+from clients.python.types.Card import Card, SortCardsByRank, Suit, Rank, GroupCardsBySuit
 from clients.python.types.Constants import GameType
 from clients.python.types.PassDirection import PassDirection
 from clients.python.types.PlayerTagSession import PlayerTagSession
@@ -14,10 +15,12 @@ from clients.python.types.logger import log
 
 class RobPlayer(Player):
     player_tag = "rob_player"
+    message_logging_enabled = False
 
-    def __init__(self, player_tag: PlayerTagSession):
-        super().__init__(player_tag)
+    def __init__(self, player_tag_session: PlayerTagSession):
+        super().__init__(player_tag_session)
         self.hand = []
+        self.current_round: Optional[Round] = None
 
     # Game
     def initialize_for_game(self, game: Game) -> None:
@@ -29,12 +32,13 @@ class RobPlayer(Player):
     # Round
     def handle_new_round(self, round: Round) -> None:
         self.hand = round.cards_in_hand
+        self.current_round = round
 
     def handle_finished_round(self, round: Round, round_points: Dict[PlayerTagSession, int]) -> None:
         pass
 
     def get_cards_to_pass(self, pass_dir: PassDirection, receiving_player: PlayerTagSession) -> List[Card]:
-        return SortCardsByRank(self.hand)[:3]
+        return SortCardsByRank(self.hand, reverse=True)[:3]
 
     def receive_passed_cards(self, cards: List[Card], pass_dir: PassDirection, donating_player: PlayerTagSession) -> None:
         pass
@@ -51,44 +55,63 @@ class RobPlayer(Player):
         pass
 
     def get_move(self, trick: Trick, legal_moves: List[Card]) -> Card:
-        legal_moves = SortCardsByRank(legal_moves)
+        if self.is_worried_about_shooting_the_moon():
+            return self.get_move_likely_to_win_trick(trick, legal_moves)
+        else:
+            return self.get_move_unlikely_to_win_trick(trick, legal_moves)
 
-        suit_to_cards = {suit: [c for c in legal_moves if c.suit == suit] for suit in Suit}
-        suit_to_cards = {suit: cards for suit, cards in suit_to_cards.items() if len(cards) > 0}
-        fewest_suit, cards = sorted(suit_to_cards.items(), key=lambda kv: kv[1])[0]
+    @staticmethod
+    def get_move_unlikely_to_win_trick(trick: Trick, legal_moves: List[Card]) -> Card:
+        legal_moves = SortCardsByRank(legal_moves)
+        fewest_suit, cards = sorted(GroupCardsBySuit(legal_moves).items(), key=lambda kv: kv[1])[0]
         if len(trick.moves) == 0:
+            # If starting the trick, play the lowest legal card, we don't want to win tricks
             return SortCardsByRank(cards)[0]
         else:
             if legal_moves[0].suit == trick.get_suit():
-                current_winning_card = SortCardsByRank([c for c in trick.moves if c.suit == trick.get_suit()], reverse=True)[0]
+                current_winning_card = SortCardsByRank([m.card for m in trick.moves if m.card.suit == trick.get_suit()], reverse=True)[0]
                 sorted_non_winning_cards = [c for c in legal_moves if c < current_winning_card]
                 if len(sorted_non_winning_cards) > 0:
+                    # If we have cards lower than the wining card, play the highest one
                     return sorted_non_winning_cards[-1]
                 elif len(trick.moves) == 3:
+                    # If we are the last player, and we have to win the trick, play the highest card
                     return legal_moves[-1]
                 else:
+                    # If we can't guarantee that we won't win, play the lowest card
                     return legal_moves[0]
-            else: # won't win trick
+            else:
+                return legal_moves[-1]
 
+    @staticmethod
+    def get_move_likely_to_win_trick(trick: Trick, legal_moves: List[Card]) -> Card:
+        return SortCardsByRank(legal_moves)[-1]
 
+    def is_worried_about_shooting_the_moon(self) -> bool:
+        player_points = self.current_round.get_round_points()
+        num_players_with_points = len([p for p, pts in player_points.items() if pts > 0])
 
+        if num_players_with_points != 1:
+            return False
 
+        queen_played = Card("QS") in self.current_round.get_played_cards()
+        points = list(player_points.values())[0]
 
-
-
-        return legal_moves[0]
+        return queen_played and points > 18 or not queen_played and points > 8
 
 
 if __name__ == '__main__':
     players = [RobPlayer, RandomPlayer, RandomPlayer, RandomPlayer]
     total_games = 0
     games_won = 0
+    start_time = time.time()
 
     with ManagedConnection("rob_player") as connection:
-        games = RunMultipleGames(connection, GameType.ANY, players, 16)
+        games = RunMultipleGames(connection, GameType.ANY, players, 64)
         for game_result in games:
             if "rob_player" in str(game_result[0].winner):
                 games_won += 1
             total_games += 1
 
-    print(f"Games won: {games_won}/{total_games} ({games_won/total_games*100}%)")
+    print(f"Games won: {games_won}/{total_games} ({games_won / total_games * 100}%)")
+    print(f"Time: {time.time() - start_time}")

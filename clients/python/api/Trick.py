@@ -1,5 +1,6 @@
 from clients.python.api.networking.Messenger import PassingMessenger, Messenger
-from clients.python.players.Player import Player, Trick
+from clients.python.players.Player import Player, Trick, Move
+from clients.python.types.Card import StrListToCards, Card
 from clients.python.types.Constants import ServerMsgTypes, Tags, ClientMsgTypes
 from clients.python.types.PlayerTagSession import MakePlayerTagSessions, MakePlayerTagSession
 
@@ -20,7 +21,7 @@ class ActiveTrick(PassingMessenger, Trick):
         for current_player in self.player_order:
             if current_player == self.player.player_tag_session:
                 move_request_msg = self.receive_type(ServerMsgTypes.MOVE_REQUEST)
-                legal_moves = move_request_msg[Tags.LEGAL_MOVES]
+                legal_moves = StrListToCards(move_request_msg[Tags.LEGAL_MOVES])
                 move = self.player.get_move(self, legal_moves)
                 assert move in legal_moves, f"Player {self.player.player_tag_session} tried to play {move} but it was not legal"
                 decided_move_msg = {
@@ -31,8 +32,8 @@ class ActiveTrick(PassingMessenger, Trick):
 
             move_report_msg = self.receive_type(ServerMsgTypes.MOVE_REPORT)
             reported_player = MakePlayerTagSession(move_report_msg[Tags.PLAYER_TAG])
-            move = move_report_msg[Tags.CARD]
-            self.moves.append((reported_player, move))
+            move = Card(move_report_msg[Tags.CARD])
+            self.moves.append(Move(reported_player, move))
             player.handle_move(reported_player, move)
 
         end_trick_msg = self.receive_type(ServerMsgTypes.END_TRICK)

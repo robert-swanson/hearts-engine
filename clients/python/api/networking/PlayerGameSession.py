@@ -32,6 +32,7 @@ class GameSession(Messenger):
         response = connection.request_session(session_request)
         assert response[Tags.SEQ_NUM] == self._get_seqnum_and_increment()
         self.session_id = response[Tags.SESSION_ID]
+        self.message_logging_enabled = player_cls.message_logging_enabled
 
         self.current_round = None
         self.player_session = PlayerTagSession(self.player_tag, self.session_id)
@@ -56,7 +57,8 @@ class GameSession(Messenger):
                 msg_seqnum = msg[Tags.SEQ_NUM]
                 if msg_seqnum == self._next_seqnum:
                     self._next_seqnum += 1
-                    log_message("Processed", msg, True)
+                    if self.message_logging_enabled:
+                        log_message("Session Received", msg, True)
                     return msg
                 else:
                     assert msg_seqnum > self._next_seqnum and msg_seqnum not in self._seqnum_to_pending_received_message, \
@@ -84,11 +86,19 @@ class GameSession(Messenger):
         with self._usage_lock:
             json_data[Tags.SEQ_NUM] = self._get_seqnum_and_increment()
             self.connection.send_to_session(self.session_id, json_data)
+            if self.message_logging_enabled:
+                log_message("Session Sent", json_data, True)
 
     def run_game(self):
+        self.connection.increment_num_running_games()
+
         game = ActiveGame(self, self.player)
         game.run_game(self.player)
         self.game_results = game
+
+        self.connection.decrement_num_running_games()
+        with self.connection.game_finished_condition:
+            self.connection.game_finished_condition.notify_all()
 
     def get_results(self) -> Game:
         return self.game_results

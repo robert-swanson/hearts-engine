@@ -1,3 +1,4 @@
+from random import shuffle
 from typing import List, Dict
 
 from clients.python.api.Trick import Trick
@@ -15,8 +16,8 @@ from clients.python.types.logger import log
 class RandomPlayer(Player):
     player_tag = "random_player"
 
-    def __init__(self, player_tag: PlayerTagSession):
-        super().__init__(player_tag)
+    def __init__(self, player_tag_session: PlayerTagSession):
+        super().__init__(player_tag_session)
         self.hand = []
 
     # Game
@@ -34,6 +35,7 @@ class RandomPlayer(Player):
         pass
 
     def get_cards_to_pass(self, pass_dir: PassDirection, receiving_player: PlayerTagSession) -> List[Card]:
+        shuffle(self.hand)
         return self.hand[:3]
 
     def receive_passed_cards(self, cards: List[Card], pass_dir: PassDirection, donating_player: PlayerTagSession) -> None:
@@ -51,6 +53,7 @@ class RandomPlayer(Player):
         pass
 
     def get_move(self, trick: Trick, legal_moves: List[Card]) -> Card:
+        shuffle(legal_moves)
         return legal_moves[0]
 
 

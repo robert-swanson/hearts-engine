@@ -1,10 +1,11 @@
 import json
 import threading
 from collections import defaultdict
+from datetime import time, datetime, timedelta
 from typing import Dict, Optional, Set, List, Union
 
 from clients.python.api.networking.Connection import Connection
-from clients.python.types.Constants import SERVER_IP, SERVER_PORT, Tags, ServerMsgTypes, ServerStatus
+from clients.python.types.Constants import SERVER_IP, SERVER_PORT, Tags, ServerMsgTypes, ServerStatus, MACRO_TIMEOUT
 from clients.python.types.PlayerTagSession import PlayerTag
 from clients.python.types.logger import log_message, log
 
@@ -16,9 +17,15 @@ class ManagedConnection(Connection):
     def __init__(self, ip=SERVER_IP, port=SERVER_PORT):
         super().__init__(ip, port)
 
+        # Threading
         self.session_lock = threading.Lock()
         self.receiver_thread_lock = threading.Lock()
 
+        self.game_finished_condition = threading.Condition()
+        self.num_running_sessions = 0
+        self.num_running_sessions_lock = threading.Lock()
+
+        self.last_msg_time = datetime.now()
         self.message_received_condition = threading.Condition()
         self.id_to_received_messages: Dict[SessionID, List[json]] = defaultdict(list)
         self.waiting_sessions: Set[SessionID] = set()
@@ -61,15 +68,24 @@ class ManagedConnection(Connection):
                 if message is None:
                     if len(self.waiting_sessions) == 0:
                         break
+                    elif MACRO_TIMEOUT is None or (datetime.now() - self.last_msg_time) < timedelta(seconds=MACRO_TIMEOUT):
+                        continue
                     else:
                         raise ConnectionError(f"Timeout while waiting for message, waiting for {self.waiting_sessions}")
-                session_id = message[Tags.SESSION_ID]
-                with self.message_received_condition:
-                    if message[Tags.TYPE] == ServerMsgTypes.GAME_SESSION_RESPONSE:
-                        session_id = UNASSIGNED_SESSION
-                    self.id_to_received_messages[session_id].append(message)
-                    self.message_received_condition.notify_all()
+                else:
+                    self.last_msg_time = datetime.now()
+
+                self._handle_msg(message)
+
             self.receiver_thread = None
+
+    def _handle_msg(self, message: json):
+        session_id = message[Tags.SESSION_ID]
+        with self.message_received_condition:
+            if message[Tags.TYPE] == ServerMsgTypes.GAME_SESSION_RESPONSE:
+                session_id = UNASSIGNED_SESSION
+            self.id_to_received_messages[session_id].append(message)
+            self.message_received_condition.notify_all()
 
     def _start_receiver_thread(self):
         if self.receiver_thread is not None:
@@ -80,6 +96,14 @@ class ManagedConnection(Connection):
     def send_to_session(self, session_id: SessionID, json_data: json) -> None:
         json_data["session_id"] = session_id
         self.send(json_data)
+
+    def increment_num_running_games(self):
+        with self.num_running_sessions_lock:
+            self.num_running_sessions += 1
+
+    def decrement_num_running_games(self):
+        with self.num_running_sessions_lock:
+            self.num_running_sessions -= 1
 
     def __enter__(self):
         return self
