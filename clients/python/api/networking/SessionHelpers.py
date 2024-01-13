@@ -1,4 +1,5 @@
 import threading
+from time import sleep
 from typing import Dict, Type, List, Tuple
 
 from clients.python.api.networking.ManagedConnection import ManagedConnection
@@ -41,6 +42,12 @@ def RunGame(connection: ManagedConnection, game_type: GameType, players_cls: Lis
     return [session.get_results() for _, session in thread_sessions]
 
 
+def _NotifyIfWaitingTooLong(thread: threading.Thread, session: GameSession) -> None:
+    sleep(5)
+    if thread.is_alive():
+        print(f"Waiting for {session.player_session} to finish")
+
+
 def RunMultipleGames(connection: ManagedConnection, game_type: GameType, players_cls: List[Type[Player_T]], num_games: int) -> List[List[Game]]:
     assert len(players_cls) == 4, "Must have 4 players"
     sessions: List[List[Tuple[threading.Thread, GameSession]]] = []
@@ -54,15 +61,12 @@ def RunMultipleGames(connection: ManagedConnection, game_type: GameType, players
         game_sessions = [MakeSession(connection, game_type, player_cls) for player_cls in players_cls]
         sessions.append(game_sessions)
         [thread.start() for thread, _ in game_sessions]
-        if i % 1 == 0:
+        if i % 10 == 0:
             print(f"Started game {i}")
 
-    print("Waiting for games to finish")
-    # [[thread.join() for thread, _ in game] for game in sessions]
     for game in sessions:
         for thread, session in game:
             if thread.is_alive():
-                print(f"Waiting for session {session} to finish")
+                threading.Thread(target=_NotifyIfWaitingTooLong, args=(thread, session)).start()
                 thread.join()
-    print("Finished waiting for games to finish")
     return [[session.get_results() for _, session in game] for game in sessions]

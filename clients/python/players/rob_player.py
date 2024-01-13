@@ -56,10 +56,10 @@ class RobPlayer(Player):
         pass
 
     def get_move(self, trick: Trick, legal_moves: List[Card]) -> Card:
-        # if self.is_worried_about_shooting_the_moon():
-        #     return self.get_move_likely_to_win_trick(trick, legal_moves)
-        # else:
-        return self.get_move_unlikely_to_win_trick(trick, legal_moves)
+        if self.is_worried_about_shooting_the_moon():
+            return self.get_move_likely_to_win_trick(trick, legal_moves)
+        else:
+            return self.get_move_unlikely_to_win_trick(trick, legal_moves)
 
     @staticmethod
     def get_move_unlikely_to_win_trick(trick: Trick, legal_moves: List[Card]) -> Card:
@@ -108,7 +108,7 @@ if __name__ == '__main__':
     start_time = time.time()
 
     with ManagedConnection("rob_player") as connection:
-        games = RunMultipleGames(connection, GameType.ANY, players, 32)
+        games = RunMultipleGames(connection, GameType.ANY, players, 100)
         for game_result in games:
             if "rob_player" in str(game_result[0].winner):
                 games_won += 1
