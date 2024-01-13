@@ -33,3 +33,4 @@
 
 externals/
 log/
+config.env
