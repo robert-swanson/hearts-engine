@@ -4,6 +4,7 @@ namespace Common::Server
 {
     constexpr auto MESSAGE_LOG_NAME = "messages";
     constexpr auto GAME_LOG_NAME = "game";
+    constexpr auto SERVER_LOG_DIRNAME = "server";
 }
 
 namespace Common::Env

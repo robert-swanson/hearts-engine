@@ -2,17 +2,19 @@
 from enum import Enum
 
 # Connection
-SERVER_IP = "localhost"
-SERVER_PORT = 40405
 MICRO_TIMEOUT = 1  # Seconds or None
 MACRO_TIMEOUT = None
 
 # Logging
-MESSAGE_LOGGING_ENABLED = True  # Can disable all message logging
-LOG_CONNECTION_EVENTS = False  # Should the connection thread log with messages are sent/received
+LOG_SESSIONS = True  # Can disable all message logging
+LOG_CONNECTIONS = True  # Should the connection thread log with messages are sent/received
+CLIENT_LOG_DIRNAME = "client"
+SESSION_LOG_DIRNAME = "sessions"
+CONNECTION_LOG_DIRNAME = "connections"
 
 # Threading
-MAX_CONCURRENT_SESSIONS = 4
+MAX_CONCURRENT_SESSIONS = 16
+assert MAX_CONCURRENT_SESSIONS >= 4, "Must be able to have at least 4 concurrent sessions"
 
 
 class Tags:

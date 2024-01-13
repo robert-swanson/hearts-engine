@@ -1,14 +1,14 @@
 import json
 import threading
-from typing import Dict, TypeVar, Type, List, Optional, Union
+from typing import Dict, TypeVar, Type, Optional, Union
 
-from clients.python.api.Game import ActiveGame
+from clients.python.api.Game import Game
+from clients.python.api.ActiveGameFlow import ActiveGame
 from clients.python.api.networking.ManagedConnection import ManagedConnection
 from clients.python.api.networking.Messenger import Messenger
-from clients.python.players.Player import Game
-from clients.python.types.Constants import GameType, Tags, ClientMsgTypes
-from clients.python.types.PlayerTagSession import PlayerTagSession, PlayerTag
-from clients.python.types.logger import log_message, log
+from clients.python.api.types.PlayerTagSession import PlayerTag, PlayerTagSession
+from clients.python.util.Constants import GameType, Tags, ClientMsgTypes, LOG_SESSIONS
+from clients.python.util.Logging import SessionLogger
 
 Player_T = TypeVar('Player_T', bound='Player')
 
@@ -32,7 +32,8 @@ class GameSession(Messenger):
         response = connection.request_session(session_request)
         assert response[Tags.SEQ_NUM] == self._get_seqnum_and_increment()
         self.session_id = response[Tags.SESSION_ID]
-        self.message_logging_enabled = player_cls.message_logging_enabled
+        self.message_print_logging_enabled = player_cls.message_print_logging_enabled
+        self.logger = SessionLogger(self.player_tag, self.session_id) if LOG_SESSIONS else None
 
         self.current_round = None
         self.player_session = PlayerTagSession(self.player_tag, self.session_id)
@@ -57,14 +58,14 @@ class GameSession(Messenger):
                 msg_seqnum = msg[Tags.SEQ_NUM]
                 if msg_seqnum == self._next_seqnum:
                     self._next_seqnum += 1
-                    if self.message_logging_enabled:
-                        log_message("Session Received", msg, True)
+                    if self.logger is not None:
+                        self.logger.log_message("Received", msg, True, also_print=self.message_print_logging_enabled)
                     return msg
                 else:
                     assert msg_seqnum > self._next_seqnum and msg_seqnum not in self._seqnum_to_pending_received_message, \
                         f"Received duplicate message with seqnum {msg_seqnum}"
-                    log(
-                        f"Queuing message {self.session_id}.{msg_seqnum} while waiting for {self.session_id}.{self._next_seqnum}")
+                    self.logger.log(
+                        f"Queuing message {self.session_id}.{msg_seqnum} while waiting for {self.session_id}.{self._next_seqnum}", also_print=True)
                     self._seqnum_to_pending_received_message[msg_seqnum] = msg
 
     def receive_type(self, expected_msg_type: str) -> json:
@@ -86,8 +87,8 @@ class GameSession(Messenger):
         with self._usage_lock:
             json_data[Tags.SEQ_NUM] = self._get_seqnum_and_increment()
             self.connection.send_to_session(self.session_id, json_data)
-            if self.message_logging_enabled:
-                log_message("Session Sent", json_data, True)
+            if self.logger is not None:
+                self.logger.log_message("Sent", json_data, True, also_print=self.message_print_logging_enabled)
 
     def run_game(self):
         self.connection.increment_num_running_games()

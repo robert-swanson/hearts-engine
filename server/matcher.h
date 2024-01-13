@@ -70,7 +70,7 @@ private:
     static std::filesystem::path makeGameLogDirPath(const std::string & logDirName)
     {
         std::filesystem::path logPath = ENV_STRING("LOG_DIR");
-        return logPath / logDirName / Dates::GetStrDate('-') / Dates::GetStrTime(':');
+        return logPath / SERVER_LOG_DIRNAME / logDirName / Dates::GetStrDate('-') / Dates::GetStrTime(':');
     }
 
 private:

@@ -3,19 +3,20 @@ from typing import List, Dict, Optional
 
 from clients.python.api.Trick import Trick
 from clients.python.api.networking.ManagedConnection import ManagedConnection
-from clients.python.api.networking.SessionHelpers import RunGame, RunMultipleGames
-from clients.python.players.Player import Player, Game, Round
+from clients.python.api.networking.SessionHelpers import RunMultipleGames
+from clients.python.api.Player import Player
+from clients.python.api.Round import Round
+from clients.python.api.Game import Game
+from clients.python.api.types.Card import Card, SortCardsByRank, GroupCardsBySuit
 from clients.python.players.random_player import RandomPlayer
-from clients.python.types.Card import Card, SortCardsByRank, Suit, Rank, GroupCardsBySuit
-from clients.python.types.Constants import GameType
-from clients.python.types.PassDirection import PassDirection
-from clients.python.types.PlayerTagSession import PlayerTagSession
-from clients.python.types.logger import log
+from clients.python.util.Constants import GameType
+from clients.python.api.types.PassDirection import PassDirection
+from clients.python.api.types.PlayerTagSession import PlayerTagSession, PlayerTag
 
 
 class RobPlayer(Player):
     player_tag = "rob_player"
-    message_logging_enabled = False
+    message_print_logging_enabled = False
 
     def __init__(self, player_tag_session: PlayerTagSession):
         super().__init__(player_tag_session)
@@ -55,10 +56,10 @@ class RobPlayer(Player):
         pass
 
     def get_move(self, trick: Trick, legal_moves: List[Card]) -> Card:
-        if self.is_worried_about_shooting_the_moon():
-            return self.get_move_likely_to_win_trick(trick, legal_moves)
-        else:
-            return self.get_move_unlikely_to_win_trick(trick, legal_moves)
+        # if self.is_worried_about_shooting_the_moon():
+        #     return self.get_move_likely_to_win_trick(trick, legal_moves)
+        # else:
+        return self.get_move_unlikely_to_win_trick(trick, legal_moves)
 
     @staticmethod
     def get_move_unlikely_to_win_trick(trick: Trick, legal_moves: List[Card]) -> Card:
@@ -107,7 +108,7 @@ if __name__ == '__main__':
     start_time = time.time()
 
     with ManagedConnection("rob_player") as connection:
-        games = RunMultipleGames(connection, GameType.ANY, players, 64)
+        games = RunMultipleGames(connection, GameType.ANY, players, 32)
         for game_result in games:
             if "rob_player" in str(game_result[0].winner):
                 games_won += 1

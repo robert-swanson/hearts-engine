@@ -1,14 +1,13 @@
 import json
 import threading
-from datetime import time
 from enum import Enum
 from socket import socket, AF_INET, SOCK_STREAM, timeout
 from typing import List
 
-from clients.python.types.Constants import SERVER_IP, SERVER_PORT, Tags, ClientMsgTypes, ServerMsgTypes, \
-    ServerStatus, MICRO_TIMEOUT, LOG_CONNECTION_EVENTS
-from clients.python.types.PlayerTagSession import PlayerTag
-from clients.python.types.logger import log_message, log
+from clients.python.util.Constants import Tags, ClientMsgTypes, ServerMsgTypes, \
+    ServerStatus, MICRO_TIMEOUT, LOG_CONNECTIONS
+from clients.python.util.Env import SERVER_IP, SERVER_PORT
+from clients.python.util.Logging import ConnectionLogger
 
 
 class ConnectionStatus(Enum):
@@ -26,8 +25,8 @@ class Connection:
         self.status = ConnectionStatus.CONNECTED
         self.pending_messages: List[json] = []
         self.incomplete_message: bytes = b""
-        self.logging_session = -1
         self.sending_lock = threading.Lock()
+        self.logger = ConnectionLogger() if LOG_CONNECTIONS else None
 
         self.setup()
         print(f"Connected to {SERVER_IP}:{SERVER_PORT}")
@@ -54,8 +53,8 @@ class Connection:
         else:
             json_data = self.pending_messages.pop(0)
 
-        if LOG_CONNECTION_EVENTS:
-            log_message("Connection Received", json_data, False)
+        if self.logger is not None:
+            self.logger.log_message("Received", json_data, False)
         return json_data
 
     @staticmethod
@@ -87,8 +86,8 @@ class Connection:
         json_str = json.dumps(json_data, default=str, indent=1)
         with self.sending_lock:
             bytes_sent = self.client_socket.send(json_str.encode("utf-8"))
-            if LOG_CONNECTION_EVENTS:
-                log_message("Connection Sent", json_data, True)
+            if self.logger is not None:
+                self.logger.log_message("Sent", json_data, False)
             if bytes_sent != len(json_str):
                 raise ConnectionError(f"Expected to send {len(json_str)} bytes, but sent {bytes_sent}")
 

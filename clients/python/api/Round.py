@@ -1,54 +1,30 @@
-from typing import List
+from typing import List, Dict, Set
 
-from clients.python.api.Trick import ActiveTrick
-from clients.python.api.networking.Messenger import PassingMessenger, Messenger
-from clients.python.players.Player import Player, Round
-from clients.python.types.Card import Card, StrListToCards
-from clients.python.types.Constants import ServerMsgTypes, Tags, ClientMsgTypes
-from clients.python.types.PassDirection import PassDirection
-from clients.python.types.PlayerTagSession import PlayerTagSession, MakePlayerTagSession
+from clients.python.api.Trick import Trick
+from clients.python.api.types.Card import Card
+from clients.python.api.types.PassDirection import PassDirection
+from clients.python.api.types.PlayerTagSession import PlayerTagSession
 
 
-class ActiveRound(PassingMessenger, Round):
-    def __init__(self, messenger: Messenger, player: Player, player_order: List[PlayerTagSession]):
-        PassingMessenger.__init__(self, messenger)
-        self.player = player
+class Round:
+    def __init__(self, round_idx: int, pass_direction: PassDirection, player_order: List[PlayerTagSession], cards_in_hand: List[Card]):
+        self.round_idx = round_idx
+        self.pass_direction = pass_direction
+        self.player_order = player_order
+        self.cards_in_hand = cards_in_hand
 
-        round_msg = self.receive_type(ServerMsgTypes.START_ROUND)
-        round_idx = int(round_msg[Tags.ROUND_INDEX])
-        pass_direction = PassDirection(round_msg[Tags.PASS_DIRECTION])
-        cards = StrListToCards(round_msg[Tags.CARDS])
-        Round.__init__(self, round_idx, pass_direction, player_order, cards)
+        self.donating_cards: List[Card] = []
+        self.received_cards: List[Card] = []
+        self.tricks: List[Trick] = []
 
-    def get_receiving_player(self):
-        return self.pass_direction.get_receiving_player(self.player_order, self.player.player_tag_session)
+    def get_round_points(self) -> Dict[PlayerTagSession, int]:
+        player_to_points = {player: 0 for player in self.player_order}
+        for trick in self.tricks:
+            if trick.winner is not None:
+                player_to_points[trick.winner] += trick.get_current_point_value()
+        return player_to_points
 
-    def get_donating_player(self):
-        return self.pass_direction.get_donating_player(self.player_order, self.player.player_tag_session)
+    def get_played_cards(self) -> Set[Card]:
+        return {move.card for trick in self.tricks for move in trick.moves}
 
-    def run_round(self, player: Player):
-        assert player is self.player
-        self.player.handle_new_round(self)
-
-        if self.pass_direction != PassDirection.KEEPER:
-            self.donating_cards = self.player.get_cards_to_pass(self.pass_direction, self.get_receiving_player())
-            donated_cards_msg = {
-                Tags.TYPE: ClientMsgTypes.DONATED_CARDS,
-                Tags.CARDS: self.donating_cards
-            }
-            self.send(donated_cards_msg)
-
-            received_cards_msg = self.receive_type(ServerMsgTypes.RECEIVED_CARDS)
-            self.received_cards = StrListToCards(received_cards_msg[Tags.CARDS])
-            self.player.receive_passed_cards(self.received_cards, self.pass_direction, self.get_donating_player())
-
-        for trick_idx in range(13):
-            trick = ActiveTrick(self.messenger, self.player)
-            self.tricks.append(trick)
-            trick.run_trick(player)
-
-        end_round_msg = self.receive_type(ServerMsgTypes.END_ROUND)
-        round_points = {MakePlayerTagSession(tagSession): pts
-                        for tagSession, pts in end_round_msg[Tags.PLAYER_TO_ROUND_POINTS].items()}
-        self.player.handle_finished_round(self, round_points)
 

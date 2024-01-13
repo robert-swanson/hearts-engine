@@ -1,18 +1,16 @@
-from random import shuffle
 from typing import List, Dict
 
 from clients.python.api.Trick import Trick
 from clients.python.api.networking.ManagedConnection import ManagedConnection
-from clients.python.api.networking.PlayerGameSession import GameSession
-from clients.python.api.networking.SessionHelpers import MakeAndRunMultipleSessions, WaitForAllSessionsToFinish, RunMultipleGames, RunGame
-from clients.python.players.Player import Player, Game, Round
+from clients.python.api.networking.SessionHelpers import RunGame
+from clients.python.api.Round import Round
+from clients.python.api.Game import Game
 from clients.python.players.random_player import RandomPlayer
 from clients.python.players.rob_player import RobPlayer
-from clients.python.types.Card import Card, SortCardsBySuit
-from clients.python.types.Constants import GameType
-from clients.python.types.PassDirection import PassDirection
-from clients.python.types.PlayerTagSession import PlayerTagSession
-from clients.python.types.logger import log
+from clients.python.api.types import Card, SortCardsBySuit
+from clients.python.util.Constants import GameType
+from clients.python.api.types import PassDirection
+from clients.python.api.types import PlayerTagSession
 
 
 class DebuggerPlayer(RobPlayer):

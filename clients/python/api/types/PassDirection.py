@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import List
 
-from clients.python.types.PlayerTagSession import PlayerTagSession
+from clients.python.api.types.PlayerTagSession import PlayerTagSession
 
 
 class PassDirection(Enum):

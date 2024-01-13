@@ -53,6 +53,11 @@ public:
             mGameLogger->Log("Game %s crash due to: %s", mPlayers[0]->getTagSession().c_str(), e.what());
             return mPlayers;
         }
+        catch (...)
+        {
+            mGameLogger->Log("Game %s crash due to unknown error", mPlayers[0]->getTagSession().c_str());
+            return mPlayers;
+        }
     }
 
 private:
