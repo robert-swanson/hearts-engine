@@ -101,6 +101,7 @@ class RobPlayer(Player):
         return queen_played and points > 18 or not queen_played and points > 8
 
 
+
 if __name__ == '__main__':
     players = [RobPlayer, RandomPlayer, RandomPlayer, RandomPlayer]
     total_games = 0
