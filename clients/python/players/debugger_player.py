@@ -1,19 +1,19 @@
 from typing import List, Dict
 
+from clients.python.api.Game import Game
+from clients.python.api.Round import Round
 from clients.python.api.Trick import Trick
 from clients.python.api.networking.ManagedConnection import ManagedConnection
 from clients.python.api.networking.SessionHelpers import RunGame
-from clients.python.api.Round import Round
-from clients.python.api.Game import Game
+from clients.python.api.types.Card import SortCardsBySuit, Card
+from clients.python.api.types.PassDirection import PassDirection
+from clients.python.api.types.PlayerTagSession import PlayerTagSession
+from clients.python.players.madison_player import MadisonPlayer
 from clients.python.players.random_player import RandomPlayer
-from clients.python.players.rob_player import RobPlayer
-from clients.python.api.types import Card, SortCardsBySuit
 from clients.python.util.Constants import GameType
-from clients.python.api.types import PassDirection
-from clients.python.api.types import PlayerTagSession
 
 
-class DebuggerPlayer(RobPlayer):
+class DebuggerPlayer(MadisonPlayer):
     def __init__(self, player_tag_session: PlayerTagSession):
         super().__init__(player_tag_session)
         self.nicknames: Dict[PlayerTagSession, str] = {}
@@ -77,6 +77,6 @@ class DebuggerPlayer(RobPlayer):
 
 if __name__ == '__main__':
     players = [DebuggerPlayer, RandomPlayer, RandomPlayer, RandomPlayer]
-    with ManagedConnection("rob_player") as connection:
+    with ManagedConnection() as connection:
         RunGame(connection, GameType.ANY, players)
 

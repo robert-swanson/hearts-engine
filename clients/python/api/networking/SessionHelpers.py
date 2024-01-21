@@ -11,7 +11,8 @@ from clients.python.api.types.PlayerTagSession import PlayerTagSession
 GameSessionThreads: Dict[PlayerTagSession, threading.Thread] = {}
 
 
-def MakeSession(connection: ManagedConnection, game_type: GameType, player_cls: Type[Player_T]) -> Tuple[threading.Thread, GameSession]:
+def MakeSession(connection: ManagedConnection, game_type: GameType, player_cls: Type[Player_T]) -> Tuple[
+    threading.Thread, GameSession]:
     assert player_cls.player_tag is not None, "Player must have a player_tag"
     session = GameSession(connection, player_cls.player_tag, game_type, player_cls)
     thread = threading.Thread(target=session.run_game)
@@ -25,7 +26,8 @@ def MakeAndRunSession(connection: ManagedConnection, game_type: GameType, player
     return game_session
 
 
-def MakeAndRunMultipleSessions(connection: ManagedConnection, game_type: GameType, player_cls: Type[Player_T], num_threads: int) -> List[GameSession]:
+def MakeAndRunMultipleSessions(connection: ManagedConnection, game_type: GameType, player_cls: Type[Player_T],
+                               num_threads: int) -> List[GameSession]:
     return [MakeAndRunSession(connection, game_type, player_cls) for _ in range(num_threads)]
 
 
@@ -48,7 +50,8 @@ def _NotifyIfWaitingTooLong(thread: threading.Thread, session: GameSession) -> N
         print(f"Waiting for {session.player_session} to finish")
 
 
-def RunMultipleGames(connection: ManagedConnection, game_type: GameType, players_cls: List[Type[Player_T]], num_games: int) -> List[List[Game]]:
+def RunMultipleGames(connection: ManagedConnection, game_type: GameType, players_cls: List[Type[Player_T]],
+                     num_games: int) -> List[List[Game]]:
     assert len(players_cls) == 4, "Must have 4 players"
     sessions: List[List[Tuple[threading.Thread, GameSession]]] = []
 
@@ -70,3 +73,7 @@ def RunMultipleGames(connection: ManagedConnection, game_type: GameType, players
                 threading.Thread(target=_NotifyIfWaitingTooLong, args=(thread, session)).start()
                 thread.join()
     return [[session.get_results() for _, session in game] for game in sessions]
+
+
+def CountPlayerWins(player_cls: Player_T, game_results: List[List[Game]]):
+    return len([result for result in game_results if player_cls.player_tag in str(result[0].winner)])
