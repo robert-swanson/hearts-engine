@@ -64,7 +64,7 @@ def RunMultipleGames(connection: ManagedConnection, game_type: GameType, players
         game_sessions = [MakeSession(connection, game_type, player_cls) for player_cls in players_cls]
         sessions.append(game_sessions)
         [thread.start() for thread, _ in game_sessions]
-        if i % 10 == 0:
+        if i % 4 == 0:
             print(f"Started game {i}")
 
     for game in sessions:
@@ -75,5 +75,5 @@ def RunMultipleGames(connection: ManagedConnection, game_type: GameType, players
     return [[session.get_results() for _, session in game] for game in sessions]
 
 
-def CountPlayerWins(player_cls: Player_T, game_results: List[List[Game]]):
+def CountPlayerWins(player_cls: Player_T, game_results: List[List[Game]]) -> int:
     return len([result for result in game_results if player_cls.player_tag in str(result[0].winner)])

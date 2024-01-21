@@ -3,12 +3,13 @@ from typing import List, Dict, Optional
 
 from clients.python.api.Trick import Trick
 from clients.python.api.networking.ManagedConnection import ManagedConnection
-from clients.python.api.networking.SessionHelpers import RunMultipleGames, RunGame
+from clients.python.api.networking.SessionHelpers import RunMultipleGames, RunGame, CountPlayerWins
 from clients.python.api.Player import Player
 from clients.python.api.Round import Round
 from clients.python.api.Game import Game
 from clients.python.api.types.Card import Card, SortCardsByRank, GroupCardsBySuit
 from clients.python.players.random_player import RandomPlayer
+from clients.python.players.rob_player import RobPlayer
 from clients.python.util.Constants import GameType
 from clients.python.api.types.PassDirection import PassDirection
 from clients.python.api.types.PlayerTagSession import PlayerTagSession, PlayerTag
@@ -37,7 +38,8 @@ class MadisonPlayer(Player):
         pass
 
     def get_cards_to_pass(self, pass_dir: PassDirection, receiving_player: PlayerTagSession) -> List[Card]:
-        return SortCardsByRank(self.hand, reverse=True)[:3]
+        return SortCardsByRank(self.hand)[10:13]
+
 
     def receive_passed_cards(self, cards: List[Card], pass_dir: PassDirection, donating_player: PlayerTagSession) -> None:
         pass
@@ -54,13 +56,28 @@ class MadisonPlayer(Player):
         pass
 
     def get_move(self, trick: Trick, legal_moves: List[Card]) -> Card:
+        if self.is_first_trick(trick):
+            return SortCardsByRank(legal_moves,reverse=True)[0]
         return legal_moves[0]
+
+    @staticmethod
+    def is_first_trick(trick: Trick) -> bool:
+        if trick.trick_idx == 0:
+            is_first_trick = True
+        if trick.trick_idx > 0:
+            is_first_trick = False
+        return is_first_trick
+
+
+
 
 
 if __name__ == '__main__':
-    players = [MadisonPlayer, RandomPlayer, RandomPlayer, RandomPlayer]
+    players = [MadisonPlayer, RobPlayer, RandomPlayer, RandomPlayer]
 
     with ManagedConnection() as connection:
-        result = RunGame(connection, GameType.ANY, players)
+        results = RunMultipleGames(connection, GameType.ANY, players, 16)
 
-    print(result[0].winner)
+    num_wins = CountPlayerWins(MadisonPlayer, results)
+    num_games = len(results)
+    print(f"you won {num_wins} out of {num_games} games")
