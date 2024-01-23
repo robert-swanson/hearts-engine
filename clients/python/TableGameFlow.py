@@ -1,5 +1,4 @@
 from collections import defaultdict
-from collections import defaultdict
 from typing import List, Optional, Dict
 
 from clients.python.api.Game import Game
@@ -10,9 +9,8 @@ from clients.python.api.networking.PlayerGameSession import Player_T
 from clients.python.api.types.Card import Card, Suit
 from clients.python.api.types.PassDirection import PassDirection
 from clients.python.api.types.PlayerTagSession import PlayerTagSession, PlayerTag
-from clients.python.players.rob_player import RobPlayer
-from clients.python.util.table_game.TableGame import TableGameCLI
-from clients.python.util.table_game.card_validation import BlacklistedCardsValidator, UNIQUE_CARDS_VALIDATOR
+from clients.python.util.table_game.TableGameCLI import TableGameCLI
+from clients.python.util.table_game.CardValidation import BlacklistedCardsValidator, UNIQUE_CARDS_VALIDATOR
 
 
 class TableGame(Game):
@@ -159,7 +157,3 @@ class TableTrick(Trick):
         print(f"Trick {self.trick_idx} won by {self.winner}\n")
 
 
-if __name__ == '__main__':
-    player_cls = RobPlayer
-    player_names = [player_cls.player_tag] + [input(f"Player {i + 2} name: ") for i in range(3)]
-    TableGame(player_cls, player_names).run_game()
