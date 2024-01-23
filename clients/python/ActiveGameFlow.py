@@ -61,7 +61,8 @@ class ActiveRound(PassingMessenger, Round):
         self.player.handle_new_round(self)
 
         if self.pass_direction != PassDirection.KEEPER:
-            self.donating_cards = self.player.get_cards_to_pass(self.pass_direction, self.get_receiving_player())
+            self.receiving_player = self.get_receiving_player()
+            self.donating_cards = self.player.get_cards_to_pass(self.pass_direction, self.receiving_player)
             donated_cards_msg = {
                 Tags.TYPE: ClientMsgTypes.DONATED_CARDS,
                 Tags.CARDS: self.donating_cards
@@ -70,7 +71,8 @@ class ActiveRound(PassingMessenger, Round):
 
             received_cards_msg = self.receive_type(ServerMsgTypes.RECEIVED_CARDS)
             self.received_cards = StrListToCards(received_cards_msg[Tags.CARDS])
-            self.player.receive_passed_cards(self.received_cards, self.pass_direction, self.get_donating_player())
+            self.donating_player = self.get_donating_player()
+            self.player.receive_passed_cards(self.received_cards, self.pass_direction, self.donating_player)
 
         for trick_idx in range(13):
             trick = ActiveTrick(self.messenger, self.player)

@@ -1,4 +1,4 @@
-from typing import List, Dict, Set
+from typing import List, Dict, Set, Optional
 
 from clients.python.api.Trick import Trick
 from clients.python.api.types.Card import Card
@@ -15,6 +15,8 @@ class Round:
 
         self.donating_cards: List[Card] = []
         self.received_cards: List[Card] = []
+        self.receiving_player: Optional[PlayerTagSession] = None
+        self.donating_player: Optional[PlayerTagSession] = None
         self.tricks: List[Trick] = []
 
     def get_round_points(self) -> Dict[PlayerTagSession, int]:
