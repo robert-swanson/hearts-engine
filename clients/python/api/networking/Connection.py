@@ -20,7 +20,6 @@ class Connection:
         self.host = ip
         self.port = port
         self.client_socket = socket(AF_INET, SOCK_STREAM)
-        print(f"Connecting to {SERVER_IP}:{SERVER_PORT}")
         self.client_socket.connect((SERVER_IP, SERVER_PORT))
         self.client_socket.settimeout(MICRO_TIMEOUT)
         self.status = ConnectionStatus.CONNECTED

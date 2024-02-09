@@ -9,5 +9,6 @@ class Game:
         self.player_order = player_order
         self.rounds: List[Round] = []
         self.winner: Optional[PlayerTagSession] = None
+        self.players_to_points: dict[PlayerTagSession, int] = {}
 
 

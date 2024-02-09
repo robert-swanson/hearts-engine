@@ -32,10 +32,10 @@ class ActiveGame(PassingMessenger, Game):
                 break
 
         end_game_msg = self.messenger.receive_type(ServerMsgTypes.END_GAME)
-        players_to_points = {MakePlayerTagSession(tagSession): pts
-                             for tagSession, pts in end_game_msg[Tags.PLAYER_TO_GAME_POINTS].items()}
+        self.players_to_points = {MakePlayerTagSession(tagSession): pts
+                                  for tagSession, pts in end_game_msg[Tags.PLAYER_TO_GAME_POINTS].items()}
         winner = MakePlayerTagSession(end_game_msg[Tags.WINNING_PLAYER])
-        player.handle_end_game(players_to_points, winner)
+        player.handle_end_game(self.players_to_points, winner)
         self.winner = winner
 
 
