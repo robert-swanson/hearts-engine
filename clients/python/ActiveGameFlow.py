@@ -63,6 +63,7 @@ class ActiveRound(PassingMessenger, Round):
         if self.pass_direction != PassDirection.KEEPER:
             self.receiving_player = self.get_receiving_player()
             self.donating_cards = self.player.get_cards_to_pass(self.pass_direction, self.receiving_player)
+            assert len(self.donating_cards) == 3, f"Player {self.player.player_tag_session} tried to pass {len(self.donating_cards)} cards"
             donated_cards_msg = {
                 Tags.TYPE: ClientMsgTypes.DONATED_CARDS,
                 Tags.CARDS: self.donating_cards

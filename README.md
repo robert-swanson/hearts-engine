@@ -7,7 +7,17 @@ Each of the four players are controlled by a client which communicates its moves
 
 1. After cloning the repository, `cd hearts-engine`
 2. `vi config.env` and make sure SERVER_PORT and SERVER_ADDR are pointing to a known server
-3. 
+3. `python clients/python/players/random_player.py`
+   4. Example output:
+   ```txt
+   Connected to hearts.radiswanson.org:40405
+   Scores:
+      random_player(56): 106
+      random_player(57): 78
+      random_player(58): 97
+      random_player(59): 57
+   ```
+See the [clients/README.md](clients/README.md) for more information on implementing a client.
 
 
 ## Setting up the Server
