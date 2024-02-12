@@ -1,5 +1,5 @@
 from collections import defaultdict
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Tuple
 
 from clients.python.api.Game import Game
 from clients.python.api.Player import Player
@@ -29,7 +29,7 @@ class TableGame(Game):
         player = self.player_cls(self.player_order[0])
         player.initialize_for_game(self)
 
-        pass_direction = PassDirection.LEFT
+        pass_direction = self.cli.ask_for_pass_direction("Starting pass direction", PassDirection.LEFT)
         players_to_points: Dict[PlayerTagSession, int] = defaultdict(int)
 
         while True:
@@ -39,10 +39,14 @@ class TableGame(Game):
             pass_direction = pass_direction.next_pass_direction()
 
             round_points = table_round.get_round_points()
-            for player, points in round_points.items():
-                players_to_points[player] += points
+            for name, points in round_points.items():
+                players_to_points[name] += points
+
+            print(f"Current rankings: ")
             rankings = sorted(players_to_points.items(), key=lambda kv: kv[1])
-            print(f"Current rankings: {rankings}")
+            for i, (name, points) in enumerate(rankings):
+                print(f"\t{i + 1}. {name.player_tag} - {points} pts")
+
             if rankings[-1][1] >= 100:
                 break
 
@@ -61,7 +65,9 @@ class TableRound(Round):
         return self.player_order[start_idx:] + self.player_order[:start_idx]
 
     def get_round_points(self) -> Dict[PlayerTagSession, int]:
-        player_to_points: Dict[PlayerTagSession] = defaultdict(int)
+        player_to_points: Dict[PlayerTagSession, int] = {}
+        for player in self.player_order:
+            player_to_points[player] = 0
         for trick in self.tricks:
             hearts = len([move for move in trick.moves if move.card.suit == Suit.HEARTS])
             had_qs = any([move.card == Card("QS") for move in trick.moves])
@@ -100,7 +106,7 @@ class TableRound(Round):
 
         round_points = self.get_round_points()
         self.player.handle_finished_round(self, round_points)
-        print(f"Round points: {round_points}")
+        print(f"Round points: {','.join([f'{player.player_tag}: {points}' for player, points in round_points.items()])}\n")
 
 
 class TableTrick(Trick):

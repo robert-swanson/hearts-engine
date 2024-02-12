@@ -12,6 +12,7 @@ class TableGameCLI:
     def __init__(self, game: Game):
         self.game = game
         self.card_selection = []
+        self.last_unexpected_input = None
 
     def _get_round(self):
         return self.game.rounds[-1] if len(self.game.rounds) > 0 else None
@@ -119,7 +120,12 @@ class TableGameCLI:
     T = TypeVar("T")
 
     def input(self, prompt: str, type_cls: Type[T] = str) -> T:
-        input_str = input(prompt)
+        if self.last_unexpected_input is not None:
+            print(f"{prompt} (auto populated with previous unexpected input): {self.last_unexpected_input}")
+            input_str = self.last_unexpected_input
+            self.last_unexpected_input = None
+        else:
+            input_str = input(prompt)
 
         if self._check_card_cmds(input_str):
             return self.input(prompt, type_cls)
@@ -171,12 +177,26 @@ class TableGameCLI:
 
     def ask_for_player(self, prompt: str, players: List[PlayerTagSession]) -> PlayerTagSession:
         while True:
-            player_str = self.input(prompt + " ")
+            player_str = self.input(prompt + " ").lower()
             for player in players:
-                if player_str == str(player) or player_str == str(player.player_tag):
+                if player_str == str(player).lower() or player_str == str(player.player_tag).lower():
                     return player
             print(f"Invalid player '{player_str}' must be one of {players}")
 
-    @staticmethod
-    def instruct(prompt: str) -> None:
-        print(prompt)
+    def ask_for_pass_direction(self, prompt: str, default: PassDirection) -> PassDirection:
+        pass_direction_str = self.input(prompt + f" (default {default}) ")
+        if pass_direction_str == "":
+            return default
+        try:
+            return PassDirection[pass_direction_str.upper()]
+        except KeyError:
+            print(f"Invalid pass direction '{pass_direction_str}' must be one of {PassDirection.__members__}")
+            return self.ask_for_pass_direction(prompt, default)
+
+    def instruct(self, prompt: str) -> None:
+        print(f"{prompt} (press enter to continue)")
+        in_str = self.input("")
+        if in_str != "":
+            print(f"Unexpected input: {in_str} (will auto populate next prompt)")
+            self.last_unexpected_input = in_str
+

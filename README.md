@@ -8,7 +8,6 @@ Each of the four players are controlled by a client which communicates its moves
 1. After cloning the repository, `cd hearts-engine`
 2. `vi config.env` and make sure SERVER_PORT and SERVER_ADDR are pointing to a known server
 3. `python clients/python/players/random_player.py`
-   4. Example output:
    ```txt
    Connected to hearts.radiswanson.org:40405
    Scores:
@@ -29,4 +28,35 @@ If you wish to run a local instance of the game server do the following:
    - If you get `cmake: command not found` install cmake with your package manager (e.g. on linux: `sudo apt-get install cmake`) and rerun
 3. `cmake .`
 4. `cmake --build --target Server`
-5. `
+
+
+## Use a Player AI in a physical game of hearts
+Any client implemented using the python API can automatically be used in a physical game of hearts provided a person can act as the go-between between the physical cards and the textual interface.
+1. Look at the [TableGame.py](python/util/table_game/TableGame.py) and set `player_cls` to the client you want to use.
+2. Run it: `python python/util/table_game/TableGame.py`
+3. Populate the player names (you are treated as player 1) starting with the person to your left
+4. Follow the prompts to input cards dealt to the player and take actions when instructed
+
+Cards are expressed as two case-insensitive characters, the rank and suit, e.g.:
+- `2C` is the 2 of clubs
+- `QH` is the queen of hearts
+- `AS` is the ace of spades
+- `TD` is the ten of diamonds
+
+A list of cards can be expressed as a space (or comma) seperated list of cards, e.g.: `2C QS 8D`
+
+Or it can be expressed as a suit followed by ranks of that suit:
+```txt
+...
+Starting hand, card 1/13: C: 2 5 8 J A
+Starting hand, card 6/13: D: 3 A
+Starting hand, card 8/13: QS
+Starting hand, card 9/13: H: 5 7 8 9
+Starting hand, card 13/13: 9H
+Duplicate card(s): {9H}
+Starting hand, card 13/13: TH
+Pass [AD, AC, QS] Left to Ted(2) (press enter to continue)
+...
+```
+
+
