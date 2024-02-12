@@ -3,7 +3,7 @@ import threading
 from typing import Dict, TypeVar, Type, Optional, Union
 
 from clients.python.api.Game import Game
-from clients.python.api.ActiveGameFlow import ActiveGame
+from clients.python.ActiveGameFlow import ActiveGame
 from clients.python.api.networking.ManagedConnection import ManagedConnection
 from clients.python.api.networking.Messenger import Messenger
 from clients.python.api.types.PlayerTagSession import PlayerTag, PlayerTagSession

@@ -57,7 +57,7 @@ class Rank(Enum):
 
 class Card:
     def __init__(self, card_str: str):
-        assert len(card_str) == 2, f"Card str must be 2 chars"
+        assert len(card_str) == 2, f"Card str must be 2 chars but was '{card_str}'"
         self.rank = Rank(card_str[0])
         self.suit = Suit(card_str[1])
 
@@ -70,10 +70,20 @@ class Card:
     def __lt__(self, other):
         return self.rank < other.rank or (self.rank == other.rank and self.suit < other.suit)
 
+    def __eq__(self, other):
+        return self.rank == other.rank and self.suit == other.suit
+
+    def __hash__(self):
+        return hash((self.rank, self.suit))
+
     def get_point_value(self):
         if self == Card("QS"):
             return 13
         return 1 if self.suit == Suit.HEARTS else 0
+
+    @staticmethod
+    def make_deck() -> List["Card"]:
+        return [Card(f"{rank.value}{suit.value}") for rank in Rank for suit in Suit]
 
 
 def StrListToCards(cards: Collection[str]) -> List[Card]:
@@ -89,7 +99,16 @@ def SortCardsBySuit(cards: Collection[Card], reverse=False) -> List[Card]:
 
 
 def GroupCardsBySuit(cards: Collection[Card]) -> Dict[Suit, List[Card]]:
-    suit_to_cards = defaultdict(list)
+    suit_to_cards: Dict[Suit, List[Card]] = defaultdict(list)
     for card in cards:
         suit_to_cards[card.suit].append(card)
     return suit_to_cards
+
+
+def CondensedDeckRepr(cards: Collection[Card]) -> str:
+    if len(cards) <= 5:
+        return ",".join([str(c) for c in SortCardsBySuit(cards)])
+    grouped = GroupCardsBySuit(cards)
+    repr_str = ""
+    suit_reprs = [f"{suit.value}: {','.join([c.rank.value for c in SortCardsByRank(cards)])} " for suit, cards in grouped.items()]
+    return "  ".join(suit_reprs)

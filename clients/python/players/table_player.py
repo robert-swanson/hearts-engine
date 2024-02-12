@@ -1,19 +1,3 @@
-import time
-from typing import List, Dict, Optional
-
-from clients.python.api.Trick import Trick
-from clients.python.api.networking.ManagedConnection import ManagedConnection
-from clients.python.api.networking.SessionHelpers import RunMultipleGames
-from clients.python.api.Player import Player
-from clients.python.api.Round import Round
-from clients.python.api.Game import Game
-from clients.python.api.types.Card import Card, SortCardsByRank, GroupCardsBySuit
-from clients.python.players.random_player import RandomPlayer
-from clients.python.util.Constants import GameType
-from clients.python.api.types.PassDirection import PassDirection
-from clients.python.api.types.PlayerTagSession import PlayerTagSession, PlayerTag
-
-
 class RobPlayer(Player):
     player_tag = "rob_player"
     message_print_logging_enabled = False
@@ -56,7 +40,6 @@ class RobPlayer(Player):
         pass
 
     def get_move(self, trick: Trick, legal_moves: List[Card]) -> Card:
-        assert len(legal_moves) > 0, "Must have at least one legal move"
         if self.is_worried_about_shooting_the_moon():
             return self.get_move_likely_to_win_trick(trick, legal_moves)
         else:

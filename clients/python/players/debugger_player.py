@@ -77,6 +77,6 @@ class DebuggerPlayer(RobPlayer):
 
 if __name__ == '__main__':
     players = [DebuggerPlayer, RandomPlayer, RandomPlayer, RandomPlayer]
-    with ManagedConnection("rob_player") as connection:
+    with ManagedConnection() as connection:
         RunGame(connection, GameType.ANY, players)
 
