@@ -69,4 +69,6 @@ Pass [AD, AC, QS] Left to Ted(2) (press enter to continue)
 ...
 ```
 
+## Contributing
+Please feel free to add player clients or contribute to the project in seperate branches. Please open PRs for those branches and contact me to review and merge them to `main`
 
