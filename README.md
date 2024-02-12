@@ -1,6 +1,15 @@
 # Hearts Card Game Service
 
-This project includes a game matching server (C++) which can mediate games between client players.
+This project aims to provide a platform for people to easily implement players for the game of hearts and compete them against each other.
+It includes 
+1. A game server (C++) which mediates games between client players 
+   - Can be built and run locally, or you can use the server hosted at `hearts.radiswanson.org:40405` (default config)
+   - The server also implements logic for matching players to games (currently only first come first match)
+2. A [python API](#running-a-client) for easily implementing and running client players
+   - Supports multiple concurrent running sessions and games
+   - Supports playing physical games against any implemented player
+3. (TODO) A database for storing game actions and results for aggregated analysis or model training
+   
 
 ## Running a Client
 Each of the four players are controlled by a client which communicates its moves to the server. The server will then relay the moves to the other clients.
@@ -19,15 +28,16 @@ Each of the four players are controlled by a client which communicates its moves
 See the [clients/README.md](clients/README.md) for more information on implementing a client.
 
 
-## Setting up the Server
+## Setting a local server
 
-If you wish to run a local instance of the game server do the following:
+If you wish to run a local instance of the game server do the following (untested):
 
 1. `cd hearts-engine`
 2. `./setup.sh` (this may take several minutes the first time)
    - If you get `cmake: command not found` install cmake with your package manager (e.g. on linux: `sudo apt-get install cmake`) and rerun
 3. `cmake .`
 4. `cmake --build --target Server`
+5. `./Server config.env`
 
 
 ## Use a Player AI in a physical game of hearts

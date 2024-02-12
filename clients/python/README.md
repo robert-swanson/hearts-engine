@@ -57,3 +57,16 @@ You can read the [documentation](api/networking/SessionHelpers.py) for these met
     print(f"Games won: {games_won}/{total_games} ({games_won / total_games * 100}%)")
     print(f"Time: {time.time() - start_time}")
 ```
+
+
+## Testing
+There are a few ways you might want to go about testing your player:
+1. Run it on the server against random players (as demonstrated above)
+    - Good for running a large number of games to get an aggregate win rate or test more scenarios
+    - Hard to get a sense for the actual strategy in individual games (would require checking logs or adding print statements)
+2. Use the [`DebuggerPlayer`](players/debugger_player.py) class type to add an interactive CLI for each decision made by the player
+    - Good for seeing the decisions made by the player in individual games
+    - *Make sure you change the superclass of DebuggerPlayer to the player you want to test*
+3. Play a physical game (aka [table game](util/table_game/TableGame.py)) of hearts and use your player to make decisions
+    - Good for putting your player in a more realistic scenario, and to show off its performance to others
+    - Be sure to set `player_cls` to your player class in the `TableGame` class
