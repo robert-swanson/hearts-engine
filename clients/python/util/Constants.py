@@ -12,11 +12,6 @@ CLIENT_LOG_DIRNAME = "client"
 SESSION_LOG_DIRNAME = "sessions"
 CONNECTION_LOG_DIRNAME = "connections"
 
-# Threading
-MAX_CONCURRENT_SESSIONS = 16
-assert MAX_CONCURRENT_SESSIONS >= 4, "Must be able to have at least 4 concurrent sessions"
-
-
 class Tags:
     TYPE = "type"
     STATUS = "status"
