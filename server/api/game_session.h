@@ -68,6 +68,7 @@ private:
     uint16_t mSessionSeqNum = 1;
 };
 
+using SessionRef = std::shared_ptr<PlayerGameSession>;
 }
 
 // TODO: to support backwards dependability without circular imports, add a 'Messenger' protocol that the dependant can call rather than the creator class

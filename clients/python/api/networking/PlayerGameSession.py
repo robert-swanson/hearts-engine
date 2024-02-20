@@ -14,7 +14,7 @@ Player_T = TypeVar('Player_T', bound='Player')
 
 
 class GameSession(Messenger):
-    def __init__(self, connection: ManagedConnection, player_tag: Union[PlayerTag, str], game_type: GameType, player_cls: Type[Player_T]):
+    def __init__(self, connection: ManagedConnection, player_tag: Union[PlayerTag, str], game_type: GameType, player_cls: Type[Player_T], lobby_code: str = ""):
         self.connection = connection
         self.game_type = game_type
         self.player_tag = player_tag if type(player_tag) is PlayerTag else PlayerTag(str(player_tag))
@@ -26,6 +26,7 @@ class GameSession(Messenger):
         session_request = {
             Tags.TYPE: ClientMsgTypes.REQUEST_GAME_SESSION,
             Tags.PLAYER_TAG: self.player_tag,
+            Tags.LOBBY_CODE: lobby_code,
             Tags.SEQ_NUM: self._get_seqnum_and_increment(),
             Tags.GAME_TYPE: self.game_type.value
         }

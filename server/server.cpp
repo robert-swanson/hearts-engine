@@ -5,7 +5,7 @@
 #include "../util/logging.h"
 #include "../util/env.h"
 #include "api/managed_connection.h"
-#include "matcher.h"
+#include "matching/matcher.h"
 
 using namespace Common::Server;
 using namespace boost::asio;

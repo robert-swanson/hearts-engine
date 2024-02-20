@@ -31,6 +31,11 @@ public:
         return mJson[tag].get<T>();
     }
 
+    const bool hasTag(const std::string &tag) const
+    {
+        return mJson.find(tag) != mJson.end();
+    }
+
 protected:
     std::string mMsgType;
     json mJson;

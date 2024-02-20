@@ -1,7 +1,7 @@
 from collections import defaultdict
 from typing import List, Optional, Dict, Tuple
 
-from clients.python.api.Game import Game
+from clients.python.api.Game import PrivilegedGame
 from clients.python.api.Player import Player
 from clients.python.api.Round import Round
 from clients.python.api.Trick import Trick, Move
@@ -13,7 +13,7 @@ from clients.python.util.table_game.TableGameCLI import TableGameCLI
 from clients.python.util.table_game.CardValidation import BlacklistedCardsValidator, UNIQUE_CARDS_VALIDATOR
 
 
-class TableGame(Game):
+class TablePrivateGame(PrivilegedGame):
     def __init__(self, player_cls: Player_T, player_order: List[str]):
         self.table_player = PlayerTag(player_cls.player_tag)
         player_order = [PlayerTag(player_tag) for player_tag in player_order]

@@ -12,10 +12,6 @@ CLIENT_LOG_DIRNAME = "client"
 SESSION_LOG_DIRNAME = "sessions"
 CONNECTION_LOG_DIRNAME = "connections"
 
-# Threading
-MAX_CONCURRENT_SESSIONS = 16
-assert MAX_CONCURRENT_SESSIONS >= 4, "Must be able to have at least 4 concurrent sessions"
-
 
 class Tags:
     TYPE = "type"
@@ -23,6 +19,7 @@ class Tags:
     SESSION_ID = "session_id"
     SEQ_NUM = "seq_num"
     PLAYER_TAG = "player_tag"
+    LOBBY_CODE = "lobby_code"
     GAME_TYPE = "game_type"
     PLAYER_ORDER = "player_order"
     PASS_DIRECTION = "pass_direction"

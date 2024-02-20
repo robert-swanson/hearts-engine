@@ -11,6 +11,7 @@ using json = nlohmann::json;
 using PlayerTag = std::string;
 using PlayerGameSessionID = long long;
 using PlayerTagSession = std::string;
+using LobbyCode = std::string;
 
 PlayerTagSession MakePlayerTagSession(const PlayerTag& playerTag, PlayerGameSessionID playerGameSessionID)
 {
