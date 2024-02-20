@@ -12,12 +12,14 @@ CLIENT_LOG_DIRNAME = "client"
 SESSION_LOG_DIRNAME = "sessions"
 CONNECTION_LOG_DIRNAME = "connections"
 
+
 class Tags:
     TYPE = "type"
     STATUS = "status"
     SESSION_ID = "session_id"
     SEQ_NUM = "seq_num"
     PLAYER_TAG = "player_tag"
+    LOBBY_CODE = "lobby_code"
     GAME_TYPE = "game_type"
     PLAYER_ORDER = "player_order"
     PASS_DIRECTION = "pass_direction"

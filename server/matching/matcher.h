@@ -32,6 +32,7 @@ public:
         if (message.hasTag(Tags::LOBBY_CODE))
         {
             lobbyCode = message.getTag<std::string>(Tags::LOBBY_CODE);
+            lobbyCode = lobbyCode.empty() ? DEFAULT_LOBBY_CODE : lobbyCode;
         }
 
         Matcher & matcher = GetInstance();
