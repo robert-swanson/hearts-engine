@@ -13,7 +13,7 @@ SESSION_LOG_DIRNAME = "sessions"
 CONNECTION_LOG_DIRNAME = "connections"
 
 # Threading
-MAX_CONCURRENT_SESSIONS = 16
+MAX_CONCURRENT_SESSIONS = 64
 assert MAX_CONCURRENT_SESSIONS >= 4, "Must be able to have at least 4 concurrent sessions"
 
 

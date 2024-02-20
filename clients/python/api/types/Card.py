@@ -76,7 +76,7 @@ class Card:
     def __hash__(self):
         return hash((self.rank, self.suit))
 
-    def get_point_value(self):
+    def get_point_value(self)->int:
         if self == Card("QS"):
             return 13
         return 1 if self.suit == Suit.HEARTS else 0
