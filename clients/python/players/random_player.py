@@ -59,20 +59,13 @@ class RandomPlayer(Player):
         return legal_moves[0]
 
 
-# if __name__ == '__main__':
-#     player_clss = [RandomPlayer, RandomPlayer, RandomPlayer, RandomPlayer]
-#     with ManagedConnection() as connection:
-#         player_results = RunGame(connection, GameType.ANY, player_clss)
-#         results = player_results[0]
-#         print("Scores:")
-#         for player, score in results.players_to_points.items():
-#             print(f"\t{player}: {score}")
-
-
 if __name__ == '__main__':
+    player_clss = [RandomPlayer, RandomPlayer, RandomPlayer, RandomPlayer]
     with ManagedConnection() as connection:
-        games = RunMultipleGames(connection, GameType.ANY, [RandomPlayer, RandomPlayer, RandomPlayer, RandomPlayer], 4)
-        for game_results in games:
-            print(game_results[0].winner)
+        player_results = RunGame(connection, GameType.ANY, player_clss)
+        results = player_results[0]
+        print("Scores:")
+        for player, score in results.players_to_points.items():
+            print(f"\t{player}: {score}")
 
 

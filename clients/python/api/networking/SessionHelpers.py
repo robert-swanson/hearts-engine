@@ -133,9 +133,10 @@ def RunGame(connection: ManagedConnection, game_type: GameType, players_cls: Lis
     return [session.get_results() for _, session in thread_sessions]
 
 
-def RunMultipleGames(connection: ManagedConnection, game_type: GameType, players_cls: List[Type[Player_T]], num_games: int) -> List[List[Game]]:
+def RunMultipleGames(connection: ManagedConnection, game_type: GameType, players_cls: List[Type[Player_T]],
+                     num_games: int, num_concurrent_sessions=64) -> List[List[Game]]:
     """
-    (blocking) Spins up multiple synchronous games based on the provided players
+    (blocking) Spins up multiple concurrent games based on the provided players
     :param connection: An initialized connection to the server (may have already been used for other sessions)
     :param game_type:
         Configures how the session should be matched to other player sessions (not yet implemented, currently behaves as ANY)
@@ -144,6 +145,7 @@ def RunMultipleGames(connection: ManagedConnection, game_type: GameType, players
         3. GameType.BOTS_ONLY: Tells the matcher that this player should only be matched to a game with all bot players
     :param players_cls: A list of the 4 player types that will be instantiated and run in the game (order matters, can include duplicates)
     :param num_games: The number of games to run
+    :param num_concurrent_sessions: Maximum number of sessions that will be run concrrently, additional sessions will be queued
     :return: A list of lists (one for each game) of 4 Game objects, one for each player, each including the game results as well as each player's private information (hand, passes)
 
     Example:
@@ -163,7 +165,7 @@ def RunMultipleGames(connection: ManagedConnection, game_type: GameType, players
 
     for i in range(num_games):
         # Wait for sessions to free up
-        while connection.num_running_sessions > MAX_CONCURRENT_SESSIONS - 4:
+        while connection.num_running_sessions > num_concurrent_sessions - 4:
             with connection.game_finished_condition:
                 connection.game_finished_condition.wait()
 
@@ -171,7 +173,7 @@ def RunMultipleGames(connection: ManagedConnection, game_type: GameType, players
         sessions.append(game_sessions)
         [thread.start() for thread, _ in game_sessions]
 
-        if num_games > (MAX_CONCURRENT_SESSIONS/4) and i % (MAX_CONCURRENT_SESSIONS/4) == 0 and i != 0:
+        if num_games > (num_concurrent_sessions/4) and i % (num_concurrent_sessions/4) == 0 and i != 0:
             print(f"Started game {i}")
 
     WaitForAllSessionsToFinish()
