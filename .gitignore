@@ -31,6 +31,8 @@
 *.out
 *.app
 
+.idea/
 externals/
 log/
+versions/
 config.env

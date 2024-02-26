@@ -104,21 +104,21 @@ class RobPlayer(Player):
         return queen_played and points > 18 or not queen_played and points > 8
 
 
-# if __name__ == '__main__':
-#     players = [RobPlayer, RandomPlayer, RandomPlayer, RandomPlayer]
-#     total_games = 0
-#     games_won = 0
-#     start_time = time.time()
-#
-#     with ManagedConnection("rob_player") as connection:
-#         game_results = RunMultipleGames(connection, GameType.ANY, players, 10)
-#         for game_result in game_results:
-#             if "rob_player" in str(game_result.winner):
-#                 games_won += 1
-#             total_games += 1
-#
-#     print(f"Games won: {games_won}/{total_games} ({games_won / total_games * 100}%)")
-#     print(f"Time: {time.time() - start_time}")
+if __name__ == '__main__':
+    players = [RobPlayer, RandomPlayer, RandomPlayer, RandomPlayer]
+    total_games = 0
+    games_won = 0
+    start_time = time.time()
+
+    with ManagedConnection("rob_player") as connection:
+        game_results = RunMultipleGames(connection, GameType.ANY, players, 10)
+        for game_result in game_results:
+            if "rob_player" in str(game_result.winner):
+                games_won += 1
+            total_games += 1
+
+    print(f"Games won: {games_won}/{total_games} ({games_won / total_games * 100}%)")
+    print(f"Time: {time.time() - start_time}")
 
 if __name__ == '__main__':
     with ManagedConnection() as connection:
