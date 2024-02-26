@@ -55,9 +55,13 @@ class MadisonPlayer(Player):
         pass
 
     def get_move(self, trick: Trick, legal_moves: List[Card]) -> Card:
-        if self.is_first_trick(trick):
-            return SortCardsByRank(legal_moves, reverse=True)[0]
-        return legal_moves[0]
+        highest_card = SortCardsByRank(legal_moves, reverse=True)[0]
+        lowest_card = legal_moves[0]
+
+        if self.is_first_trick(trick) or (self.is_last_player_in_trick(trick) and self.is_point_value_zero(trick)):
+            return highest_card
+        else:
+            return lowest_card
 
     @staticmethod
     def is_first_trick(trick: Trick) -> bool:
@@ -67,12 +71,21 @@ class MadisonPlayer(Player):
             is_first_trick = False
         return is_first_trick
 
+    def is_last_player_in_trick(self, trick: Trick) -> bool:
+        last_player_in_trick = trick.player_order[3]
+        is_last_player_in_trick = self.player_tag_session == last_player_in_trick
+        return is_last_player_in_trick
+
+    @staticmethod
+    def is_point_value_zero(trick: Trick) -> bool:
+        return trick.get_current_point_value() == 0
+
 
 if __name__ == '__main__':
     players = [MadisonPlayer, RandomPlayer, RandomPlayer, RandomPlayer]
 
     with ManagedConnection() as connection:
-        results = RunMultipleGames(connection, GameType.ANY, players, 16)
+        results = RunMultipleGames(connection, GameType.ANY, players, 16, num_concurrent_sessions=16)
 
     num_wins = CountPlayerWins(MadisonPlayer, results)
     num_games = len(results)

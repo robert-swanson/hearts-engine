@@ -200,5 +200,5 @@ def RunMultipleGames(connection: ManagedConnection, game_type: GameType, player_
             for game_sessions in sessions]
 
 
-def CountPlayerWins(player_cls: Player_T, game_results: List[List[ObjectiveGame]]) -> int:
+def CountPlayerWins(player_cls: Player_T, game_results: List[ObjectiveGame]) -> int:
     return len([result for result in game_results if player_cls.player_tag in str(result.winner)])
