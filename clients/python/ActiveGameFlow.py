@@ -32,10 +32,10 @@ class ActiveGame(PassingMessenger, Game):
                 break
 
         end_game_msg = self.messenger.receive_type(ServerMsgTypes.END_GAME)
-        players_to_points = {MakePlayerTagSession(tagSession): pts
-                             for tagSession, pts in end_game_msg[Tags.PLAYER_TO_GAME_POINTS].items()}
+        self.players_to_points = {MakePlayerTagSession(tagSession): pts
+                                  for tagSession, pts in end_game_msg[Tags.PLAYER_TO_GAME_POINTS].items()}
         winner = MakePlayerTagSession(end_game_msg[Tags.WINNING_PLAYER])
-        player.handle_end_game(players_to_points, winner)
+        player.handle_end_game(self.players_to_points, winner)
         self.winner = winner
 
 
@@ -61,7 +61,9 @@ class ActiveRound(PassingMessenger, Round):
         self.player.handle_new_round(self)
 
         if self.pass_direction != PassDirection.KEEPER:
-            self.donating_cards = self.player.get_cards_to_pass(self.pass_direction, self.get_receiving_player())
+            self.receiving_player = self.get_receiving_player()
+            self.donating_cards = self.player.get_cards_to_pass(self.pass_direction, self.receiving_player)
+            assert len(self.donating_cards) == 3, f"Player {self.player.player_tag_session} tried to pass {len(self.donating_cards)} cards"
             donated_cards_msg = {
                 Tags.TYPE: ClientMsgTypes.DONATED_CARDS,
                 Tags.CARDS: self.donating_cards
@@ -70,7 +72,8 @@ class ActiveRound(PassingMessenger, Round):
 
             received_cards_msg = self.receive_type(ServerMsgTypes.RECEIVED_CARDS)
             self.received_cards = StrListToCards(received_cards_msg[Tags.CARDS])
-            self.player.receive_passed_cards(self.received_cards, self.pass_direction, self.get_donating_player())
+            self.donating_player = self.get_donating_player()
+            self.player.receive_passed_cards(self.received_cards, self.pass_direction, self.donating_player)
 
         for trick_idx in range(13):
             trick = ActiveTrick(self.messenger, self.player)

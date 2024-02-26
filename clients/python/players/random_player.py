@@ -1,9 +1,11 @@
+import time
 from random import shuffle
 from typing import List, Dict
 
 from clients.python.api.Trick import Trick
 from clients.python.api.networking.ManagedConnection import ManagedConnection
-from clients.python.api.networking.SessionHelpers import MakeAndRunMultipleSessions
+from clients.python.api.networking.SessionHelpers import MakeAndRunMultipleSessions, RunGame, MakeSession, MakeAndRunSession, WaitForAllSessionsToFinish, \
+    RunMultipleGames
 from clients.python.api.Player import Player
 from clients.python.api.Round import Round
 from clients.python.api.Game import Game
@@ -58,7 +60,12 @@ class RandomPlayer(Player):
 
 
 if __name__ == '__main__':
-    for g in range(10):
-        with ManagedConnection("random_player") as connection:
-            MakeAndRunMultipleSessions(connection, GameType.ANY, RandomPlayer, 16)
+    player_clss = [RandomPlayer, RandomPlayer, RandomPlayer, RandomPlayer]
+    with ManagedConnection() as connection:
+        player_results = RunGame(connection, GameType.ANY, player_clss)
+        results = player_results[0]
+        print("Scores:")
+        for player, score in results.players_to_points.items():
+            print(f"\t{player}: {score}")
+
 

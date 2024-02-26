@@ -24,6 +24,6 @@ class EnvReader:
 ENV_FILEPATH = "./config.env"
 ENV = EnvReader(ENV_FILEPATH)
 
-SERVER_IP = ENV.get("SERVER_IP")
+SERVER_IP = ENV.get("SERVER_ADDR")
 SERVER_PORT = int(ENV.get("SERVER_PORT"))
 LOG_DIR = Path(ENV.get("LOG_DIR"))

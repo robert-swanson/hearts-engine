@@ -13,9 +13,9 @@ class PassDirection(Enum):
     def _find_other(self, player_order: List[PlayerTagSession], this_player: PlayerTagSession):
         this_idx = player_order.index(this_player)
         if self == PassDirection.LEFT:
-            return player_order[(this_idx - 1) % len(player_order)]
-        elif self == PassDirection.RIGHT:
             return player_order[(this_idx + 1) % len(player_order)]
+        elif self == PassDirection.RIGHT:
+            return player_order[(this_idx - 1) % len(player_order)]
         elif self == PassDirection.ACROSS:
             return player_order[(this_idx + 2) % len(player_order)]
         elif self == PassDirection.KEEPER:
@@ -35,8 +35,26 @@ class PassDirection(Enum):
         else:
             raise ValueError(f"Unknown pass direction {self}")
 
+    def __repr__(self):
+        return self.value
+
+    def __str__(self):
+        return self.value
+
     def get_receiving_player(self, player_order: List[PlayerTagSession], this_player: PlayerTagSession):
         return self._find_other(player_order, this_player)
 
     def get_donating_player(self, player_order: List[PlayerTagSession], this_player: PlayerTagSession):
         return self._invert()._find_other(player_order, this_player)
+
+    def next_pass_direction(self):
+        if self == PassDirection.LEFT:
+            return PassDirection.RIGHT
+        elif self == PassDirection.RIGHT:
+            return PassDirection.ACROSS
+        elif self == PassDirection.ACROSS:
+            return PassDirection.KEEPER
+        elif self == PassDirection.KEEPER:
+            return PassDirection.LEFT
+        else:
+            raise ValueError(f"Unknown pass direction {self}")

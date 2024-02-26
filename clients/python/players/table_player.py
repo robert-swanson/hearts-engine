@@ -1,20 +1,3 @@
-import threading
-import time
-from typing import List, Dict, Optional
-
-from clients.python.api import Game
-from clients.python.api.Trick import Trick
-from clients.python.api.networking.ManagedConnection import ManagedConnection
-from clients.python.api.networking.SessionHelpers import RunMultipleGames, MakeAndRunMultipleSessions, WaitForAllSessionsToFinish
-from clients.python.api.Player import Player
-from clients.python.api.Round import Round
-from clients.python.api.types.Card import Card, SortCardsByRank, GroupCardsBySuit
-from clients.python.players.random_player import RandomPlayer
-from clients.python.util.Constants import GameType
-from clients.python.api.types.PassDirection import PassDirection
-from clients.python.api.types.PlayerTagSession import PlayerTagSession, PlayerTag
-
-
 class RobPlayer(Player):
     player_tag = "rob_player"
     message_print_logging_enabled = False
@@ -26,7 +9,6 @@ class RobPlayer(Player):
 
     # Game
     def initialize_for_game(self, game: Game) -> None:
-        print(game.player_order)
         pass
 
     def handle_end_game(self, players_to_points: dict[PlayerTagSession, int], winner: PlayerTagSession) -> None:
@@ -58,7 +40,6 @@ class RobPlayer(Player):
         pass
 
     def get_move(self, trick: Trick, legal_moves: List[Card]) -> Card:
-        assert len(legal_moves) > 0, "Must have at least one legal move"
         if self.is_worried_about_shooting_the_moon():
             return self.get_move_likely_to_win_trick(trick, legal_moves)
         else:
@@ -104,26 +85,19 @@ class RobPlayer(Player):
         return queen_played and points > 18 or not queen_played and points > 8
 
 
-# if __name__ == '__main__':
-#     players = [RobPlayer, RandomPlayer, RandomPlayer, RandomPlayer]
-#     total_games = 0
-#     games_won = 0
-#     start_time = time.time()
-#
-#     with ManagedConnection("rob_player") as connection:
-#         game_results = RunMultipleGames(connection, GameType.ANY, players, 10)
-#         for game_result in game_results:
-#             if "rob_player" in str(game_result.winner):
-#                 games_won += 1
-#             total_games += 1
-#
-#     print(f"Games won: {games_won}/{total_games} ({games_won / total_games * 100}%)")
-#     print(f"Time: {time.time() - start_time}")
 
 if __name__ == '__main__':
-    with ManagedConnection() as connection:
+    players = [RobPlayer, RandomPlayer, RandomPlayer, RandomPlayer]
+    total_games = 0
+    games_won = 0
+    start_time = time.time()
 
-        for i in range(10):
-            MakeAndRunMultipleSessions(connection, GameType.ANY, RobPlayer, 2, lobby_code="ROB_{i}")
-            time.sleep(3)
-        WaitForAllSessionsToFinish()
+    with ManagedConnection("rob_player") as connection:
+        games = RunMultipleGames(connection, GameType.ANY, players, 100)
+        for game_result in games:
+            if "rob_player" in str(game_result[0].winner):
+                games_won += 1
+            total_games += 1
+
+    print(f"Games won: {games_won}/{total_games} ({games_won / total_games * 100}%)")
+    print(f"Time: {time.time() - start_time}")

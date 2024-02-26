@@ -13,7 +13,11 @@ class PlayerTag:
         return self.tag
 
     def __eq__(self, other):
-        return self.tag == other.tag
+        if isinstance(other, PlayerTag):
+            return self.tag == other.tag
+        elif isinstance(other, str):
+            return self.tag == other
+        return False
 
     def __hash__(self):
         return hash(self.tag)

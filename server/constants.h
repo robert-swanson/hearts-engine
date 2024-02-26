@@ -5,6 +5,8 @@ namespace Common::Server
     constexpr auto MESSAGE_LOG_NAME = "messages";
     constexpr auto GAME_LOG_NAME = "game";
     constexpr auto SERVER_LOG_DIRNAME = "server";
+
+    constexpr auto DEFAULT_LOBBY_CODE = "main";
 }
 
 namespace Common::Env
@@ -21,6 +23,7 @@ namespace Common::Server::Tags
     constexpr auto SESSION_ID = "session_id";
     constexpr auto SEQ_NUM = "seq_num";
     constexpr auto PLAYER_TAG = "player_tag";
+    constexpr auto LOBBY_CODE = "lobby_code";
     constexpr auto PLAYER_SESSION_ID = "player_session_id";
     constexpr auto GAME_TYPE = "game_type";
     constexpr auto PLAYER_ORDER = "player_order";
