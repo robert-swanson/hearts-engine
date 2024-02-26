@@ -28,7 +28,7 @@ LOG_DIR=log/server/instances
 mkdir -p $LOG_DIR
 
 while true; do
-    LOG_NAME=$LOG_DIR/$(date +"%Y-%m-%d_%H-%M-%S")
+    LOG_NAME=$LOG_DIR/$(date +"%Y-%m-%d_%H:%M:%S")
     echo "Starting $BIN with config $CONFIG, logging to $LOG_NAME.log"
 
     ./$BIN $CONFIG 2>&1 | tee $LOG_NAME.log
