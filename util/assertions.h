@@ -4,12 +4,12 @@
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
+#include "dates.h"
 
 #define ASRT(condition, message, ...) \
     do { \
         if (!(condition)) { \
-            fprintf(stderr, message, ##__VA_ARGS__); \
-            fprintf(stderr, "\n"); \
+            fprintf(stderr, "%s [%s]: " message "\n", Common::Dates::LogTimePrefix().c_str(), " [ASSERT_FAIL] ", ##__VA_ARGS__); \
             assert(condition); \
         } \
     } while (false)
@@ -18,7 +18,7 @@
 #define ASRT_CMP(condition, actual, expected, comparison) \
     do { \
         if (!(condition)) {                               \
-            std::cerr << "Assertion failed: " << actual << " " << comparison << " " << expected << std::endl; \
+            std::cerr << Common::Dates::LogTimePrefix() << " [ASSERT_FAIL] " << actual << " " << comparison << " " << expected << std::endl; \
             assert(condition); \
         } \
     } while (false)

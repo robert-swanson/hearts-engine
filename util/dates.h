@@ -24,4 +24,13 @@ static std::string GetStrTime(const char delimiter)
     return {time};
 }
 
+static std::string LogTimePrefix() {
+        return "[" + Dates::GetStrDate('-') + " " + Dates::GetStrTime(':') + "]";
+}
+
+#define DATED_PRINT(file, type, message, ...) \
+    do { \
+        vfprintf(file, "%s [%s]: " message "\n",  Common::Dates::LogTimePrefix().c_str(), type, ##__VA_ARGS__); \
+    } while (false)
+
 }
