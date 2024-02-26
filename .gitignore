@@ -32,6 +32,9 @@
 *.app
 
 .idea/
+CMakeFiles
+cmake-build-debug
+
 externals/
 log/
 versions/
