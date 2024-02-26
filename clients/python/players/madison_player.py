@@ -40,7 +40,6 @@ class MadisonPlayer(Player):
     def get_cards_to_pass(self, pass_dir: PassDirection, receiving_player: PlayerTagSession) -> List[Card]:
         return SortCardsByRank(self.hand)[10:13]
 
-
     def receive_passed_cards(self, cards: List[Card], pass_dir: PassDirection, donating_player: PlayerTagSession) -> None:
         pass
 
@@ -57,7 +56,7 @@ class MadisonPlayer(Player):
 
     def get_move(self, trick: Trick, legal_moves: List[Card]) -> Card:
         if self.is_first_trick(trick):
-            return SortCardsByRank(legal_moves,reverse=True)[0]
+            return SortCardsByRank(legal_moves, reverse=True)[0]
         return legal_moves[0]
 
     @staticmethod
@@ -69,11 +68,8 @@ class MadisonPlayer(Player):
         return is_first_trick
 
 
-
-
-
 if __name__ == '__main__':
-    players = [MadisonPlayer, RobPlayer, RandomPlayer, RandomPlayer]
+    players = [MadisonPlayer, RandomPlayer, RandomPlayer, RandomPlayer]
 
     with ManagedConnection() as connection:
         results = RunMultipleGames(connection, GameType.ANY, players, 16)
