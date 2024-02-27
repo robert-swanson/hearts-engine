@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from typing import Dict, Optional, Set, List
 
 from clients.python.api.networking.Connection import Connection
-from clients.python.util.Constants import Tags, ServerMsgTypes, ServerStatus, MACRO_TIMEOUT
+from clients.python.util.Constants import Tags, ServerMsgTypes, ServerStatus, MACRO_TIMEOUT, MICRO_TIMEOUT
 from clients.python.util.Env import SERVER_IP, SERVER_PORT
 
 SessionID = int
@@ -44,8 +44,8 @@ class MessageStore:
 
 class ManagedConnection(Connection):
     def __init__(self, ip=SERVER_IP, port=SERVER_PORT, timeout_s=10):
-        super().__init__(ip, port)
-        self.timeout_s = timeout_s
+        super().__init__(ip, port, min(timeout_s, MICRO_TIMEOUT))
+        self.connection_timeout_s = timeout_s
 
         # Threading
         self.session_lock = threading.Lock()
@@ -103,10 +103,10 @@ class ManagedConnection(Connection):
                 if message is None:
                     if len(self.waiting_sessions) == 0:
                         break
-                    elif self.timeout_s is None or (datetime.now() - self.last_msg_time) < timedelta(seconds=self.timeout_s):
+                    elif self.connection_timeout_s is None or (datetime.now() - self.last_msg_time) < timedelta(seconds=self.connection_timeout_s):
                         continue
                     else:
-                        raise ConnectionError(f"Timeout while waiting for message, waiting for {self.waiting_sessions}")
+                        raise ConnectionError(f"Connection timed out while waiting for message, waiting for {self.waiting_sessions}")
                 else:
                     self.last_msg_time = datetime.now()
 
