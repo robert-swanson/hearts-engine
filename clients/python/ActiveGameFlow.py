@@ -12,9 +12,10 @@ from clients.python.util.Constants import ServerMsgTypes, Tags, ClientMsgTypes
 
 
 class ActiveGame(PassingMessenger, Game):
-    def __init__(self, messenger: Messenger, player: Player):
+    def __init__(self, messenger: Messenger, player: Player, timeout_s: int = 10):
         PassingMessenger.__init__(self, messenger)
         self.player = player
+        self.timeout_s = timeout_s
 
         start_game_msg = self.messenger.receive_type(ServerMsgTypes.START_GAME)
         player_order = MakePlayerTagSessions(start_game_msg[Tags.PLAYER_ORDER])

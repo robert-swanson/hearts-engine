@@ -4,11 +4,11 @@ from typing import List, Dict
 
 from clients.python.api.Trick import Trick
 from clients.python.api.networking.ManagedConnection import ManagedConnection
-from clients.python.api.networking.SessionHelpers import MakeAndRunMultipleSessions, RunGame, MakeSession, MakeAndRunSession, WaitForAllSessionsToFinish, \
-    RunMultipleGames
+from clients.python.api.networking.PlayerGameSession import ObjectiveGameFromSessions, ObjectiveGamesFromSessions
+from clients.python.api.networking.SessionHelpers import MakeAndRunMultipleSessions, WaitForAllSessionsToFinish, RunGame, RunMultipleGames
 from clients.python.api.Player import Player
 from clients.python.api.Round import Round
-from clients.python.api.Game import Game
+from clients.python.api.Game import Game, ObjectiveGame
 from clients.python.api.types.Card import Card
 from clients.python.util.Constants import GameType
 from clients.python.api.types.PassDirection import PassDirection
@@ -62,9 +62,15 @@ class RandomPlayer(Player):
 if __name__ == '__main__':
     player_clss = [RandomPlayer, RandomPlayer, RandomPlayer, RandomPlayer]
     with ManagedConnection() as connection:
-        game_results = RunGame(connection, GameType.ANY, player_clss)
-        print("Scores:")
-        for player, score in game_results.players_to_points.items():
-            print(f"\t{player}: {score}")
+        game_results = RunMultipleGames(connection, GameType.ANY, player_clss, 4)
+        for result in game_results:
+            result.print_results()
 
-
+# if __name__ == '__main__':
+#     with (ManagedConnection(timeout_s=30) as connection):
+#         game_sessions = MakeAndRunMultipleSessions(connection, GameType.ANY, RandomPlayer, 11, timeout_s=2)
+#         WaitForAllSessionsToFinish()
+#         games = ObjectiveGamesFromSessions(game_sessions)
+#         for game in games:
+#             game.print_results()
+#

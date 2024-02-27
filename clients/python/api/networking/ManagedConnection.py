@@ -29,9 +29,10 @@ class MessageStore:
     def get_next(self, session_id: SessionID) -> json:
         return self._id_to_received_messages[session_id][0]
 
-    def pop_next(self, session_id: SessionID) -> json:
+    def pop_next(self, session_id: SessionID) -> Optional["json"]:
         with self._modify_lock:
-            return self._id_to_received_messages[session_id].pop(0)
+            received_msgs = self._id_to_received_messages[session_id]
+            return None if len(received_msgs) == 0 else received_msgs.pop(0)
 
     def peek_next(self, session_id: SessionID) -> json:
         return self._id_to_received_messages[session_id][0]
@@ -42,8 +43,9 @@ class MessageStore:
 
 
 class ManagedConnection(Connection):
-    def __init__(self, ip=SERVER_IP, port=SERVER_PORT):
+    def __init__(self, ip=SERVER_IP, port=SERVER_PORT, timeout_s=10):
         super().__init__(ip, port)
+        self.timeout_s = timeout_s
 
         # Threading
         self.session_lock = threading.Lock()
@@ -60,10 +62,10 @@ class ManagedConnection(Connection):
         self.waiting_sessions: Set[SessionID] = set()
         self.receiver_thread: Optional[threading.Thread] = None
 
-    def request_session(self, request: json) -> json:
+    def request_session(self, request: json, timeout_s=10) -> json:
         with self.session_lock:
             self.send(request)
-            game_session_response = self.receive_from_session(UNASSIGNED_SESSION)
+            game_session_response = self.receive_from_session(UNASSIGNED_SESSION, timeout_s)
             assert game_session_response[Tags.TYPE] == ServerMsgTypes.GAME_SESSION_RESPONSE
             assert game_session_response[Tags.STATUS] == ServerStatus.SUCCESS
             return game_session_response
@@ -71,23 +73,26 @@ class ManagedConnection(Connection):
     def end_session(self, session_id: SessionID):
         self.message_store.remove_session(session_id)
 
-    def _retrieve_next_message_for_session(self, session_id: SessionID):
+    def _retrieve_next_message_for_session(self, session_id: SessionID, timeout_s: int):
         assert session_id not in self.waiting_sessions, f"Session {session_id} already waiting for message"
         self.waiting_sessions.add(session_id)
         self._start_receiver_thread()
+        start_time = datetime.now()
         with self.message_received_condition:  # TODO: does this check once in case its waiting?
-            while len(self.message_store.get_all(session_id)) == 0:
-                self.message_received_condition.wait()
+            while len(self.message_store.get_all(session_id)) == 0 and timeout_s > (datetime.now() - start_time).seconds:
+                self.message_received_condition.wait(timeout=timeout_s)
         self.waiting_sessions.remove(session_id)
 
-    def receive_from_session(self, session_id: SessionID) -> json:
-        self._retrieve_next_message_for_session(session_id)
+    def receive_from_session(self, session_id: SessionID, timeout_s: int) -> json:
+        self._retrieve_next_message_for_session(session_id, timeout_s)
         msg = self.message_store.pop_next(session_id)
+        if msg is None:
+            raise ConnectionError(f"Timeout while waiting for message from session {session_id} (waited {timeout_s} seconds)")
         self.logger.log(f"Sending message with seqnum {msg[Tags.SEQ_NUM]} to session {session_id}")
         return msg
 
-    def get_next_message_type_for_session(self, session_id: SessionID) -> str:
-        self._retrieve_next_message_for_session(session_id)
+    def get_next_message_type_for_session(self, session_id: SessionID, timeout_s: int) -> str:
+        self._retrieve_next_message_for_session(session_id, timeout_s)
         return self.message_store.peek_next(session_id)["type"]
 
     def _receive_loop(self):
@@ -98,7 +103,7 @@ class ManagedConnection(Connection):
                 if message is None:
                     if len(self.waiting_sessions) == 0:
                         break
-                    elif MACRO_TIMEOUT is None or (datetime.now() - self.last_msg_time) < timedelta(seconds=MACRO_TIMEOUT):
+                    elif self.timeout_s is None or (datetime.now() - self.last_msg_time) < timedelta(seconds=self.timeout_s):
                         continue
                     else:
                         raise ConnectionError(f"Timeout while waiting for message, waiting for {self.waiting_sessions}")

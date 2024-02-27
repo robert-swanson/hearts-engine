@@ -1,8 +1,8 @@
 import json
 import threading
-from typing import Dict, TypeVar, Type, Optional, Union
+from typing import Dict, TypeVar, Type, Optional, Union, List, Set, Tuple
 
-from clients.python.api.Game import Game
+from clients.python.api.Game import Game, ObjectiveGame
 from clients.python.ActiveGameFlow import ActiveGame
 from clients.python.api.networking.ManagedConnection import ManagedConnection
 from clients.python.api.networking.Messenger import Messenger
@@ -14,10 +14,12 @@ Player_T = TypeVar('Player_T', bound='Player')
 
 
 class GameSession(Messenger):
-    def __init__(self, connection: ManagedConnection, player_tag: Union[PlayerTag, str], game_type: GameType, player_cls: Type[Player_T], lobby_code: str = ""):
+    def __init__(self, connection: ManagedConnection, player_tag: Union[PlayerTag, str], game_type: GameType, player_cls: Type[Player_T],
+                 lobby_code: str = "", timeout_s: int = 10):
         self.connection = connection
         self.game_type = game_type
         self.player_tag = player_tag if type(player_tag) is PlayerTag else PlayerTag(str(player_tag))
+        self.lobby_code = lobby_code
 
         self._next_seqnum = 0
         self._usage_lock = threading.Lock()
@@ -35,6 +37,7 @@ class GameSession(Messenger):
         self.session_id = response[Tags.SESSION_ID]
         self.message_print_logging_enabled = player_cls.message_print_logging_enabled
         self.logger = SessionLogger(self.player_tag, self.session_id) if LOG_SESSIONS else None
+        self.timeout_s = timeout_s
 
         self.current_round = None
         self.player_session = PlayerTagSession(self.player_tag, self.session_id)
@@ -55,7 +58,7 @@ class GameSession(Messenger):
             return self._seqnum_to_pending_received_message.pop(self._next_seqnum)
         with self._usage_lock:
             while True:
-                msg = self.connection.receive_from_session(self.session_id)
+                msg = self.connection.receive_from_session(self.session_id, self.timeout_s)
                 msg_seqnum = msg[Tags.SEQ_NUM]
                 if msg_seqnum == self._next_seqnum:
                     self._next_seqnum += 1
@@ -82,7 +85,7 @@ class GameSession(Messenger):
         return response
 
     def get_next_message_type(self) -> str:
-        return self.connection.get_next_message_type_for_session(self.session_id)
+        return self.connection.get_next_message_type_for_session(self.session_id, self.timeout_s)
 
     def send(self, json_data: json):
         with self._usage_lock:
@@ -93,9 +96,14 @@ class GameSession(Messenger):
 
     def run_game(self):
         self.connection.increment_num_running_games()
+        game = None
 
-        game = ActiveGame(self, self.player)
-        game.run_game(self.player)
+        try:
+            game = ActiveGame(self, self.player)
+            game.run_game(self.player)
+        except ConnectionError as e:
+            print(f"Session {self.session_id} encountered a connection error: {e}")
+
         self.game_results = game
 
         self.connection.decrement_num_running_games()
@@ -107,3 +115,39 @@ class GameSession(Messenger):
 
     def __repr__(self):
         return f"{self.player_session} (next {self.session_id}.{self._next_seqnum})"
+
+
+def ObjectiveGameFromSessions(player_game_sessions: List[GameSession]) -> ObjectiveGame:
+    assert 0 < len(player_game_sessions) <= 4, f"Expected 1-4 player game sessions, got {len(player_game_sessions)}"
+    return ObjectiveGame([(player_game_session.player_session, player_game_session.game_results) for player_game_session in player_game_sessions])
+
+
+def ObjectiveGamesFromSessions(player_game_sessions: List[GameSession]) -> List[ObjectiveGame]:
+    """
+    Given a list of game sessions (that may include incomplete sessions and sessions from different games), return a list of ObjectiveGame objects
+    :param player_game_sessions: List of GameSession objects
+    :return: List of ObjectiveGame objects constructed as best possible from the information gathered from the game sessions
+
+    Example:
+        > with (ManagedConnection(timeout_s=30) as connection):
+        >     game_sessions = MakeAndRunMultipleSessions(connection, GameType.ANY, RandomPlayer, 3, timeout_s=30)
+        >     WaitForAllSessionsToFinish()
+        >     games = ObjectiveGamesFromSessions(game_sessions)
+        >     for game in games:
+        >         game.print_results()
+    """
+
+    players_to_game_sessions: List[Tuple[List[PlayerTagSession], List[GameSession]]] = []
+
+    for player_game_session in player_game_sessions:
+        player_session = player_game_session.player_session
+        for player_set, game_sessions in players_to_game_sessions:
+            if player_session in player_set:
+                game_sessions.append(player_game_session)
+                break
+        else:
+            if player_game_session.game_results is None:
+                continue
+            players_to_game_sessions.append((player_game_session.game_results.player_order, [player_game_session]))
+
+    return [ObjectiveGameFromSessions(game_sessions) for _, game_sessions in players_to_game_sessions]

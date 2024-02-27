@@ -20,7 +20,12 @@ class Connection:
         self.host = ip
         self.port = port
         self.client_socket = socket(AF_INET, SOCK_STREAM)
-        self.client_socket.connect((SERVER_IP, SERVER_PORT))
+        try:
+            self.client_socket.connect((SERVER_IP, SERVER_PORT))
+        except ConnectionRefusedError as e:
+            print(f"Failed to connect to {SERVER_IP}:{SERVER_PORT}, is the server running?")
+            raise e
+
         self.client_socket.settimeout(MICRO_TIMEOUT)
         self.status = ConnectionStatus.CONNECTED
         self.pending_messages: List[json] = []
