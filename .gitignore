@@ -31,10 +31,22 @@
 *.out
 *.app
 
+# Cmeake
+cmake-build-debug/
+CMakeFiles/
+
+# Jetbrains
 .idea/
+<<<<<<< Updated upstream
 CMakeFiles
 cmake-build-debug
+=======
+.idea/*
+*.iml
+*__pycache__/
+>>>>>>> Stashed changes
 
+# Project Dirs
 externals/
 log/
 versions/

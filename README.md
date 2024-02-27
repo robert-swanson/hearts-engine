@@ -16,7 +16,10 @@ Each of the four players are controlled by a client which communicates its moves
 
 1. After cloning the repository, `cd hearts-engine`
 2. `vi config.env` and make sure SERVER_PORT and SERVER_ADDR are pointing to a known server
-3. `python clients/python/players/random_player.py`
+3. Add the project directory to your PYTHONPATH
+   * `export PYTHONPATH=$PYTHONPATH:$(pwd)`
+   * or if you don't want to do that each time `echo "export PYTHONPATH=\$PYTHONPATH:$(pwd)" >> ~/.bashrc`
+4. `python clients/python/players/random_player.py`
    ```txt
    Connected to hearts.radiswanson.org:40405
    Scores:

@@ -62,10 +62,9 @@ class RandomPlayer(Player):
 if __name__ == '__main__':
     player_clss = [RandomPlayer, RandomPlayer, RandomPlayer, RandomPlayer]
     with ManagedConnection() as connection:
-        player_results = RunGame(connection, GameType.ANY, player_clss)
-        results = player_results[0]
+        game_results = RunGame(connection, GameType.ANY, player_clss)
         print("Scores:")
-        for player, score in results.players_to_points.items():
+        for player, score in game_results.players_to_points.items():
             print(f"\t{player}: {score}")
 
 
