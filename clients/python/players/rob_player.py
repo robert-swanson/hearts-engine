@@ -26,7 +26,6 @@ class RobPlayer(Player):
 
     # Game
     def initialize_for_game(self, game: Game) -> None:
-        print(game.player_order)
         pass
 
     def handle_end_game(self, players_to_points: dict[PlayerTagSession, int], winner: PlayerTagSession) -> None:

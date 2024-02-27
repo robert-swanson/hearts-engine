@@ -12,7 +12,8 @@ GameSessionThreads: Dict[PlayerTagSession, threading.Thread] = {}
 
 
 def MakeSession(connection: ManagedConnection, game_type: GameType, player_cls: Type[Player_T], lobby_code: str = "") \
-        -> Tuple[threading.Thread, GameSession]:
+        -> Tuple[
+    threading.Thread, GameSession]:
     """
     Request a new game session on the provided connection, and set up a thread ready to run the session
     :param connection: An initialized connection to the server (may have already been used for other sessions)
@@ -34,7 +35,6 @@ def MakeSession(connection: ManagedConnection, game_type: GameType, player_cls: 
         Connected to hearts.radiswanson.org:40405
         random_player(23)
     """
-
     assert player_cls.player_tag is not None, "Player must have a player_tag"
     session = GameSession(connection, player_cls.player_tag, game_type, player_cls, lobby_code)
     thread = threading.Thread(target=session.run_game)
@@ -68,7 +68,8 @@ def MakeAndRunSession(connection: ManagedConnection, game_type: GameType, player
     return game_session
 
 
-def MakeAndRunMultipleSessions(connection: ManagedConnection, game_type: GameType, player_cls: Type[Player_T], \
+def MakeAndRunMultipleSessions(connection: ManagedConnection, game_type: GameType, player_cls: Type[Player_T],
+                              \
                                num_threads: int, lobby_code: str = "") -> List[GameSession]:
     """
     Request and run multiple game sessions in parallel
@@ -197,3 +198,7 @@ def RunMultipleGames(connection: ManagedConnection, game_type: GameType, player_
 
     return [ObjectiveGame([(session.player_session, session.game_results) for _, session in game_sessions])
             for game_sessions in sessions]
+
+
+def CountPlayerWins(player_cls: Player_T, game_results: List[ObjectiveGame]) -> int:
+    return len([result for result in game_results if player_cls.player_tag in str(result.winner)])
