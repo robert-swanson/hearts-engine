@@ -11,7 +11,7 @@ from clients.python.api.types.PlayerTagSession import PlayerTagSession
 GameSessionThreads: Dict[PlayerTagSession, threading.Thread] = {}
 
 
-def MakeSession(connection: ManagedConnection, game_type: GameType, player_cls: Type[Player_T], lobby_code: str = "") \
+def MakeSession(connection: ManagedConnection, game_type: GameType, player_cls: Type[Player_T], lobby_code: str = "", timeout_s=10) \
         -> Tuple[threading.Thread, GameSession]:
     """
     Request a new game session on the provided connection, and set up a thread ready to run the session
@@ -23,6 +23,7 @@ def MakeSession(connection: ManagedConnection, game_type: GameType, player_cls: 
         3. GameType.BOTS_ONLY: Tells the matcher that this player should only be matched to a game with all bot players
     :param player_cls: A class type that inherits from Player and implements the playing logic to be instantiated for the session
     :param lobby_code: Used by the server to determine which other players to match this session with
+    :param timeout_s: Number of seconds to wait for a response from the server before timing out
     :return: A tuple of the thread that will run the session and the session itself
 
     Example:
@@ -36,13 +37,13 @@ def MakeSession(connection: ManagedConnection, game_type: GameType, player_cls: 
     """
 
     assert player_cls.player_tag is not None, "Player must have a player_tag"
-    session = GameSession(connection, player_cls.player_tag, game_type, player_cls, lobby_code)
+    session = GameSession(connection, player_cls.player_tag, game_type, player_cls, lobby_code, timeout_s)
     thread = threading.Thread(target=session.run_game)
     GameSessionThreads[session.player_session] = thread
     return thread, session
 
 
-def MakeAndRunSession(connection: ManagedConnection, game_type: GameType, player_cls: Type[Player_T], lobby_code: str = "") -> GameSession:
+def MakeAndRunSession(connection: ManagedConnection, game_type: GameType, player_cls: Type[Player_T], lobby_code: str = "", timeout_s=10) -> GameSession:
     """
     Request a new game session on the provided connection, and run the session in a new thread
     :param connection: An initialized connection to the server (may have already been used for other sessions)
@@ -53,6 +54,7 @@ def MakeAndRunSession(connection: ManagedConnection, game_type: GameType, player
         3. GameType.BOTS_ONLY: Tells the matcher that this player should only be matched to a game with all bot players
     :param player_cls: A class type that inherits from Player and implements the playing logic to be instantiated for the session
     :param lobby_code: Used by the server to determine which other players to match this session with
+    :param timeout_s: Number of seconds to wait for a response from the server before timing out
     :return: The GameSession that was created and started
 
     Example:
@@ -63,13 +65,13 @@ def MakeAndRunSession(connection: ManagedConnection, game_type: GameType, player
         Connected to hearts.radiswanson.org:40405
         random_player(38)
     """
-    thread, game_session = MakeSession(connection, game_type, player_cls)
+    thread, game_session = MakeSession(connection, game_type, player_cls, lobby_code, timeout_s)
     thread.start()
     return game_session
 
 
 def MakeAndRunMultipleSessions(connection: ManagedConnection, game_type: GameType, player_cls: Type[Player_T], \
-                               num_threads: int, lobby_code: str = "") -> List[GameSession]:
+                               num_sessions: int, lobby_code: str = "", timeout_s=10) -> List[GameSession]:
     """
     Request and run multiple game sessions in parallel
     :param connection: An initialized connection to the server (may have already been used for other sessions)
@@ -79,8 +81,9 @@ def MakeAndRunMultipleSessions(connection: ManagedConnection, game_type: GameTyp
         2. GameType.HUMANS_ONLY: Tells the matcher that this player should only be matched to a game with all human players
         3. GameType.BOTS_ONLY: Tells the matcher that this player should only be matched to a game with all bot players
     :param player_cls: A class type that inherits from Player and implements the playing logic to be instantiated for the session
-    :param num_threads: The number of sessions/threads to create and run
+    :param num_sessions: The number of sessions/threads to create and run
     :param lobby_code: Used by the server to determine which other players to match this session with
+    :param timeout_s: Number of seconds to wait for a response from the server before timing out
     :return: A list of the GameSessions that were created and started
 
     Example:
@@ -91,11 +94,11 @@ def MakeAndRunMultipleSessions(connection: ManagedConnection, game_type: GameTyp
         Connected to hearts.radiswanson.org:40405
         random_player(41)
     """
-    return [MakeAndRunSession(connection, game_type, player_cls, lobby_code) for _ in range(num_threads)]
+    return [MakeAndRunSession(connection, game_type, player_cls, lobby_code, timeout_s) for _ in range(num_sessions)]
 
 
 def _NotifyIfWaitingTooLong(thread: threading.Thread, session: PlayerTagSession) -> None:
-    sleep(5)
+    sleep(30)
     if thread.is_alive():
         print(f"Waiting for {session} to finish")
 
@@ -121,7 +124,7 @@ def _GetLobbyCode(connection: ManagedConnection, players_cls: List[Type[Player_T
     return lobby_code
 
 
-def RunGame(connection: ManagedConnection, game_type: GameType, player_classes: List[Type[Player_T]]) -> ObjectiveGame:
+def RunGame(connection: ManagedConnection, game_type: GameType, player_classes: List[Type[Player_T]], timeout_s=10) -> ObjectiveGame:
     """
     (blocking) Spin up 4 players to play a game together
     :param connection: An initialized connection to the server (may have already been used for other sessions)
@@ -131,6 +134,7 @@ def RunGame(connection: ManagedConnection, game_type: GameType, player_classes: 
         2. GameType.HUMANS_ONLY: Tells the matcher that this player should only be matched to a game with all human players
         3. GameType.BOTS_ONLY: Tells the matcher that this player should only be matched to a game with all bot players
     :param player_classes: A list of the 4 player types that will be instantiated and run in the game (order matters, can include duplicates)
+    :param timeout_s: Number of seconds to wait for a response from the server before timing out
     :return: A list of 4 Game objects, one for each player, each including the game results as well as each player's private information (hand, passes)
 
     Example:
@@ -143,14 +147,14 @@ def RunGame(connection: ManagedConnection, game_type: GameType, player_classes: 
 
     assert len(player_classes) == 4, "Must have 4 players"
     lobby_code = _GetLobbyCode(connection, player_classes)
-    thread_sessions = [MakeSession(connection, game_type, player_cls, lobby_code) for player_cls in player_classes]
+    thread_sessions = [MakeSession(connection, game_type, player_cls, lobby_code, timeout_s) for player_cls in player_classes]
     [thread.start() for thread, _ in thread_sessions]
     WaitForAllSessionsToFinish()
     return ObjectiveGame([(session.player_session, session.game_results) for _, session in thread_sessions])
 
 
 def RunMultipleGames(connection: ManagedConnection, game_type: GameType, player_classes: List[Type[Player_T]],
-                     num_games: int, num_concurrent_sessions=64) -> List[ObjectiveGame]:
+                     num_games: int, num_concurrent_sessions=64, timeout_s=10) -> List[ObjectiveGame]:
     """
     (blocking) Spins up multiple concurrent games based on the provided players
     :param connection: An initialized connection to the server (may have already been used for other sessions)
@@ -186,7 +190,7 @@ def RunMultipleGames(connection: ManagedConnection, game_type: GameType, player_
                 connection.game_finished_condition.wait()
 
         lobby_code = _GetLobbyCode(connection, player_classes)
-        game_sessions = [MakeSession(connection, game_type, player_cls, lobby_code) for player_cls in player_classes]
+        game_sessions = [MakeSession(connection, game_type, player_cls, lobby_code, timeout_s) for player_cls in player_classes]
         sessions.append(game_sessions)
         [thread.start() for thread, _ in game_sessions]
 

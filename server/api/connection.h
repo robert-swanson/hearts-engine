@@ -42,7 +42,7 @@ protected:
         });
         send(connectionResponse);
 
-        LOG("\nConnected to %s:%d", mClientIP, mClientPort);
+        LOG("Connected to %s:%d", mClientIP, mClientPort);
     }
 
     std::string readBytes()

@@ -31,6 +31,18 @@
 *.out
 *.app
 
+# CMake
+cmake-build-debug/
+CMakeFiles/
+
+# Jetbrains
+.idea/
+.idea/*
+*.iml
+*__pycache__/
+
+# Project Dirs
 externals/
 log/
+versions/
 config.env

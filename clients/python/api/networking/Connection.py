@@ -16,12 +16,17 @@ class ConnectionStatus(Enum):
 
 
 class Connection:
-    def __init__(self, ip=SERVER_IP, port=SERVER_PORT):
+    def __init__(self, ip=SERVER_IP, port=SERVER_PORT, connection_micro_timeout_s=MICRO_TIMEOUT):
         self.host = ip
         self.port = port
         self.client_socket = socket(AF_INET, SOCK_STREAM)
-        self.client_socket.connect((SERVER_IP, SERVER_PORT))
-        self.client_socket.settimeout(MICRO_TIMEOUT)
+        try:
+            self.client_socket.connect((SERVER_IP, SERVER_PORT))
+        except ConnectionRefusedError as e:
+            print(f"Failed to connect to {SERVER_IP}:{SERVER_PORT}, is the server running?")
+            raise e
+
+        self.client_socket.settimeout(connection_micro_timeout_s)
         self.status = ConnectionStatus.CONNECTED
         self.pending_messages: List[json] = []
         self.incomplete_message: bytes = b""

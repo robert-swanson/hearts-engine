@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdio>
+
+#include "dates.h"
 #include "../server/message.h"
 #include "death.h"
 
@@ -13,7 +15,7 @@ public:
     explicit ThreadSafeLogger(FILE *logFile) {
         mLogFile = logFile;
         if (mLogFile == nullptr) {
-            DIE("Failed to open log file");
+            DIE("Given log file is null");
         }
     }
 
@@ -22,17 +24,17 @@ public:
         ASRT(!std::filesystem::exists(logFilePath), "log file %s already exists", logFilePath.c_str());
         mLogFile = fopen(logFilePath.c_str(), "w");
         if (mLogFile == nullptr) {
-            DIE("Failed to open log file %s", logFilePath.c_str());
+            DIE("Failed to open log file %s: %s", logFilePath.c_str(), strerror(errno));
         }
     }
 
-    void Log(const char *message, ...) {
+    void Log(const char *message, ...)
+    {
         va_list args;
         va_start(args, message);
         {
             std::lock_guard<std::mutex> lock(mLoggingMutex);
-            vfprintf(mLogFile, message, args);
-            fprintf(mLogFile, "\n");
+            vfprintf(mLogFile, (std::string(Common::Dates::LogTimePrefix() + " [LOG]: ") + message + "\n").c_str(), args);
         }
         va_end(args);
         fflush(mLogFile);
