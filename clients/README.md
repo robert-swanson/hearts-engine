@@ -52,6 +52,7 @@ and then wait until the matching engine assigns this session to a game.
 The session_id returned by this message should be kept by the client as all future messages for this session sent by either the client or the server will need include this session_id.
 
 ## Game Play
+The following describes each individual client session's side of the protocol during a single game. In many cases the server will send the exact same message (with differing session ids) to each of the clients. Note that this would happen even if any/all of the players in the game were on the same connection (_its all per session_).
 ### Game
 - `start_game`: Sent at the beginning of the game including the player_tags in their order of play
 - *rounds happen here...*
