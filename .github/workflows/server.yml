@@ -7,13 +7,14 @@ on:
     branches: [ "main" ]
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-
+  macOS:
+    runs-on: macos-latest
     steps:
     - name: Checkout code
-      uses: actions/checkout@v2
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
 
-    - name: Build Tests
+    - name: Tests
       run: |
-        bazel test //tests:all
+        bazel test --cxxopt=-std=c++14 --features=external_include_paths --test_output=errors //tests:all

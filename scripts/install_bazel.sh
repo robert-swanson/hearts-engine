@@ -1,5 +1,8 @@
 #!/bin/bash
 
+set -e
+set -o xtrace
+
 # Function to check if Bazel is installed
 check_bazel_installed() {
     if ! command -v bazel &> /dev/null; then
