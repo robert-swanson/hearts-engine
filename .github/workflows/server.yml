@@ -18,4 +18,4 @@ jobs:
     - name: Tests
       run: |
         bazel --version
-        bazel test --cxxopt=-std=c++14 --features=external_include_paths --test_output=errors //tests:all
+        bazel test --cxxopt=-std=c++17 --features=external_include_paths --test_output=errors --verbose_failures //tests:all
