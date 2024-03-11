@@ -6,4 +6,4 @@ module(
 bazel_dep(name = "nlohmann_json", version = "3.11.3")
 bazel_dep(name = "protobuf", version = "23.1")
 bazel_dep(name = "googletest", version = "1.14.0")
-bazel_dep(name = "boost.asio", version = "1.83.0.bzl.2")
+bazel_dep(name = "boost.asio", version = "1.83.0.bzl.1")
