@@ -19,7 +19,7 @@ public:
         std::string gameLoggerName = mGameID + "_" + GAME_LOG_NAME + ".log";
         mGameLogger = std::make_shared<GameLogger>(makeGameLogDirPath(GAME_LOG_NAME) / gameLoggerName);
 
-        for (SessionRef const session: mPlayerSessions)
+        for (SessionRef const &session: mPlayerSessions)
         {
             session->setMessageLogger(messageLogger);
             mGamePlayers.emplace_back(std::make_shared<RemotePlayer>(session->getPlayerTagSession(), session));

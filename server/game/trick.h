@@ -11,14 +11,14 @@ class Trick
 {
 public:
     explicit Trick(PlayerArray players, int trickIndex, bool brokenHearts, std::shared_ptr<GameLogger> gameLogger):
-            mPlayers(players), mTrickIndex(trickIndex), mBrokenHearts(brokenHearts), mPlayedCards(), mGameLogger(std::move(gameLogger))
+            mPlayers(std::move(players)), mTrickIndex(trickIndex), mBrokenHearts(brokenHearts), mPlayedCards(), mGameLogger(std::move(gameLogger))
     {
     }
 
     void RunTrick()
     {
         notifyStartTrick();
-        for (PlayerRef currentPlayer : mPlayers)
+        for (const PlayerRef& currentPlayer : mPlayers)
         {
             CardCollection legalMoves = legalMovesForPlayer(currentPlayer);
             Card card = currentPlayer->getMove(legalMoves);

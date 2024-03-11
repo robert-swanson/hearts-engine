@@ -2,7 +2,7 @@
 
 #include <utility>
 
-#include "../../game/game.h"
+#include "server/game/game.h"
 #include "live_game.h"
 
 namespace Common::Server {

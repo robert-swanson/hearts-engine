@@ -10,8 +10,8 @@ namespace Common::Server
 class PlayerGameSession
 {
 public:
-    explicit PlayerGameSession(PlayerGameSessionID game_session_id, PlayerTag playerTag, Common::Server::ManagedConnection &connection)
-    : mGameSessionID(game_session_id),  mPlayerTagSession(MakePlayerTagSession(playerTag, game_session_id)), mConnection(connection), mPlayerTag(playerTag) {}
+    explicit PlayerGameSession(PlayerGameSessionID game_session_id, const PlayerTag& playerTag, Common::Server::ManagedConnection &connection)
+    : mPlayerTag(playerTag),  mGameSessionID(game_session_id), mPlayerTagSession(MakePlayerTagSession(playerTag, game_session_id)), mConnection(connection) {}
 
     void Setup() {
         send({{
@@ -57,7 +57,7 @@ private:
     uint16_t getSeqNumAndIncrement()
     {
         auto oldSeqNum = mSessionSeqNum;
-        auto newSeqNum = ++mSessionSeqNum;
+        ++mSessionSeqNum;
         return oldSeqNum;
     }
 

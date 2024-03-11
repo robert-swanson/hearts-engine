@@ -3,7 +3,7 @@
 #include <cstdio>
 
 #include "dates.h"
-#include "../server/message.h"
+#include "server/api/message.h"
 #include "death.h"
 
 namespace Common {
@@ -55,7 +55,7 @@ public:
 
     explicit MessageLogger(FILE *logFile) : ThreadSafeLogger(logFile) {}
 
-    MessageLogger(const std::filesystem::path& logFilePath) : ThreadSafeLogger(logFilePath) {}
+    explicit MessageLogger(const std::filesystem::path& logFilePath) : ThreadSafeLogger(logFilePath) {}
 
     void logMessage(std::string &prefix, const Server::Message::SessionMessage &message) {
         Log("%15s%4d.%4d\t%20s\t\t\t%s", prefix.c_str(), message.getSessionID(), message.getSeqNum(), message.getMsgType().c_str(), message.getJson().dump().c_str());
@@ -71,7 +71,7 @@ public:
 
     explicit GameLogger(FILE *logFile) : ThreadSafeLogger(logFile) {}
 
-    GameLogger(const std::filesystem::path& logFilePath) : ThreadSafeLogger(logFilePath) {}
+    explicit GameLogger(const std::filesystem::path& logFilePath) : ThreadSafeLogger(logFilePath) {}
 };
 
 
