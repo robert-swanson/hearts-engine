@@ -36,11 +36,8 @@ See the [clients/README.md](clients/README.md) for more information on implement
 If you wish to run a local instance of the game server do the following (untested):
 
 1. `cd hearts-engine`
-2. `./setup.sh` (this may take several minutes the first time)
-   - If you get `cmake: command not found` install cmake with your package manager (e.g. on linux: `sudo apt-get install cmake`) and rerun
-3. `cmake .`
-4. `cmake --build --target Server`
-5. `./Server config.env`
+2. Install bazel (if not already installed): `scripts/install_bazel.sh`
+3. Build and run the server: `bazel run //server:server`
 
 
 ## Use a Player AI in a physical game of hearts

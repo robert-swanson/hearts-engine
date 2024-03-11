@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "../game/objects/card_collection.h"
+#include "server/game/objects/card_collection.h"
 
 using namespace Common::Game;
 

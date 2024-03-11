@@ -1,7 +1,7 @@
 #pragma once
 
 #include <iostream>
-#include "../../util/assertions.h"
+#include "server/util/assertions.h"
 
 namespace Common::Game
 {

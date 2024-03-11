@@ -1,8 +1,8 @@
 #pragma once
 
-#include "../api/game_session.h"
-#include "../remote_player.h"
-#include "../../util/dates.h"
+#include "server/api/game_session.h"
+#include "server/game/remote_player.h"
+#include "server/util/dates.h"
 #include "lobby.h"
 
 namespace Common::Server

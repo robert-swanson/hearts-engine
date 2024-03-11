@@ -7,7 +7,6 @@
 #include <vector>
 #include <set>
 #include <cassert>
-#include <nlohmann/json.hpp>
 
 #include "card.h"
 #include "constants.h"

@@ -6,7 +6,7 @@
 
 namespace Common::Server
 {
-class RemotePlayer: public Game::Player
+class RemotePlayer final: public Game::Player
 {
 public:
     explicit RemotePlayer(PlayerTagSession tagSession, const std::shared_ptr<PlayerGameSession>& gameSession) :

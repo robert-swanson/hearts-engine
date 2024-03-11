@@ -1,0 +1,21 @@
+name: GTests
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  macOS:
+    runs-on: macos-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+
+    - name: Tests
+      run: |
+        bazel --version
+        bazel test --cxxopt=-std=c++17 --features=external_include_paths --test_output=errors --verbose_failures --compiler=gcc //tests:all

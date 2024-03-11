@@ -5,8 +5,8 @@
 #include <algorithm>
 #include <arpa/inet.h>
 #include "connection.h"
-#include "../types.h"
-#include "../constants.h"
+#include "server/util/types.h"
+#include "server/util/constants.h"
 
 using namespace boost::asio;
 

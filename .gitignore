@@ -46,3 +46,9 @@ externals/
 log/
 versions/
 config.env
+
+# Bazel
+bazel-bin/
+bazel-hearts-engine/
+bazel-testlogs/
+MODULE.bazel.lock
