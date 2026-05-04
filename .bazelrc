@@ -1,6 +1,10 @@
 # Enable Bzlmod for every Bazel command
 common --enable_bzlmod
 
+# Fix C++ stdlib headers on modern macOS: CLT has incomplete libc++ headers; the rest live in the SDK
+build --macos_minimum_os=13.0
+build --cxxopt=-isystem/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1
+
 # add bazelboost registry
 common --registry=https://raw.githubusercontent.com/bazelboost/registry/main
 # by adding the bazelboost registry the BCR gets removed so you must add it here as well
