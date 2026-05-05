@@ -19,7 +19,7 @@ Each of the four players are controlled by a client which communicates its moves
 3. Add the project directory to your PYTHONPATH
    * `export PYTHONPATH=$PYTHONPATH:$(pwd)`
    * or if you don't want to do that each time `echo "export PYTHONPATH=\$PYTHONPATH:$(pwd)" >> ~/.bashrc`
-4. `python clients/python/players/random_player.py`
+4. `python3 clients/python/players/random_player.py`
    ```txt
    Connected to hearts.radiswanson.org:40405
    Scores:
@@ -33,20 +33,17 @@ See the [clients/README.md](clients/README.md) for more information on implement
 
 ## Setting a local server
 
-If you wish to run a local instance of the game server do the following (untested):
+If you wish to run a local instance of the game server do the following:
 
 1. `cd hearts-engine`
-2. `./setup.sh` (this may take several minutes the first time)
-   - If you get `cmake: command not found` install cmake with your package manager (e.g. on linux: `sudo apt-get install cmake`) and rerun
-3. `cmake .`
-4. `cmake --build --target Server`
-5. `./Server config.env`
+2. Install Bazel 9+ (if not already installed): `scripts/install_bazel.sh`
+3. Build and run the server: `bazel run //server:server`
 
 
 ## Use a Player AI in a physical game of hearts
 Any client implemented using the python API can automatically be used in a physical game of hearts provided a person can act as the go-between between the physical cards and the textual interface.
-1. Look at the [TableGame.py](python/util/table_game/TableGame.py) and set `player_cls` to the client you want to use.
-2. Run it: `python python/util/table_game/TableGame.py`
+1. Look at the [TableGame.py](clients/python/util/table_game/TableGame.py) and set `player_cls` to the client you want to use.
+2. Run it: `python3 clients/python/util/table_game/TableGame.py`
 3. Populate the player names (you are treated as player 1) starting with the person to your left
 4. Follow the prompts to input cards dealt to the player and take actions when instructed
 

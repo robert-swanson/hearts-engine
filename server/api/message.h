@@ -1,7 +1,8 @@
 #pragma once
 
-#include "types.h"
-#include "constants.h"
+#include "server/util/constants.h"
+#include "server/game/objects/types.h"
+#include "server/util/types.h"
 
 namespace Common::Server::Message
 {

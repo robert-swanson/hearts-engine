@@ -78,10 +78,6 @@ public:
         return mTagSession;
     }
 
-    [[nodiscard]] const CardCollection &getMHand() const {
-        return mHand;
-    }
-
 private:
     Server::PlayerTagSession mTagSession;
     CardCollection mHand;
