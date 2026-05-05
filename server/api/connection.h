@@ -4,8 +4,8 @@
 #include <vector>
 #include <algorithm>
 #include <arpa/inet.h>
-#include "../types.h"
-#include "../message.h"
+#include "server/util/types.h"
+#include "message.h"
 
 using namespace boost::asio;
 
@@ -48,7 +48,7 @@ protected:
     std::string readBytes()
     {
         std::vector<char> buf(1024);
-        size_t bytes_read = mClientSocket->read_some(buffer(buf));
+        mClientSocket->read_some(buffer(buf));
         return std::string(buf.begin(), buf.end());
     }
 

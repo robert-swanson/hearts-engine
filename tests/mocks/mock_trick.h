@@ -9,7 +9,7 @@ using namespace Common::Game;
 class MockTrick : public Common::Game::Trick
 {
 public:
-    MockTrick(PlayerArray players) : Common::Game::Trick(players, 0, false){
+    MockTrick(PlayerArray players) : Common::Game::Trick(players, 0, false, std::make_shared<Common::GameLogger>(stdout)){
     };
 
     MOCK_METHOD(int, getTrickWinner, ());

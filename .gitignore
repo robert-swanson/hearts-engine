@@ -46,3 +46,16 @@ externals/
 log/
 versions/
 config.env
+
+# Bazel (entries listed without trailing slash to also match symlinks Bazel creates)
+bazel-bin
+bazel-out
+bazel-hearts-engine
+bazel-testlogs
+MODULE.bazel.lock
+
+# Editor
+*.swp
+
+# Claude Code
+.claude/

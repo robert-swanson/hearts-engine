@@ -1,5 +1,5 @@
 from pathlib import Path
-
+import sys
 
 class EnvReader:
     def __init__(self, env_file_path: str):
@@ -21,7 +21,7 @@ class EnvReader:
         return self.env_dict[key]
 
 
-ENV_FILEPATH = "./config.env"
+ENV_FILEPATH = sys.argv[1] if len(sys.argv) > 1 else "./config.env"
 ENV = EnvReader(ENV_FILEPATH)
 
 SERVER_IP = ENV.get("SERVER_ADDR")
