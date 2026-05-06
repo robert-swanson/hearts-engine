@@ -1,5 +1,6 @@
 #pragma once
 
+#include <random>
 #include <utility>
 
 #include "../game/objects/player.h"
@@ -32,9 +33,37 @@ public:
 
     Game::CardCollection getCardsToPass(Game::PassDirection direction) override
     {
-        auto donatedCardsMsg = mGameSession->receive().getJson();
-        Game::CardCollection cards(donatedCardsMsg[Tags::CARDS]);
-        return cards;
+        auto msg = mGameSession->receive();
+        if (msg)
+        {
+            auto json = msg->getJson();
+            if (json.contains(Tags::CARDS))
+            {
+                try
+                {
+                    Game::CardCollection cards(json[Tags::CARDS]);
+                    if (cards.size() == 3)
+                    {
+                        bool valid = true;
+                        for (int i = 0; i < 3 && valid; ++i)
+                        {
+                            if (!getHand().contains(cards[i]))
+                            {
+                                LOG("Client %s tried to pass card not in hand: %s",
+                                    mPlayerTagSession.c_str(), cards[i].getAbbreviation().c_str());
+                                valid = false;
+                            }
+                        }
+                        if (valid)
+                            return cards;
+                    }
+                }
+                catch (...) { LOG("Client %s sent invalid pass cards", mPlayerTagSession.c_str()); }
+            }
+            else { LOG("Client %s pass response missing cards field", mPlayerTagSession.c_str()); }
+        }
+        else { LOG("Client %s timed out or disconnected during pass", mPlayerTagSession.c_str()); }
+        return autoPassCards();
     }
 
     void notifyReceivedCards(const Game::CardCollection& receivedCards) override
@@ -60,8 +89,28 @@ public:
             {Tags::TYPE, ServerMsgTypes::MOVE_REQUEST},
             {Tags::LEGAL_MOVES, legalPlays.getCardsAsStrings()}
         }});
-        auto moveMsg = mGameSession->receive().getJson();
-        return Game::Card(moveMsg[Tags::CARD]);
+
+        auto msg = mGameSession->receive();
+        if (msg)
+        {
+            auto json = msg->getJson();
+            if (json.contains(Tags::CARD))
+            {
+                try
+                {
+                    Game::Card card(json[Tags::CARD].get<std::string>());
+                    if (legalPlays.contains(card))
+                        return card;
+                    LOG("Client %s played illegal card %s",
+                        mPlayerTagSession.c_str(), card.getAbbreviation().c_str());
+                }
+                catch (...) { LOG("Client %s sent unparseable card", mPlayerTagSession.c_str()); }
+            }
+            else { LOG("Client %s move response missing card field", mPlayerTagSession.c_str()); }
+        }
+        else { LOG("Client %s timed out or disconnected during move", mPlayerTagSession.c_str()); }
+
+        return autoMoveCard(legalPlays);
     }
 
     void notifyMove(PlayerTagSession playerID, Game::Card card) override
@@ -99,6 +148,44 @@ public:
     }
 
 private:
+    Game::Card autoMoveCard(const Game::CardCollection& legalPlays)
+    {
+        Game::Card chosen = randomCard(legalPlays);
+        mGameSession->send({{
+            {Tags::TYPE, ServerMsgTypes::AUTO_MOVE},
+            {Tags::CARD, chosen.getAbbreviation()}
+        }});
+        LOG("Auto-moved %s for client %s", chosen.getAbbreviation().c_str(), mPlayerTagSession.c_str());
+        return chosen;
+    }
+
+    Game::CardCollection autoPassCards()
+    {
+        Game::CardCollection hand = getHand();
+        std::vector<Game::Card> chosen;
+        std::mt19937 rng{std::random_device{}()};
+        std::vector<int> indices(hand.size());
+        std::iota(indices.begin(), indices.end(), 0);
+        std::shuffle(indices.begin(), indices.end(), rng);
+        for (int i = 0; i < 3; ++i)
+            chosen.push_back(hand[indices[i]]);
+        Game::CardCollection result(chosen.begin(), chosen.end());
+        std::vector<std::string> cardStrs = result.getCardsAsStrings();
+        mGameSession->send({{
+            {Tags::TYPE, ServerMsgTypes::AUTO_PASS},
+            {Tags::CARDS, cardStrs}
+        }});
+        LOG("Auto-passed for client %s", mPlayerTagSession.c_str());
+        return result;
+    }
+
+    static Game::Card randomCard(const Game::CardCollection& cards)
+    {
+        std::mt19937 rng{std::random_device{}()};
+        std::uniform_int_distribution<int> dist(0, static_cast<int>(cards.size()) - 1);
+        return cards[dist(rng)];
+    }
+
     std::shared_ptr<PlayerGameSession> mGameSession;
     PlayerTagSession mPlayerTagSession;
 };

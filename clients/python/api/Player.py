@@ -94,6 +94,21 @@ class Player(ABC):
         """
         pass
 
+    def handle_auto_move(self, card: Card) -> None:
+        """
+        Called when the server chose a move on this player's behalf (timeout or invalid response).
+        handle_move will also fire with the same card immediately after.
+        :param card: The card the server played for this player
+        """
+        pass
+
+    def handle_auto_pass(self, cards: List[Card]) -> None:
+        """
+        Called when the server chose pass cards on this player's behalf (timeout or invalid response).
+        :param cards: The 3 cards the server passed for this player
+        """
+        pass
+
     @abstractmethod
     def get_move(self, trick: Trick, legal_moves: List[Card]) -> Card:
         """

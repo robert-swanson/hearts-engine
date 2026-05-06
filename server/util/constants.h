@@ -48,6 +48,8 @@ namespace Common::Server::ServerMsgTypes
     constexpr auto START_TRICK = "start_trick";
     constexpr auto MOVE_REPORT = "move_report";
     constexpr auto MOVE_REQUEST = "move_request";
+    constexpr auto AUTO_MOVE = "auto_move";   // server chose a move on behalf of client
+    constexpr auto AUTO_PASS = "auto_pass";   // server chose pass cards on behalf of client
     constexpr auto END_TRICK = "end_trick";
     constexpr auto END_ROUND = "end_round";
     constexpr auto END_GAME = "end_game";

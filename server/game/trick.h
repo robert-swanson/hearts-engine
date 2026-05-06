@@ -22,8 +22,11 @@ public:
         {
             CardCollection legalMoves = legalMovesForPlayer(currentPlayer);
             Card card = currentPlayer->getMove(legalMoves);
+            // RemotePlayer validates and auto-substitutes on bad input, so a card
+            // reaching here should always be legal. Keep as a sanity-check assertion.
+            ASRT(legalMoves.contains(card), "Illegal card %s reached trick (should have been caught in RemotePlayer)",
+                 card.getAbbreviation().c_str());
             currentPlayer->removeCardsFromHand(CardCollection{card});
-            ASRT(legalMoves.contains(card), "Player played illegal card %s", card.getAbbreviation().c_str());
             mPlayedCards = mPlayedCards + card;
             mBrokenHearts |= (card.getSuit() == HEARTS);
             notifyMove(currentPlayer, card);

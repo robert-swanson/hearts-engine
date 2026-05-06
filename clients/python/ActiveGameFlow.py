@@ -65,13 +65,18 @@ class ActiveRound(PassingMessenger, Round):
             self.receiving_player = self.get_receiving_player()
             self.donating_cards = self.player.get_cards_to_pass(self.pass_direction, self.receiving_player)
             assert len(self.donating_cards) == 3, f"Player {self.player.player_tag_session} tried to pass {len(self.donating_cards)} cards"
-            donated_cards_msg = {
-                Tags.TYPE: ClientMsgTypes.DONATED_CARDS,
-                Tags.CARDS: self.donating_cards
-            }
-            self.send(donated_cards_msg)
+            self.send({Tags.TYPE: ClientMsgTypes.DONATED_CARDS, Tags.CARDS: self.donating_cards})
 
-            received_cards_msg = self.receive_type(ServerMsgTypes.RECEIVED_CARDS)
+            # Server may have auto-passed on our behalf (timeout/invalid); if so it notifies us first.
+            next_msg = self.receive()
+            if next_msg[Tags.TYPE] == ServerMsgTypes.AUTO_PASS:
+                player.handle_auto_pass(StrListToCards(next_msg[Tags.CARDS]))
+                received_cards_msg = self.receive_type(ServerMsgTypes.RECEIVED_CARDS)
+            else:
+                assert next_msg[Tags.TYPE] == ServerMsgTypes.RECEIVED_CARDS, \
+                    f"Expected received_cards or auto_pass, got {next_msg[Tags.TYPE]}"
+                received_cards_msg = next_msg
+
             self.received_cards = StrListToCards(received_cards_msg[Tags.CARDS])
             self.donating_player = self.get_donating_player()
             self.player.receive_passed_cards(self.received_cards, self.pass_direction, self.donating_player)
@@ -106,13 +111,21 @@ class ActiveTrick(PassingMessenger, Trick):
                 legal_moves = StrListToCards(move_request_msg[Tags.LEGAL_MOVES])
                 move = self.player.get_move(self, legal_moves)
                 assert move in legal_moves, f"Player {self.player.player_tag_session} tried to play {move} but it was not legal"
-                decided_move_msg = {
-                    Tags.TYPE: ClientMsgTypes.DECIDED_MOVE,
-                    Tags.CARD: move
-                }
-                self.send(decided_move_msg)
+                self.send({Tags.TYPE: ClientMsgTypes.DECIDED_MOVE, Tags.CARD: move})
 
-            move_report_msg = self.receive_type(ServerMsgTypes.MOVE_REPORT)
+                # Server may have already timed out and auto-moved before our decided_move arrived.
+                # If so it sends auto_move before the move_report so we know what was played.
+                next_msg = self.receive()
+                if next_msg[Tags.TYPE] == ServerMsgTypes.AUTO_MOVE:
+                    player.handle_auto_move(Card(next_msg[Tags.CARD]))
+                    move_report_msg = self.receive_type(ServerMsgTypes.MOVE_REPORT)
+                else:
+                    assert next_msg[Tags.TYPE] == ServerMsgTypes.MOVE_REPORT, \
+                        f"Expected move_report or auto_move, got {next_msg[Tags.TYPE]}"
+                    move_report_msg = next_msg
+            else:
+                move_report_msg = self.receive_type(ServerMsgTypes.MOVE_REPORT)
+
             reported_player = MakePlayerTagSession(move_report_msg[Tags.PLAYER_TAG])
             move = Card(move_report_msg[Tags.CARD])
             self.moves.append(Move(reported_player, move))

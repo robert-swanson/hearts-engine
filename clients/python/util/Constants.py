@@ -42,6 +42,8 @@ class ServerMsgTypes:
     START_TRICK = "start_trick"
     MOVE_REPORT = "move_report"
     MOVE_REQUEST = "move_request"
+    AUTO_MOVE = "auto_move"   # server chose a move on our behalf (timeout/bad response)
+    AUTO_PASS = "auto_pass"   # server chose pass cards on our behalf
     END_TRICK = "end_trick"
     END_ROUND = "end_round"
     END_GAME = "end_game"
