@@ -136,7 +136,7 @@ if __name__ == '__main__':
     with ManagedConnection("tim_player") as connection:
         games = RunMultipleGames(connection, GameType.ANY, players, 16)
         for game_result in games:
-            if "tim_ai" in str(game_result[0].winner):
+            if "tim_ai" in str(game_result.winner):
                 games_won += 1
             total_games += 1
 
