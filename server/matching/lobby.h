@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+#include <random>
 #include <utility>
 
 #include "server/game/game.h"
@@ -33,6 +35,7 @@ private:
         }
         std::vector game_players(mUnmatchedPlayers.begin(), mUnmatchedPlayers.begin() + 4);
         mUnmatchedPlayers.erase(mUnmatchedPlayers.begin(), mUnmatchedPlayers.begin() + 4);
+        std::shuffle(game_players.begin(), game_players.end(), std::mt19937{std::random_device{}()});
         auto game = LiveGame(mCode, game_players);
         game.startGame();
     }

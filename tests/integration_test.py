@@ -5,6 +5,9 @@ Usage: python3 tests/integration_test.py [env_file_path]
        env_file_path defaults to ./local.config.env
 """
 
+import glob
+import importlib
+import inspect
 import sys
 import os
 
@@ -14,9 +17,37 @@ if len(sys.argv) < 2:
 
 from clients.python.api.networking.ManagedConnection import ManagedConnection
 from clients.python.api.networking.SessionHelpers import RunGame, RunMultipleGames
+from clients.python.api.Player import Player
 from clients.python.players.random_player import RandomPlayer
 from clients.python.util.Constants import GameType
 from clients.python.util.Env import SERVER_IP, SERVER_PORT
+
+# Players excluded from automated smoke testing
+_SKIP_PLAYER_FILES = {
+    'debugger_player.py',  # interactive: pauses waiting for Enter key
+    'table_player.py',     # stale duplicate of RobPlayer; same player_tag causes conflicts
+}
+
+
+def discover_player_classes():
+    """Return one Player subclass per file in clients/python/players/, skipping excluded files."""
+    found = []
+    for filepath in sorted(glob.glob("clients/python/players/*.py")):
+        filename = os.path.basename(filepath)
+        if filename.startswith('_') or filename in _SKIP_PLAYER_FILES:
+            continue
+        module_name = f"clients.python.players.{filename[:-3]}"
+        try:
+            module = importlib.import_module(module_name)
+        except Exception as exc:
+            print(f"  WARN: could not import {module_name}: {exc}")
+            continue
+        for _, obj in inspect.getmembers(module, inspect.isclass):
+            if (issubclass(obj, Player) and obj is not Player
+                    and getattr(obj, '__module__', '') == module_name):
+                found.append(obj)
+                break  # one representative class per file is enough
+    return found
 
 FOUR_RANDOM = [RandomPlayer, RandomPlayer, RandomPlayer, RandomPlayer]
 TIMEOUT_S = 60
@@ -58,6 +89,20 @@ def test_two_concurrent_games():
         check_game(game, f"concurrent-game-{i + 1}")
 
 
+def test_each_player():
+    """Smoke-test every player file: one complete game vs three RandomPlayers."""
+    player_classes = discover_player_classes()
+    assert player_classes, "discover_player_classes() returned nothing — check players/ directory"
+    tags = [p.player_tag for p in player_classes]
+    print(f"Test 3: Player smoke tests — {len(player_classes)} players: {tags}")
+
+    with ManagedConnection(timeout_s=TIMEOUT_S) as conn:
+        for player_cls in player_classes:
+            roster = [player_cls, RandomPlayer, RandomPlayer, RandomPlayer]
+            game = RunGame(conn, GameType.ANY, roster, timeout_s=TIMEOUT_S)
+            check_game(game, f"smoke-{player_cls.player_tag}")
+
+
 if __name__ == "__main__":
     print("Hearts Engine Integration Tests")
     print("================================")
@@ -66,6 +111,7 @@ if __name__ == "__main__":
 
     test_single_game()
     test_two_concurrent_games()
+    test_each_player()
 
     print("\nAll integration tests PASSED")
     sys.exit(0)
