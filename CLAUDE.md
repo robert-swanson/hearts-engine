@@ -1,0 +1,83 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## What This Is
+
+A Hearts card game engine: a C++ TCP server that runs game logic, and a Python client SDK for writing AI players. The server handles matching, game state, and protocol; clients implement player strategy by subclassing `Player`.
+
+## Commands
+
+**Server (Bazel 9+):**
+```bash
+bazel run //server:server                                           # run server (reads config.env)
+bazel test --cxxopt=-std=c++17 --features=external_include_paths //tests:all  # run all C++ tests
+```
+
+**Python clients:**
+```bash
+export PYTHONPATH=$PYTHONPATH:$(pwd)
+python3 clients/python/players/random_player.py                    # run a player against the live server
+```
+
+**Config:** Copy `config.env` (or `local.config.env`) and set `SERVER_PORT`, `SERVER_ADDR`, `LOG_DIR`.
+
+## Architecture
+
+```
+C++ Server (server/)
+  Broker (boost::asio TCP) → ManagedConnection (protocol) → Matcher/Lobby → LiveGame
+  LiveGame runs: Game → Round → Trick → Player (server-side slot, not AI)
+
+Python Client SDK (clients/python/api/)
+  ManagedConnection (context manager) → Messenger → PlayerGameSession
+  ActiveGame / ActiveRound / ActiveTrick — receive protocol messages, maintain state
+  Player (abstract base) — override hooks to implement strategy
+```
+
+The server and client communicate over JSON messages with `type`, `session_id`, `seq_num`. Full protocol spec is in `clients/README.md`.
+
+## Game Flow
+
+```
+connect → request session (player_tag, game_type, lobby_code)
+  → matched into 4-player LiveGame
+  → 13 rounds:
+      deal → pass 3 cards (except KEEPER rounds) → 13 tricks:
+          4 moves per trick (follow suit if able, highest trick-suit card wins)
+      → score round
+  → end game (lowest score wins; 26 pts = shoot the moon → others +26)
+```
+
+**Points:** Each heart = 1 pt, Queen of Spades = 13 pts.
+
+## Adding a New Player
+
+1. Create `clients/python/players/my_player.py`, subclass `Player`
+2. Set a unique `player_tag` class variable
+3. Implement the two required methods:
+   - `get_cards_to_pass(pass_dir, receiving_player) → List[Card]` — choose 3 cards to pass
+   - `get_move(trick, legal_moves) → Card` — choose a card to play
+4. Override optional hooks for state tracking:
+   - `handle_new_round(round)` — `round.cards_in_hand` is a live reference, stays current
+   - `receive_passed_cards(cards, from_player, to_player)`
+   - `handle_move(player, card)` — observe all 4 players' moves including your own
+   - `handle_finished_trick(trick, winner)`
+5. Add a `__main__` block using `RunMultipleGames` to test win rate vs. `RandomPlayer`
+
+See `clients/python/players/rob_player.py` for a full strategic example and `clients/python/players/claude_player.py` for a danger-scoring approach.
+
+## Key Types
+
+- **Card:** two-char string, rank + suit — e.g. `"QS"`, `"2C"`, `"TH"` (T = 10)
+- **PlayerTagSession:** `(player_tag, session_id)` tuple identifying a player in a specific game
+- **PassDirection:** `LEFT`, `RIGHT`, `ACROSS`, `KEEPER` (no pass)
+- **GameType:** `ANY` (FIFO matching) or lobby-code-based grouping
+
+## Non-Obvious Behaviors
+
+- `round.cards_in_hand` is mutated in place by the framework — don't copy it at round start expecting it to stay static.
+- One `ManagedConnection` can run 64+ concurrent sessions (useful for batch testing with lobby codes).
+- `SessionHelpers` (`MakeSession`, `RunGame`, `RunMultipleGames`) handle threading and synchronization for concurrent sessions.
+- `DebuggerPlayer` wraps any player with a CLI that pauses at each decision — useful for tracing strategy bugs.
+- Matching is currently FIFO with optional lobby codes; no skill-based pairing.
