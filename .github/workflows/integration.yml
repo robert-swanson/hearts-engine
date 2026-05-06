@@ -1,0 +1,53 @@
+name: Integration Tests
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  integration:
+    runs-on: macos-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Build server
+      run: |
+        bazel build --cxxopt=-std=c++17 --features=external_include_paths --verbose_failures //server:server
+
+    - name: Start server
+      run: |
+        mkdir -p log
+        ./bazel-bin/server/server local.config.env &
+        echo "SERVER_PID=$!" >> "$GITHUB_ENV"
+        echo "Waiting for server on port 40405..."
+        for i in $(seq 1 20); do
+          nc -z 127.0.0.1 40405 2>/dev/null && echo "Server ready (${i}s)" && break
+          sleep 1
+          if [ "$i" = "20" ]; then
+            echo "ERROR: server did not start within 20 seconds"
+            exit 1
+          fi
+        done
+
+    - name: Run integration tests
+      run: |
+        export PYTHONPATH="$(pwd):${PYTHONPATH}"
+        python3 tests/integration_test.py local.config.env
+
+    - name: Stop server
+      if: always()
+      run: |
+        if [ -n "$SERVER_PID" ]; then
+          kill "$SERVER_PID" || true
+        fi
