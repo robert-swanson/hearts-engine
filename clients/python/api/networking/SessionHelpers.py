@@ -201,3 +201,7 @@ def RunMultipleGames(connection: ManagedConnection, game_type: GameType, player_
 
     return [ObjectiveGame([(session.player_session, session.game_results) for _, session in game_sessions])
             for game_sessions in sessions]
+
+
+def CountPlayerWins(player_cls: Type[Player_T], game_results: List[ObjectiveGame]) -> int:
+    return sum(1 for game in game_results if game.winner is not None and player_cls.player_tag in str(game.winner))
