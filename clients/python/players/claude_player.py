@@ -1,11 +1,13 @@
 """
 Claude Hearts AI Player
 Strategy:
-  - Passing: pass the most dangerous cards (QS, high spades, high hearts)
-  - Playing off-suit: dump most dangerous card available
-  - Following suit: play highest card that still loses; if must win, play lowest
-  - Leading: lead low cards in safe suits to avoid winning point tricks
-  - Moon blocking: if someone looks like they're shooting the moon, try to take a trick
+  - Passing: void short safe suits (≤2 cards in clubs/diamonds), then highest-danger cards;
+             protect QS if well-covered by low spades
+  - Leading: lead from shortest safe suit to void it fastest; flush QS with low spades
+  - Following suit: play highest that still loses; dump if forced to win
+  - Off-suit: dump QS at first opportunity; dump highest safe card when trick has 0 pts;
+              dump most dangerous card when points are at stake
+  - Moon blocking: block if one opponent has sole possession of points above threshold
 """
 from typing import List, Dict, Optional
 
@@ -29,11 +31,13 @@ class ClaudePlayer(Player):
         super().__init__(player_tag_session)
         self.hand: List[Card] = []
         self.current_round: Optional[Round] = None
+        self.current_trick: Optional[Trick] = None
+        self.opponent_voids: Dict[PlayerTagSession, set] = {}  # player → set of void suits
 
     # ── Game ────────────────────────────────────────────────────────────────
 
     def initialize_for_game(self, game: Game) -> None:
-        pass
+        self.opponent_voids = {}
 
     def handle_end_game(self, players_to_points: dict[PlayerTagSession, int], winner: PlayerTagSession) -> None:
         pass
@@ -43,13 +47,25 @@ class ClaudePlayer(Player):
     def handle_new_round(self, round: Round) -> None:
         self.hand = round.cards_in_hand   # live reference; framework keeps it current
         self.current_round = round
+        self.opponent_voids = {}
 
     def handle_finished_round(self, round: Round, round_points: Dict[PlayerTagSession, int]) -> None:
         pass
 
     def get_cards_to_pass(self, pass_dir: PassDirection, receiving_player: PlayerTagSession) -> List[Card]:
-        """Pass the 3 most dangerous cards to hold."""
-        return sorted(self.hand, key=self._danger_score, reverse=True)[:3]
+        """Pass the 3 most dangerous cards. Protect QS if 3+ low spades cover it."""
+        by_suit = GroupCardsBySuit(self.hand)
+        spades = by_suit.get(Suit.SPADES, [])
+        has_qs = Card("QS") in self.hand
+        low_spades_count = sum(1 for c in spades if c.rank.to_int() < 12)
+        qs_well_protected = has_qs and low_spades_count >= 3
+
+        def adjusted_danger(card: Card) -> float:
+            if card == Card("QS") and qs_well_protected:
+                return 15
+            return self._danger_score(card)
+
+        return sorted(self.hand, key=adjusted_danger, reverse=True)[:3]
 
     def receive_passed_cards(self, cards: List[Card], pass_dir: PassDirection, donating_player: PlayerTagSession) -> None:
         pass
@@ -57,13 +73,17 @@ class ClaudePlayer(Player):
     # ── Trick ───────────────────────────────────────────────────────────────
 
     def handle_new_trick(self, trick: Trick) -> None:
-        pass
+        self.current_trick = trick
 
     def handle_finished_trick(self, trick: Trick, winning_player: PlayerTagSession) -> None:
         pass
 
     def handle_move(self, player: PlayerTagSession, card: Card) -> None:
-        pass
+        if self.current_trick is None:
+            return
+        trick_suit = self.current_trick.get_suit()
+        if trick_suit and card.suit != trick_suit and player != self.player_tag_session:
+            self.opponent_voids.setdefault(player, set()).add(trick_suit)
 
     # ── Moves ───────────────────────────────────────────────────────────────
 
@@ -79,21 +99,47 @@ class ClaudePlayer(Player):
     # ── Private helpers ──────────────────────────────────────────────────────
 
     def _danger_score(self, card: Card) -> float:
-        """How dangerous is this card to hold?  Higher ⟹ pass it away."""
+        """
+        How dangerous is this card to hold?  Higher ⟹ pass it away.
+
+        Calibration goals:
+          - QS is uniquely catastrophic (13 pts in one shot)
+          - High spades (AS, KS) risk taking QS from someone else
+          - High clubs/diamonds force trick wins where opponents dump points
+          - High hearts guarantee points AND win tricks; low hearts are nearly harmless
+          - Low hearts (≤7) should be less dangerous than high safe-suit cards
+        """
         if card == Card("QS"):
             return 100
         if card == Card("AS"):
             return 42
         if card == Card("KS"):
-            return 36
+            return 35
         if card == Card("JS"):
-            return 20
-        if card.suit == Suit.HEARTS:
-            # AH=28, KH=27, …, 2H=15
-            return 14 + card.rank.to_int()
+            return 18
+
         if card.suit == Suit.SPADES:
-            return card.rank.to_int()   # only counts if AS/KS/QS weren't caught above
-        return 0                        # clubs / diamonds are safe
+            return card.rank.to_int()  # low spades are fine; covers TS/9S/etc.
+
+        if card.suit == Suit.HEARTS:
+            rank = card.rank.to_int()
+            if rank == 14:   return 30   # AH: wins every hearts trick + 1 pt
+            if rank == 13:   return 26   # KH
+            if rank == 12:   return 22   # QH
+            if rank == 11:   return 18   # JH
+            if rank == 10:   return 13   # TH
+            if rank == 9:    return 8    # 9H
+            if rank == 8:    return 4    # 8H
+            return 1                     # 7H and below: nearly harmless
+
+        # Clubs / Diamonds: high ranks force trick wins
+        rank = card.rank.to_int()
+        if rank == 14:   return 27   # AC / AD
+        if rank == 13:   return 22   # KC / KD
+        if rank == 12:   return 14   # QC / QD
+        if rank == 11:   return 7    # JC / JD
+        if rank == 10:   return 3    # TC / TD
+        return 0                     # 9 and below: safe
 
     def _safe_move(self, trick: Trick, legal_moves: List[Card]) -> Card:
         sorted_legal = SortCardsByRank(legal_moves)
@@ -113,37 +159,55 @@ class ClaudePlayer(Player):
                 # Play as high as possible while still losing
                 return below_winner[-1]
             else:
-                # We're going to take this trick no matter what
-                if len(trick.moves) == 3:
-                    # Last to play — might as well play highest (we're stuck winning)
+                # We're going to take this trick no matter what.
+                # If all remaining players are known void in this suit, we're effectively last
+                # — play highest to dispose of our most dangerous card in this suit.
+                players_after = trick.player_order[len(trick.moves) + 1:]
+                all_after_void = bool(players_after) and all(
+                    trick_suit in self.opponent_voids.get(p, set())
+                    for p in players_after
+                )
+                if len(trick.moves) == 3 or all_after_void:
                     return sorted_legal[-1]
-                # Otherwise play lowest to limit damage
                 return sorted_legal[0]
         else:
-            # Off-suit: dump our most dangerous card
+            # Off-suit: dump QS immediately (free 13-pt disposal), else most dangerous card
+            if Card("QS") in legal_moves:
+                return Card("QS")
             return sorted(legal_moves, key=self._danger_score, reverse=True)[0]
 
     def _lead_card(self, legal_moves: List[Card]) -> Card:
         """
-        Lead strategy: prefer low cards in long safe suits (clubs/diamonds),
-        then low spades (to flush QS), then low hearts as last resort.
+        Lead from shortest safe suit to void it fastest.
+        Skip a suit if an opponent is void there AND QS is still live.
+        Then flush QS with low spades. Last resort: lowest heart.
         """
         by_suit = GroupCardsBySuit(legal_moves)
+        played = self.current_round.get_played_cards() if self.current_round else set()
+        qs_played = Card("QS") in played
+
+        def risky_to_lead(suit: Suit) -> bool:
+            if qs_played:
+                return False
+            return any(suit in voids for voids in self.opponent_voids.values())
 
         safe = {s: cards for s, cards in by_suit.items()
-                if s not in (Suit.HEARTS, Suit.SPADES)}
-        if safe:
-            # Lead the lowest card from the suit we have the most of (drain it)
-            best_suit = max(safe, key=lambda s: len(safe[s]))
-            return SortCardsByRank(safe[best_suit])[0]
+                if s in (Suit.CLUBS, Suit.DIAMONDS)}
+
+        non_risky = {s: c for s, c in safe.items() if not risky_to_lead(s)}
+        pool = non_risky if non_risky else safe
+        if pool:
+            shortest = min(pool, key=lambda s: len(pool[s]))
+            return SortCardsByRank(pool[shortest])[0]
 
         if Suit.SPADES in by_suit:
             spade_cards = SortCardsByRank(by_suit[Suit.SPADES])
-            if Card("QS") not in spade_cards:
-                # Lead low spade to flush Queen of Spades from opponents
+            if qs_played:
                 return spade_cards[0]
+            low_spades = [c for c in spade_cards if c != Card("QS")]
+            if low_spades:
+                return low_spades[0]
 
-        # Fall back: lowest heart or lowest card overall
         if Suit.HEARTS in by_suit:
             return SortCardsByRank(by_suit[Suit.HEARTS])[0]
 
@@ -175,8 +239,7 @@ class ClaudePlayer(Player):
             return False  # we are the (potential) shooter — keep going!
 
         queen_played = Card("QS") in self.current_round.get_played_cards()
-        # Threat threshold: QS already taken ⟹ need ≥19 pts (all hearts); else >10 hearts taken
-        return (queen_played and points >= 19) or (not queen_played and points > 10)
+        return (queen_played and points > 18) or (not queen_played and points > 8)
 
 
 if __name__ == '__main__':
