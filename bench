@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Benchmark a Hearts AI vs the standard panel (random/madison/rob/claude).
+# Usage: ./bench <player_module> [num_games]
+#        ./bench claude_player           # 100 games per matchup, default
+#        ./bench my_new_ai 200
+set -euo pipefail
+cd "$(dirname "$0")"
+exec python3 scripts/bench.py "$@"

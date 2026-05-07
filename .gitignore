@@ -46,6 +46,7 @@ externals/
 log/
 versions/
 config.env
+local.config.env
 
 # Bazel (entries listed without trailing slash to also match symlinks Bazel creates)
 bazel-bin
