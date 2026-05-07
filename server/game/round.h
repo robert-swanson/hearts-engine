@@ -103,7 +103,8 @@ private:
         {
             auto passTo = playerToPassTo(passFrom);
             mPlayers[passTo]->receiveCards(passedCards[passFrom]);
-            mPlayers[passTo]->notifyReceivedCards(passedCards[passFrom]);
+            // passedCards[passTo] = what the receiving player donated to someone else
+            mPlayers[passTo]->notifyReceivedCards(passedCards[passFrom], passedCards[passTo]);
         }
     }
 

@@ -8,7 +8,7 @@ from clients.python.api.networking.Messenger import PassingMessenger, Messenger
 from clients.python.api.types.Card import StrListToCards, Card
 from clients.python.api.types.PassDirection import PassDirection
 from clients.python.api.types.PlayerTagSession import MakePlayerTagSessions, MakePlayerTagSession, PlayerTagSession
-from clients.python.util.Constants import ServerMsgTypes, Tags, ClientMsgTypes
+from clients.python.util.Constants import ServerMsgTypes, Tags, ClientMsgTypes, MoveSource
 
 
 class ActiveGame(PassingMessenger, Game):
@@ -67,17 +67,15 @@ class ActiveRound(PassingMessenger, Round):
             assert len(self.donating_cards) == 3, f"Player {self.player.player_tag_session} tried to pass {len(self.donating_cards)} cards"
             self.send({Tags.TYPE: ClientMsgTypes.DONATED_CARDS, Tags.CARDS: self.donating_cards})
 
-            # Server may have auto-passed on our behalf (timeout/invalid); if so it notifies us first.
-            next_msg = self.receive()
-            if next_msg[Tags.TYPE] == ServerMsgTypes.AUTO_PASS:
-                player.handle_auto_pass(StrListToCards(next_msg[Tags.CARDS]))
-                received_cards_msg = self.receive_type(ServerMsgTypes.RECEIVED_CARDS)
-            else:
-                assert next_msg[Tags.TYPE] == ServerMsgTypes.RECEIVED_CARDS, \
-                    f"Expected received_cards or auto_pass, got {next_msg[Tags.TYPE]}"
-                received_cards_msg = next_msg
-
+            received_cards_msg = self.receive_type(ServerMsgTypes.RECEIVED_CARDS)
             self.received_cards = StrListToCards(received_cards_msg[Tags.CARDS])
+
+            # If the server auto-passed on our behalf, donated_cards differs from what we intended.
+            actual_donated = StrListToCards(received_cards_msg[Tags.DONATED_CARDS])
+            if actual_donated != self.donating_cards:
+                player.handle_auto_pass(actual_donated)
+            self.donating_cards = actual_donated
+
             self.donating_player = self.get_donating_player()
             self.player.receive_passed_cards(self.received_cards, self.pass_direction, self.donating_player)
 
@@ -113,23 +111,17 @@ class ActiveTrick(PassingMessenger, Trick):
                 assert move in legal_moves, f"Player {self.player.player_tag_session} tried to play {move} but it was not legal"
                 self.send({Tags.TYPE: ClientMsgTypes.DECIDED_MOVE, Tags.CARD: move})
 
-                # Server may have already timed out and auto-moved before our decided_move arrived.
-                # If so it sends auto_move before the move_report so we know what was played.
-                next_msg = self.receive()
-                if next_msg[Tags.TYPE] == ServerMsgTypes.AUTO_MOVE:
-                    player.handle_auto_move(Card(next_msg[Tags.CARD]))
-                    move_report_msg = self.receive_type(ServerMsgTypes.MOVE_REPORT)
-                else:
-                    assert next_msg[Tags.TYPE] == ServerMsgTypes.MOVE_REPORT, \
-                        f"Expected move_report or auto_move, got {next_msg[Tags.TYPE]}"
-                    move_report_msg = next_msg
-            else:
-                move_report_msg = self.receive_type(ServerMsgTypes.MOVE_REPORT)
-
+            move_report_msg = self.receive_type(ServerMsgTypes.MOVE_REPORT)
             reported_player = MakePlayerTagSession(move_report_msg[Tags.PLAYER_TAG])
-            move = Card(move_report_msg[Tags.CARD])
-            self.moves.append(Move(reported_player, move))
-            player.handle_move(reported_player, move)
+            reported_card = Card(move_report_msg[Tags.CARD])
+            auto_moved = move_report_msg.get(Tags.MOVE_SOURCE) == MoveSource.SERVER
+
+            # Notify the affected player that the server acted on their behalf.
+            if auto_moved and current_player == self.player.player_tag_session:
+                player.handle_auto_move()
+
+            self.moves.append(Move(reported_player, reported_card))
+            player.handle_move(reported_player, reported_card)
 
         end_trick_msg = self.receive_type(ServerMsgTypes.END_TRICK)
         self.winner = MakePlayerTagSession(end_trick_msg[Tags.WINNING_PLAYER])

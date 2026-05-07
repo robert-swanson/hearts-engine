@@ -25,6 +25,8 @@ class Tags:
     PASS_DIRECTION = "pass_direction"
     CARDS = "cards"
     CARD = "card"
+    DONATED_CARDS = "donated_cards"
+    MOVE_SOURCE = "move_source"
     ROUND_INDEX = "round_index"
     TRICK_INDEX = "trick_index"
     LEGAL_MOVES = "legal_moves"
@@ -42,8 +44,6 @@ class ServerMsgTypes:
     START_TRICK = "start_trick"
     MOVE_REPORT = "move_report"
     MOVE_REQUEST = "move_request"
-    AUTO_MOVE = "auto_move"   # server chose a move on our behalf (timeout/bad response)
-    AUTO_PASS = "auto_pass"   # server chose pass cards on our behalf
     END_TRICK = "end_trick"
     END_ROUND = "end_round"
     END_GAME = "end_game"
@@ -54,6 +54,11 @@ class ClientMsgTypes:
     REQUEST_GAME_SESSION = "game_session_request"
     DONATED_CARDS = "donated_cards"
     DECIDED_MOVE = "decided_move"
+
+
+class MoveSource:
+    PLAYER = "player"
+    SERVER = "server"
 
 
 class ServerStatus:

@@ -11,7 +11,8 @@ class RemotePlayer final: public Game::Player
 {
 public:
     explicit RemotePlayer(PlayerTagSession tagSession, const std::shared_ptr<PlayerGameSession>& gameSession) :
-            Player(std::move(tagSession)), mGameSession(gameSession), mPlayerTagSession(gameSession->getPlayerTagSession()) {}
+            Player(std::move(tagSession)), mGameSession(gameSession), mPlayerTagSession(gameSession->getPlayerTagSession()),
+            mLastMoveWasAuto(false) {}
 
     void notifyStartGame(std::vector<PlayerTagSession> playerOrder) override
     {
@@ -66,11 +67,12 @@ public:
         return autoPassCards();
     }
 
-    void notifyReceivedCards(const Game::CardCollection& receivedCards) override
+    void notifyReceivedCards(const Game::CardCollection& receivedCards, const Game::CardCollection& donatedCards) override
     {
         mGameSession->send({{
             {Tags::TYPE, ServerMsgTypes::RECEIVED_CARDS},
-            {Tags::CARDS, receivedCards.getCardsAsStrings()}
+            {Tags::CARDS, receivedCards.getCardsAsStrings()},
+            {Tags::DONATED_CARDS, donatedCards.getCardsAsStrings()}
         }});
     }
 
@@ -90,6 +92,7 @@ public:
             {Tags::LEGAL_MOVES, legalPlays.getCardsAsStrings()}
         }});
 
+        mLastMoveWasAuto = false;
         auto msg = mGameSession->receive();
         if (msg)
         {
@@ -110,17 +113,21 @@ public:
         }
         else { LOG("Client %s timed out or disconnected during move", mPlayerTagSession.c_str()); }
 
+        mLastMoveWasAuto = true;
         return autoMoveCard(legalPlays);
     }
 
-    void notifyMove(PlayerTagSession playerID, Game::Card card) override
+    void notifyMove(PlayerTagSession playerID, Game::Card card, bool autoMoved) override
     {
         mGameSession->send({{
             {Tags::TYPE, ServerMsgTypes::MOVE_REPORT},
             {Tags::PLAYER_TAG, playerID},
-            {Tags::CARD, card.getAbbreviation()}
+            {Tags::CARD, card.getAbbreviation()},
+            {Tags::MOVE_SOURCE, autoMoved ? MoveSource::SERVER : MoveSource::PLAYER}
         }});
     }
+
+    bool wasLastMoveAuto() const override { return mLastMoveWasAuto; }
 
     void notifyEndTrick(PlayerTagSession winningPlayer) override
     {
@@ -151,10 +158,6 @@ private:
     Game::Card autoMoveCard(const Game::CardCollection& legalPlays)
     {
         Game::Card chosen = randomCard(legalPlays);
-        mGameSession->send({{
-            {Tags::TYPE, ServerMsgTypes::AUTO_MOVE},
-            {Tags::CARD, chosen.getAbbreviation()}
-        }});
         LOG("Auto-moved %s for client %s", chosen.getAbbreviation().c_str(), mPlayerTagSession.c_str());
         return chosen;
     }
@@ -169,14 +172,8 @@ private:
         std::shuffle(indices.begin(), indices.end(), rng);
         for (int i = 0; i < 3; ++i)
             chosen.push_back(hand[indices[i]]);
-        Game::CardCollection result(chosen.begin(), chosen.end());
-        std::vector<std::string> cardStrs = result.getCardsAsStrings();
-        mGameSession->send({{
-            {Tags::TYPE, ServerMsgTypes::AUTO_PASS},
-            {Tags::CARDS, cardStrs}
-        }});
         LOG("Auto-passed for client %s", mPlayerTagSession.c_str());
-        return result;
+        return Game::CardCollection(chosen.begin(), chosen.end());
     }
 
     static Game::Card randomCard(const Game::CardCollection& cards)
@@ -188,5 +185,6 @@ private:
 
     std::shared_ptr<PlayerGameSession> mGameSession;
     PlayerTagSession mPlayerTagSession;
+    bool mLastMoveWasAuto;
 };
 }
