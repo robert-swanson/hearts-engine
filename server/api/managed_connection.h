@@ -13,13 +13,14 @@ using namespace boost::asio;
 namespace Common::Server {
 struct SessionParts
 {
-    SessionParts(): unprocessedReceivedMessages(), waitCondition(), mutex()
+    SessionParts(): unprocessedReceivedMessages(), waitCondition(), mutex(), disconnected(false)
     {
     }
 
     std::vector<Common::Server::Message::SessionMessage> unprocessedReceivedMessages;
     std::condition_variable waitCondition;
     std::mutex mutex;
+    bool disconnected;
     std::optional<std::shared_ptr<Common::MessageLogger>> messageLogger;
 };
 
@@ -65,6 +66,13 @@ public:
             else {
                 LOG("Error with client at %s:%d: %s", this->mClientIP, this->mClientPort, e.what());
             }
+            // Wake all sessions waiting on this connection so they can handle the disconnect
+            for (auto& [id, parts] : playerGameSessions)
+            {
+                std::lock_guard<std::mutex> lock(parts.mutex);
+                parts.disconnected = true;
+                parts.waitCondition.notify_all();
+            }
         }
     }
 
@@ -88,14 +96,26 @@ public:
         }
     }
 
-    Message::SessionMessage receiveOnSession(PlayerGameSessionID sessionId) {
+    // Returns nullopt on timeout or client disconnect
+    std::optional<Message::SessionMessage> receiveOnSession(
+            PlayerGameSessionID sessionId,
+            std::chrono::seconds timeout = std::chrono::seconds(15))
+    {
         auto sessionParts = playerGameSessions.find(sessionId);
         ASRT(sessionParts != playerGameSessions.end(), "Session ID %lld not found", sessionId);
 
         std::unique_lock<std::mutex> lock(sessionParts->second.mutex);
-        sessionParts->second.waitCondition.wait(lock, [&sessionParts] {
-            return !sessionParts->second.unprocessedReceivedMessages.empty();
+        bool gotMessage = sessionParts->second.waitCondition.wait_for(lock, timeout, [&sessionParts] {
+            return !sessionParts->second.unprocessedReceivedMessages.empty()
+                   || sessionParts->second.disconnected;
         });
+
+        if (!gotMessage || sessionParts->second.disconnected
+            || sessionParts->second.unprocessedReceivedMessages.empty())
+        {
+            return std::nullopt;
+        }
+
         auto message = sessionParts->second.unprocessedReceivedMessages[0];
         sessionParts->second.unprocessedReceivedMessages.erase(
                 sessionParts->second.unprocessedReceivedMessages.begin());

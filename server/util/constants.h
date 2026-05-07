@@ -30,6 +30,8 @@ namespace Common::Server::Tags
     constexpr auto PASS_DIRECTION = "pass_direction";
     constexpr auto CARDS = "cards";
     constexpr auto CARD = "card";
+    constexpr auto DONATED_CARDS = "donated_cards";
+    constexpr auto MOVE_SOURCE = "move_source";
     constexpr auto ROUND_INDEX = "round_index";
     constexpr auto TRICK_INDEX = "trick_index";
     constexpr auto LEGAL_MOVES = "legal_moves";
@@ -59,6 +61,12 @@ namespace Common::Server::ClientMsgTypes
     constexpr auto GAME_SESSION_REQUEST = "game_session_request";
     constexpr auto DONATED_CARDS = "donated_cards";
     constexpr auto DECIDED_MOVE = "decided_move";
+}
+
+namespace Common::Server::MoveSource
+{
+    constexpr auto PLAYER = "player";
+    constexpr auto SERVER = "server";
 }
 
 namespace Common::Server::ServerStatus

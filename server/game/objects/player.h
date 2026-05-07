@@ -18,10 +18,11 @@ public:
     virtual void notifyStartGame(std::vector<PlayerID> playerOrder) = 0;
     virtual void notifyStartRound(int roundIndex, PassDirection passDirection, CardCollection hand) = 0;
     virtual CardCollection getCardsToPass(PassDirection direction) = 0;
-    virtual void notifyReceivedCards(const CardCollection& receivedCards) = 0;
+    virtual void notifyReceivedCards(const CardCollection& receivedCards, const CardCollection& donatedCards) = 0;
     virtual void notifyStartTrick(int trickIndex, std::vector<PlayerID> playerOrder) = 0;
     virtual Card getMove(const CardCollection& legalPlays) = 0;
-    virtual void notifyMove(PlayerID playerID, Card card) = 0;
+    virtual void notifyMove(PlayerID playerID, Card card, bool autoMoved) = 0;
+    virtual bool wasLastMoveAuto() const { return false; }
     virtual void notifyEndTrick(PlayerID winningPlayer) = 0;
     virtual void notifyEndRound(std::map<PlayerID, int> & roundScores) = 0;
     virtual void notifyEndGame(std::map<PlayerID, int> & gameScores, PlayerID winner) = 0;
