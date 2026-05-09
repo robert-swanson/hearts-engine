@@ -86,6 +86,9 @@ public:
             else if (std::string(e.what()).find("Broken pipe") != std::string::npos) {
                 LOG("Client at %s:%d broke the pipe", this->mClientIP, this->mClientPort);
             }
+            else if (std::string(e.what()).find("Bad file descriptor") != std::string::npos) {
+                // Normal: socket was closed by shutdownSocket() during server cleanup
+            }
             else {
                 LOG("Error with client at %s:%d: %s", this->mClientIP, this->mClientPort, e.what());
             }
