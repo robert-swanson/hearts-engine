@@ -1,8 +1,10 @@
 #pragma once
 
+#include <chrono>
 #include <utility>
 
 #include "objects/player.h"
+#include "game_observer.h"
 #include "../util/logging.h"
 
 namespace Common::Game
@@ -10,8 +12,10 @@ namespace Common::Game
 class Trick
 {
 public:
-    explicit Trick(PlayerArray players, int trickIndex, bool brokenHearts, std::shared_ptr<GameLogger> gameLogger):
-            mPlayers(std::move(players)), mTrickIndex(trickIndex), mBrokenHearts(brokenHearts), mPlayedCards(), mGameLogger(std::move(gameLogger))
+    explicit Trick(PlayerArray players, int trickIndex, bool brokenHearts,
+                   std::shared_ptr<GameLogger> gameLogger, GameObserver* observer = nullptr):
+            mPlayers(std::move(players)), mTrickIndex(trickIndex), mBrokenHearts(brokenHearts),
+            mPlayedCards(), mGameLogger(std::move(gameLogger)), mObserver(observer)
     {
     }
 
@@ -21,7 +25,10 @@ public:
         for (const PlayerRef& currentPlayer : mPlayers)
         {
             CardCollection legalMoves = legalMovesForPlayer(currentPlayer);
+            auto moveStart = std::chrono::steady_clock::now();
             Card card = currentPlayer->getMove(legalMoves);
+            long latencyMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - moveStart).count();
             bool autoMoved = currentPlayer->wasLastMoveAuto();
             // RemotePlayer validates and auto-substitutes on bad input, so a card
             // reaching here should always be legal. Keep as a sanity-check assertion.
@@ -31,10 +38,26 @@ public:
             mPlayedCards = mPlayedCards + card;
             mBrokenHearts |= (card.getSuit() == HEARTS);
             notifyMove(currentPlayer, card, autoMoved);
+            if (mObserver)
+                mObserver->onMove(currentPlayer->getTagSession(), latencyMs, autoMoved);
         }
         determineTrickWinner();
         notifyEndTrick(mPlayers[mTrickWinnerIdx]);
-        logTrick();
+        if (mObserver)
+        {
+            std::vector<std::string> cards;
+            for (int i = 0; i < (int)mPlayedCards.size(); ++i)
+                cards.push_back(mPlayedCards[i].getAbbreviation());
+            int points = 0;
+            for (int i = 0; i < (int)mPlayedCards.size(); ++i)
+            {
+                if (mPlayedCards[i].getSuit() == HEARTS) points++;
+                if (mPlayedCards[i] == Card(QUEEN, SPADES)) points += Constants::QUEEN_SCORE;
+            }
+            mObserver->onTrickComplete(
+                mPlayers[0]->getTagSession(), cards,
+                mPlayers[mTrickWinnerIdx]->getTagSession(), points);
+        }
     }
 
     bool heartsBroken() const
@@ -153,6 +176,7 @@ private:
     bool mBrokenHearts;
     CardCollection mPlayedCards;
     std::shared_ptr<GameLogger> mGameLogger;
+    GameObserver* mObserver;
     int mTrickWinnerIdx = -1;
 };
 }

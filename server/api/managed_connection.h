@@ -1,16 +1,25 @@
 # pragma once
 
+#include <memory>
+#include <mutex>
+#include <condition_variable>
+#include <unordered_map>
 #include <netinet/in.h>
 #include <vector>
 #include <algorithm>
 #include <arpa/inet.h>
 #include "connection.h"
-#include "server/util/types.h"
+#include "server/util/assertions.h"
 #include "server/util/constants.h"
+#include "server/util/logging.h"
+#include "server/util/types.h"
 
 using namespace boost::asio;
 
 namespace Common::Server {
+
+// SessionParts holds per-session state. It contains non-movable types (mutex,
+// condition_variable) so it is always heap-allocated and owned via unique_ptr.
 struct SessionParts
 {
     SessionParts(): unprocessedReceivedMessages(), waitCondition(), mutex(), disconnected(false)
@@ -21,6 +30,7 @@ struct SessionParts
     std::condition_variable waitCondition;
     std::mutex mutex;
     bool disconnected;
+    int consecutiveTimeouts = 0; // after 2, skip the wait and auto-move immediately
     std::optional<std::shared_ptr<Common::MessageLogger>> messageLogger;
 };
 
@@ -36,20 +46,30 @@ public:
     }
 
 
-    void ConnectionListener(const std::function<PlayerGameSessionID (ManagedConnection &, Message::Message)> &new_session_callback) {
+    // Register a server-initiated session so incoming messages for it are routed correctly.
+    void addSession(PlayerGameSessionID sessionId)
+    {
+        playerGameSessions.emplace(sessionId, std::make_unique<SessionParts>());
+    }
+
+    void ConnectionListener(
+        const std::function<PlayerGameSessionID (ManagedConnection &, Message::Message)> &new_session_callback,
+        const std::function<bool(const Message::Message &)> &is_new_session =
+            [](const Message::Message &m){ return m.getJson()[Tags::TYPE] == ClientMsgTypes::GAME_SESSION_REQUEST; })
+    {
         try {
             while (true) {
                 auto message = this->receive();
-                if (message.getJson()["type"] == ClientMsgTypes::GAME_SESSION_REQUEST) {
+                if (is_new_session(message)) {
                     PlayerGameSessionID sessionID = new_session_callback(*this, message);
-                    playerGameSessions[sessionID];
+                    playerGameSessions.emplace(sessionID, std::make_unique<SessionParts>());
                 } else {
                     auto sessionId = message.getJson()[Tags::SESSION_ID].get<PlayerGameSessionID>();
                     auto sessionMessage = Message::SessionMessage(message);
-                    auto sessionParts = playerGameSessions.find(sessionId);
-                    ASRT(sessionParts != playerGameSessions.end(), "Session ID %lld not found", sessionId);
-                    sessionParts->second.unprocessedReceivedMessages.push_back(sessionMessage);
-                    sessionParts->second.waitCondition.notify_all();
+                    auto it = playerGameSessions.find(sessionId);
+                    ASRT(it != playerGameSessions.end(), "Session ID %lld not found", sessionId);
+                    it->second->unprocessedReceivedMessages.push_back(sessionMessage);
+                    it->second->waitCondition.notify_all();
                 }
             }
         }
@@ -69,9 +89,9 @@ public:
             // Wake all sessions waiting on this connection so they can handle the disconnect
             for (auto& [id, parts] : playerGameSessions)
             {
-                std::lock_guard<std::mutex> lock(parts.mutex);
-                parts.disconnected = true;
-                parts.waitCondition.notify_all();
+                std::lock_guard<std::mutex> lock(parts->mutex);
+                parts->disconnected = true;
+                parts->waitCondition.notify_all();
             }
         }
     }
@@ -89,10 +109,10 @@ public:
     {
         send(message);
 
-        auto sessionParts = playerGameSessions.find(message.getSessionID());
-        if (sessionParts != playerGameSessions.end())
+        auto it = playerGameSessions.find(message.getSessionID());
+        if (it != playerGameSessions.end())
         {
-            logMessage("Sent", message, sessionParts->second);
+            logMessage("Sent", message, *it->second);
         }
     }
 
@@ -101,32 +121,39 @@ public:
             PlayerGameSessionID sessionId,
             std::chrono::seconds timeout = std::chrono::seconds(15))
     {
-        auto sessionParts = playerGameSessions.find(sessionId);
-        ASRT(sessionParts != playerGameSessions.end(), "Session ID %lld not found", sessionId);
+        auto it = playerGameSessions.find(sessionId);
+        ASRT(it != playerGameSessions.end(), "Session ID %lld not found", sessionId);
+        SessionParts& parts = *it->second;
 
-        std::unique_lock<std::mutex> lock(sessionParts->second.mutex);
-        bool gotMessage = sessionParts->second.waitCondition.wait_for(lock, timeout, [&sessionParts] {
-            return !sessionParts->second.unprocessedReceivedMessages.empty()
-                   || sessionParts->second.disconnected;
+        std::unique_lock<std::mutex> lock(parts.mutex);
+        // After 2 consecutive timeouts the client is unresponsive; skip waiting entirely.
+        auto effectiveTimeout = (parts.consecutiveTimeouts >= 2)
+            ? std::chrono::seconds(0) : timeout;
+        bool gotMessage = parts.waitCondition.wait_for(lock, effectiveTimeout, [&parts] {
+            return !parts.unprocessedReceivedMessages.empty()
+                   || parts.disconnected;
         });
 
-        if (!gotMessage || sessionParts->second.disconnected
-            || sessionParts->second.unprocessedReceivedMessages.empty())
+        if (!gotMessage || parts.disconnected
+            || parts.unprocessedReceivedMessages.empty())
         {
+            parts.consecutiveTimeouts++;
             return std::nullopt;
         }
 
-        auto message = sessionParts->second.unprocessedReceivedMessages[0];
-        sessionParts->second.unprocessedReceivedMessages.erase(
-                sessionParts->second.unprocessedReceivedMessages.begin());
+        parts.consecutiveTimeouts = 0;
+        auto message = parts.unprocessedReceivedMessages[0];
+        parts.unprocessedReceivedMessages.erase(parts.unprocessedReceivedMessages.begin());
 
-        logMessage("Received", message, sessionParts->second);
+        logMessage("Received", message, parts);
         return message;
     }
 
     void setMessageLogger(PlayerGameSessionID sessionID, const std::shared_ptr<Common::MessageLogger>& messageLogger)
     {
-        playerGameSessions[sessionID].messageLogger = messageLogger;
+        auto it = playerGameSessions.find(sessionID);
+        if (it != playerGameSessions.end())
+            it->second->messageLogger = messageLogger;
     }
 
     void logMessage(std::string &&prefix, const Server::Message::SessionMessage &message, SessionParts & sessionParts)
@@ -138,7 +165,7 @@ public:
     }
 
 private:
-    std::unordered_map<PlayerGameSessionID, SessionParts> playerGameSessions;
+    std::unordered_map<PlayerGameSessionID, std::unique_ptr<SessionParts>> playerGameSessions;
 };
 
 }

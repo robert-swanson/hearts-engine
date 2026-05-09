@@ -4,6 +4,8 @@
 #include <vector>
 #include <algorithm>
 #include <arpa/inet.h>
+#include "server/util/assertions.h"
+#include "server/util/logging.h"
 #include "server/util/types.h"
 #include "message.h"
 

@@ -10,8 +10,12 @@ namespace Common::Server
 class PlayerGameSession
 {
 public:
-    explicit PlayerGameSession(PlayerGameSessionID game_session_id, const PlayerTag& playerTag, Common::Server::ManagedConnection &connection)
-    : mPlayerTag(playerTag),  mGameSessionID(game_session_id), mPlayerTagSession(MakePlayerTagSession(playerTag, game_session_id)), mConnection(connection) {}
+    explicit PlayerGameSession(PlayerGameSessionID game_session_id, const PlayerTag& playerTag,
+                               Common::Server::ManagedConnection &connection,
+                               uint16_t starting_seq = 1)
+    : mPlayerTag(playerTag), mGameSessionID(game_session_id),
+      mPlayerTagSession(MakePlayerTagSession(playerTag, game_session_id)),
+      mConnection(connection), mSessionSeqNum(starting_seq) {}
 
     void Setup() {
         send({{
@@ -95,7 +99,7 @@ private:
     PlayerGameSessionID mGameSessionID;
     Common::Server::PlayerTagSession mPlayerTagSession;
     ManagedConnection &mConnection;
-    uint16_t mSessionSeqNum = 1;
+    uint16_t mSessionSeqNum;
 };
 
 using SessionRef = std::shared_ptr<PlayerGameSession>;
