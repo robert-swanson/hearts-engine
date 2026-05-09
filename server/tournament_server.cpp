@@ -32,6 +32,7 @@
 #include <thread>
 #include <vector>
 
+#include <sys/socket.h>
 #include <boost/asio.hpp>
 #include <nlohmann/json.hpp>
 
@@ -608,7 +609,13 @@ static GameResult runOneGame(
 
     Game::PlayerArray arr = {players[0], players[1], players[2], players[3]};
     Game::Game game(arr, nullLogger, observer.get());
-    game.runGame();
+    try {
+        game.runGame();
+    } catch (boost::system::system_error& e) {
+        LOG("Game %s terminated early (network error): %s", assignment.gameId.c_str(), e.what());
+    } catch (std::exception& e) {
+        LOG("Game %s terminated early: %s", assignment.gameId.c_str(), e.what());
+    }
 
     observer->result.roundsPlayed = game.getRoundsPlayed();
     return observer->result;
@@ -710,9 +717,26 @@ int main(int argc, char** argv)
 
     io_context ioContext;
     ip::tcp::endpoint endpoint(ip::tcp::v4(), cfg.port);
-    ip::tcp::acceptor acceptor(ioContext, endpoint);
+
+    // Open acceptor manually so we can set SO_REUSEPORT before binding.
+    // SO_REUSEADDR is set automatically by the acceptor constructor; SO_REUSEPORT
+    // (macOS/Linux) lets the next tournament bind the same port immediately even if
+    // the previous process's socket is still in TIME_WAIT.
+    ip::tcp::acceptor acceptor(ioContext);
+    acceptor.open(ip::tcp::v4());
+    acceptor.set_option(ip::tcp::acceptor::reuse_address(true));
+#ifdef SO_REUSEPORT
+    {
+        int optval = 1;
+        ::setsockopt(acceptor.native_handle(), SOL_SOCKET, SO_REUSEPORT,
+                     &optval, sizeof(optval));
+    }
+#endif
+    acceptor.bind(endpoint);
+    acceptor.listen();
 
     std::vector<std::unique_ptr<ManagedConnection>> connections;
+    std::vector<std::thread> listenerThreads; // kept joinable so we can clean up cleanly
     std::mutex connMtx;
 
     // Accept connections until start_at
@@ -728,15 +752,18 @@ int main(int argc, char** argv)
                 std::lock_guard<std::mutex> lock(connMtx);
                 connections.emplace_back(std::make_unique<ManagedConnection>(socket));
                 auto* conn_ptr = connections.back().get(); // raw ptr survives vector reallocation
-                std::thread([conn_ptr, &lobby]() {
-                    conn_ptr->ConnectionListener(
-                        [&lobby](ManagedConnection& mc, Message::Message msg) -> PlayerGameSessionID {
-                            return lobby.handleRegister(mc, msg);
-                        },
-                        [](const Message::Message& m) {
-                            return m.getJson().value(Tags::TYPE, "") == ClientMsgTypes::TOURNAMENT_REGISTER;
-                        });
-                }).detach();
+                if (conn_ptr->isConnected()) // skip probe connections that disconnected during handshake
+                {
+                    listenerThreads.emplace_back([conn_ptr, &lobby]() {
+                        conn_ptr->ConnectionListener(
+                            [&lobby](ManagedConnection& mc, Message::Message msg) -> PlayerGameSessionID {
+                                return lobby.handleRegister(mc, msg);
+                            },
+                            [](const Message::Message& m) {
+                                return m.getJson().value(Tags::TYPE, "") == ClientMsgTypes::TOURNAMENT_REGISTER;
+                            });
+                    });
+                }
             }
             catch (...) { break; }
         }
@@ -900,5 +927,15 @@ int main(int argc, char** argv)
     writeResults(cfg.resultsDir, tournamentId, qualifyingResults, finalsResults, qualTotals, finalTotals);
 
     LOG("Tournament %s complete.", tournamentId.c_str());
+
+    // Shut down sockets first — this unblocks ConnectionListener threads (they get
+    // a socket error and exit their loops).  Join after so no thread accesses a
+    // destroyed ManagedConnection object.  Destroy connections last.
+    for (auto& conn : connections)
+        conn->shutdownSocket();
+    for (auto& t : listenerThreads)
+        if (t.joinable()) t.join();
+    connections.clear();
+
     return 0;
 }

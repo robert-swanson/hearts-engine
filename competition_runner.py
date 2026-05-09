@@ -13,17 +13,54 @@ Steps:
 """
 
 import argparse
+import atexit
 import glob
 import importlib
 import inspect
 import os
 import random
 import secrets
+import signal
 import subprocess
 import sys
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+
+# ─── Single-instance guard ────────────────────────────────────────────────────
+
+_PIDFILE = Path('competition_runner.pid')
+_child_procs: list = []  # all live subprocesses; killed on exit
+
+
+def _cleanup():
+    """Kill all child processes and remove the PID file."""
+    for p in _child_procs:
+        try: p.kill()
+        except Exception: pass
+    _PIDFILE.unlink(missing_ok=True)
+
+
+def _signal_handler(sig, frame):
+    _cleanup()
+    sys.exit(0)
+
+
+def _acquire_pidfile():
+    """Exit immediately if another instance is running."""
+    if _PIDFILE.exists():
+        try:
+            pid = int(_PIDFILE.read_text().strip())
+            os.kill(pid, 0)  # raises if not running
+            print(f'ERROR: Another competition_runner is already running (pid {pid}).')
+            print(f'       Kill it first, or remove {_PIDFILE} if it is stale.')
+            sys.exit(1)
+        except (ProcessLookupError, PermissionError):
+            pass  # stale PID file
+    _PIDFILE.write_text(str(os.getpid()))
+    atexit.register(_cleanup)
+    signal.signal(signal.SIGTERM, _signal_handler)
+    signal.signal(signal.SIGINT,  _signal_handler)
 
 # ─── Player discovery ─────────────────────────────────────────────────────────
 
@@ -115,6 +152,7 @@ def start_filler_clients(filler_teams: Dict[str, str], max_players: int,
             env = {**os.environ, 'PYTHONPATH': os.getcwd()}
             proc = subprocess.Popen(cmd, env=env)
             procs.append(proc)
+            _child_procs.append(proc)
             print(f"  Started filler client: {team_name}/{module} (score={priority})")
     return procs
 
@@ -138,6 +176,7 @@ def start_registered_clients(teams_clients: Dict[str, List[Tuple[str, int]]],
             env = {**os.environ, 'PYTHONPATH': os.getcwd()}
             proc = subprocess.Popen(cmd, env=env)
             procs.append(proc)
+            _child_procs.append(proc)
             print(f"  Started client: {team_name}/{module} (score={score})")
     return procs
 
@@ -252,8 +291,9 @@ def run_competition(cfg: dict, teams: Dict[str, str],
              config_path,
              f'--start-at={start_at}'],
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        _child_procs.append(server_proc)
 
-        # Wait for the port to be open (up to 10s)
+        # Wait for the server port to be accepting connections (up to 10s).
         import socket as _socket
         for _ in range(20):
             try:
@@ -279,10 +319,13 @@ def run_competition(cfg: dict, teams: Dict[str, str],
         server_proc.wait()
 
         # Clean up client processes
-        for p in filler_procs + reg_procs:
+        for p in filler_procs + reg_procs + [server_proc]:
             p.terminate()
             try: p.wait(timeout=5)
             except subprocess.TimeoutExpired: p.kill()
+
+        # Prune dead entries from the global child list
+        _child_procs[:] = [p for p in _child_procs if p.poll() is None]
 
         if server_proc.returncode != 0:
             print(f'WARNING: tournament server exited with code {server_proc.returncode}')
@@ -300,6 +343,8 @@ def main():
     args = parser.parse_args()
 
     non_interactive = args.non_interactive
+
+    _acquire_pidfile()
 
     # Make sure we're in the repo root
     if not os.path.exists('clients/python/players'):

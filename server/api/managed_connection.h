@@ -41,7 +41,10 @@ public:
             Connection::handleConnectionRequest();
         }
         catch (std::exception &e) {
-            LOG("Error with client at %s:%d: %s", this->mClientIP, this->mClientPort, e.what());
+            // Suppress "End of file" — it just means the client disconnected before
+            // sending anything (e.g. a port-readiness probe). Everything else is real.
+            if (std::string(e.what()).find("End of file") == std::string::npos)
+                LOG("Error with client at %s:%d: %s", this->mClientIP, this->mClientPort, e.what());
         }
     }
 
@@ -147,6 +150,13 @@ public:
 
         logMessage("Received", message, parts);
         return message;
+    }
+
+    // Closes the underlying socket, unblocking any ConnectionListener thread waiting
+    // for reads so it can exit cleanly before the object is destroyed.
+    void shutdownSocket()
+    {
+        closeConnection();
     }
 
     void setMessageLogger(PlayerGameSessionID sessionID, const std::shared_ptr<Common::MessageLogger>& messageLogger)
