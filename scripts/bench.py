@@ -36,6 +36,21 @@ sys.path.insert(0, str(ROOT))
 if not CONFIG.exists():
     CONFIG.write_text(f"SERVER_PORT={PORT}\nSERVER_ADDR=127.0.0.1\nLOG_DIR=./log\n")
 (ROOT / "log").mkdir(exist_ok=True)
+
+
+def _purge_logs():
+    """Remove per-session/per-message logs from prior runs (game-summary
+    logs in log/server/game/ kept for analysis). Skipped if the bench
+    server is already up — its file handles are open."""
+    if port_open(PORT):
+        return
+    import shutil
+    for sub in ("server/messages", "client/connections", "client/sessions"):
+        path = ROOT / "log" / sub
+        if path.exists():
+            shutil.rmtree(path, ignore_errors=True)
+
+
 sys.argv = [sys.argv[0], str(CONFIG)] + sys.argv[1:]
 
 
@@ -106,7 +121,7 @@ def run_matchup(label, lineup, num_games, target_tag):
         winner_name = str(g.winner).split("(")[0]
         wins[winner_name] += 1
         for pts_player, pts in g.players_to_points.items():
-            if str(pts_player).startswith(target_tag):
+            if str(pts_player).startswith(target_tag) and pts is not None:
                 target_pts_total += pts
     target_wins = sum(v for k, v in wins.items() if k == target_tag)
     total_target_games = num_games * target_seats
@@ -132,6 +147,7 @@ def main():
     target_spec = sys.argv[2]
     num_games = int(sys.argv[3]) if len(sys.argv) >= 4 else 100
 
+    _purge_logs()
     ensure_server()
 
     Target = load_player(target_spec)
@@ -139,9 +155,10 @@ def main():
     Madison = load_player("madison_player")
     Rob     = load_player("rob_player")
     Claude  = load_player("claude_player")
+    Expert  = load_player("expert_player")
 
     target_tag = Target.player_tag
-    for cls in (Target, Random, Madison, Rob, Claude):
+    for cls in (Target, Random, Madison, Rob, Claude, Expert):
         load_player_cache[cls.player_tag] = cls
 
     print(f"Benchmarking {target_tag} ({num_games} games per matchup)")
@@ -151,7 +168,8 @@ def main():
         ("vs 3x Madison", [Target, Madison, Madison, Madison]),
         ("vs 3x Rob",     [Target, Rob,     Rob,     Rob]),
         ("vs 3x Claude",  [Target, Claude,  Claude,  Claude]),
-        ("mixed field",   [Target, Madison, Rob,     Claude]),
+        ("vs 3x Expert",  [Target, Expert,  Expert,  Expert]),
+        ("tournament",    [Target, Rob,     Claude,  Expert]),
     ]
     # Drop any matchup where target shares a player_tag with an opponent
     # (the server rejects sessions with duplicate tags in the same lobby).
