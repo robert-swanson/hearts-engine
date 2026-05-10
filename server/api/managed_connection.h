@@ -30,7 +30,8 @@ struct SessionParts
     std::condition_variable waitCondition;
     std::mutex mutex;
     bool disconnected;
-    int consecutiveTimeouts = 0; // after 2, skip the wait and auto-move immediately
+    int consecutiveTimeouts = 0;
+    int autoMoveThreshold = 2;  // 0 = never auto-move
     std::optional<std::shared_ptr<Common::MessageLogger>> messageLogger;
 };
 
@@ -50,9 +51,12 @@ public:
 
 
     // Register a server-initiated session so incoming messages for it are routed correctly.
-    void addSession(PlayerGameSessionID sessionId)
+    void addSession(PlayerGameSessionID sessionId, int autoMoveThreshold = 2)
     {
-        playerGameSessions.emplace(sessionId, std::make_unique<SessionParts>());
+        auto parts = std::make_unique<SessionParts>();
+        parts->autoMoveThreshold = autoMoveThreshold;
+        std::lock_guard<std::mutex> lock(mSessionsMtx);
+        playerGameSessions.emplace(sessionId, std::move(parts));
     }
 
     void ConnectionListener(
@@ -65,14 +69,25 @@ public:
                 auto message = this->receive();
                 if (is_new_session(message)) {
                     PlayerGameSessionID sessionID = new_session_callback(*this, message);
-                    playerGameSessions.emplace(sessionID, std::make_unique<SessionParts>());
+                    if (sessionID != 0) {
+                        std::lock_guard<std::mutex> lock(mSessionsMtx);
+                        playerGameSessions.emplace(sessionID, std::make_unique<SessionParts>());
+                    }
                 } else {
                     auto sessionId = message.getJson()[Tags::SESSION_ID].get<PlayerGameSessionID>();
                     auto sessionMessage = Message::SessionMessage(message);
-                    auto it = playerGameSessions.find(sessionId);
-                    ASRT(it != playerGameSessions.end(), "Session ID %lld not found", sessionId);
-                    it->second->unprocessedReceivedMessages.push_back(sessionMessage);
-                    it->second->waitCondition.notify_all();
+                    SessionParts* parts;
+                    {
+                        std::lock_guard<std::mutex> mapLock(mSessionsMtx);
+                        auto it = playerGameSessions.find(sessionId);
+                        ASRT(it != playerGameSessions.end(), "Session ID %lld not found", sessionId);
+                        parts = it->second.get();
+                    }
+                    {
+                        std::lock_guard<std::mutex> sessLock(parts->mutex);
+                        parts->unprocessedReceivedMessages.push_back(sessionMessage);
+                        parts->waitCondition.notify_all();
+                    }
                 }
             }
         }
@@ -92,12 +107,17 @@ public:
             else {
                 LOG("Error with client at %s:%d: %s", this->mClientIP, this->mClientPort, e.what());
             }
-            // Wake all sessions waiting on this connection so they can handle the disconnect
-            for (auto& [id, parts] : playerGameSessions)
+            std::vector<SessionParts*> snapshot;
             {
-                std::lock_guard<std::mutex> lock(parts->mutex);
-                parts->disconnected = true;
-                parts->waitCondition.notify_all();
+                std::lock_guard<std::mutex> mapLock(mSessionsMtx);
+                for (auto& [id, p] : playerGameSessions)
+                    snapshot.push_back(p.get());
+            }
+            for (auto* p : snapshot)
+            {
+                std::lock_guard<std::mutex> lock(p->mutex);
+                p->disconnected = true;
+                p->waitCondition.notify_all();
             }
         }
     }
@@ -115,11 +135,15 @@ public:
     {
         send(message);
 
-        auto it = playerGameSessions.find(message.getSessionID());
-        if (it != playerGameSessions.end())
+        SessionParts* parts = nullptr;
         {
-            logMessage("Sent", message, *it->second);
+            std::lock_guard<std::mutex> lock(mSessionsMtx);
+            auto it = playerGameSessions.find(message.getSessionID());
+            if (it != playerGameSessions.end())
+                parts = it->second.get();
         }
+        if (parts)
+            logMessage("Sent", message, *parts);
     }
 
     // Returns nullopt on timeout or client disconnect
@@ -127,13 +151,17 @@ public:
             PlayerGameSessionID sessionId,
             std::chrono::seconds timeout = std::chrono::seconds(15))
     {
-        auto it = playerGameSessions.find(sessionId);
-        ASRT(it != playerGameSessions.end(), "Session ID %lld not found", sessionId);
-        SessionParts& parts = *it->second;
+        SessionParts* rawParts;
+        {
+            std::lock_guard<std::mutex> mapLock(mSessionsMtx);
+            auto it = playerGameSessions.find(sessionId);
+            ASRT(it != playerGameSessions.end(), "Session ID %lld not found", sessionId);
+            rawParts = it->second.get();
+        }
+        SessionParts& parts = *rawParts;
 
         std::unique_lock<std::mutex> lock(parts.mutex);
-        // After 2 consecutive timeouts the client is unresponsive; skip waiting entirely.
-        auto effectiveTimeout = (parts.consecutiveTimeouts >= 2)
+        auto effectiveTimeout = (parts.autoMoveThreshold > 0 && parts.consecutiveTimeouts >= parts.autoMoveThreshold)
             ? std::chrono::seconds(0) : timeout;
         bool gotMessage = parts.waitCondition.wait_for(lock, effectiveTimeout, [&parts] {
             return !parts.unprocessedReceivedMessages.empty()
@@ -164,6 +192,7 @@ public:
 
     void setMessageLogger(PlayerGameSessionID sessionID, const std::shared_ptr<Common::MessageLogger>& messageLogger)
     {
+        std::lock_guard<std::mutex> lock(mSessionsMtx);
         auto it = playerGameSessions.find(sessionID);
         if (it != playerGameSessions.end())
             it->second->messageLogger = messageLogger;
@@ -178,6 +207,7 @@ public:
     }
 
 private:
+    std::mutex mSessionsMtx;
     std::unordered_map<PlayerGameSessionID, std::unique_ptr<SessionParts>> playerGameSessions;
 };
 

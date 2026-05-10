@@ -1,5 +1,6 @@
 # pragma once
 
+#include <mutex>
 #include <netinet/in.h>
 #include <vector>
 #include <algorithm>
@@ -80,6 +81,7 @@ protected:
     void send(Message::Message message)
     {
         auto jsonStr = message.getJson().dump();
+        std::lock_guard<std::mutex> lock(mSendMutex);
         write(*mClientSocket, buffer(jsonStr));
     }
 
@@ -125,6 +127,7 @@ protected:
     ConnectionStatus mStatus;
 
 private:
+    mutable std::mutex mSendMutex;
     std::string mUnprocessedData;
 
 };

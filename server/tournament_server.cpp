@@ -22,6 +22,7 @@
 #include <condition_variable>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <map>
 #include <mutex>
 #include <numeric>
@@ -65,6 +66,7 @@ struct TournamentConfig {
     std::map<std::string, std::string> teams; // name → password
     std::string fallbackPlayerTag;
     std::string resultsDir;
+    int autoMoveAfterTimeouts; // consecutive receive timeouts before auto-move (0 = never)
     int64_t startAt; // unix timestamp
 };
 
@@ -83,6 +85,8 @@ static TournamentConfig loadConfig(int64_t startAt)
     cfg.allowMultiTeamFinals = ENV_STRING("ALLOW_MULTI_TEAM_FINALS") == "1";
     cfg.fallbackPlayerTag  = ENV_STRING("FALLBACK_PLAYER_TAG");
     cfg.resultsDir         = ENV_STRING("RESULTS_DIR");
+    cfg.autoMoveAfterTimeouts = EnvLoader->has("AUTO_MOVE_AFTER_TIMEOUTS")
+        ? std::stoi(ENV_STRING("AUTO_MOVE_AFTER_TIMEOUTS")) : 2;
 
     // Qualifying points: "10,5,3,1"
     std::string pts = ENV_STRING("QUALIFYING_POINTS");
@@ -565,7 +569,8 @@ static GameResult runOneGame(
     const GameAssignment& assignment,
     const std::string& resultsDir,
     std::atomic<PlayerGameSessionID>& sessionCounter,
-    const std::shared_ptr<Common::GameLogger>& nullLogger)
+    const std::shared_ptr<Common::GameLogger>& nullLogger,
+    int autoMoveAfterTimeouts = 2)
 {
     auto observer = std::make_shared<RecordingObserver>(assignment.gameId, assignment.stage);
 
@@ -588,7 +593,7 @@ static GameResult runOneGame(
         // starting_seq=0: server sends start_game as very first message
         auto session = std::make_shared<PlayerGameSession>(
             sid, PlayerTag(slot->playerTag), *slot->source->connection, /*starting_seq=*/0);
-        slot->source->connection->addSession(sid);
+        slot->source->connection->addSession(sid, autoMoveAfterTimeouts);
 
         // Record playerTagSession → slotId so tabulation can aggregate by slot across games.
         observer->result.playerTagToSlotId[slot->playerTag + "(" + std::to_string(sid) + ")"] = slot->slotId;
@@ -824,9 +829,16 @@ int main(int argc, char** argv)
 
     auto qAssignments = scheduleGames(teamRosters, cfg.qualifyingGames, "qualifying");
 
-    std::vector<GameResult> qualifyingResults(qAssignments.size());
-    for (int i = 0; i < (int)qAssignments.size(); i++)
-        qualifyingResults[i] = runOneGame(qAssignments[i], cfg.resultsDir, gameSessionCounter, nullLogger);
+    std::vector<std::future<GameResult>> qFutures;
+    qFutures.reserve(qAssignments.size());
+    for (const auto& a : qAssignments)
+        qFutures.push_back(std::async(std::launch::async, runOneGame,
+            std::cref(a), std::cref(cfg.resultsDir), std::ref(gameSessionCounter),
+            nullLogger, cfg.autoMoveAfterTimeouts));
+    std::vector<GameResult> qualifyingResults;
+    qualifyingResults.reserve(qFutures.size());
+    for (auto& f : qFutures)
+        qualifyingResults.push_back(f.get());
 
     LOG("Qualifying complete. Tabulating scores...");
 
@@ -885,9 +897,16 @@ int main(int argc, char** argv)
     }
 
     auto fAssignments = scheduleGames(finalsRosters, cfg.finalsGames, "finals");
-    std::vector<GameResult> finalsResults(fAssignments.size());
-    for (int i = 0; i < (int)fAssignments.size(); i++)
-        finalsResults[i] = runOneGame(fAssignments[i], cfg.resultsDir, gameSessionCounter, nullLogger);
+    std::vector<std::future<GameResult>> fFutures;
+    fFutures.reserve(fAssignments.size());
+    for (const auto& a : fAssignments)
+        fFutures.push_back(std::async(std::launch::async, runOneGame,
+            std::cref(a), std::cref(cfg.resultsDir), std::ref(gameSessionCounter),
+            nullLogger, cfg.autoMoveAfterTimeouts));
+    std::vector<GameResult> finalsResults;
+    finalsResults.reserve(fFutures.size());
+    for (auto& f : fFutures)
+        finalsResults.push_back(f.get());
 
     LOG("Finals complete.");
 

@@ -113,6 +113,7 @@ def write_config(path: str, cfg: dict, teams: Dict[str, str],
         f.write(f"FALLBACK_PLAYER_TAG=random_player\n")
         f.write(f"RESULTS_DIR={cfg['results_dir']}\n")
         f.write(f"LOG_DIR={cfg.get('log_dir', './log')}\n")
+        f.write(f"AUTO_MOVE_AFTER_TIMEOUTS={cfg.get('auto_move_after_timeouts', 2)}\n")
     print(f"Config written to {path}")
 
 
@@ -201,6 +202,7 @@ def configure_rules(non_interactive: bool = False) -> dict:
             'interval': 30,
             'results_dir': './results',
             'log_dir': './log',
+            'auto_move_after_timeouts': 2,
         }
 
     print('\n=== Competition Rules ===')
@@ -214,6 +216,7 @@ def configure_rules(non_interactive: bool = False) -> dict:
         'interval':           int(prompt('Tournament interval seconds', 300)),
         'results_dir':        prompt('Results directory', './results'),
         'log_dir':            prompt('Log directory', './log'),
+        'auto_move_after_timeouts': int(prompt('Auto-move after N consecutive timeouts (0=never)', 2)),
     }
 
 
