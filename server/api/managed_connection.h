@@ -69,7 +69,7 @@ public:
                 auto message = this->receive();
                 if (is_new_session(message)) {
                     PlayerGameSessionID sessionID = new_session_callback(*this, message);
-                    if (sessionID != 0) {
+                    {
                         std::lock_guard<std::mutex> lock(mSessionsMtx);
                         playerGameSessions.emplace(sessionID, std::make_unique<SessionParts>());
                     }
