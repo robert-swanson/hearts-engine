@@ -279,6 +279,24 @@ class TimClaudePlayer(Player):
     def handle_finished_round(self, round: Round, round_points) -> None:
         for p, pts in round_points.items():
             self.cumulative_score[p] = self.cumulative_score.get(p, 0) + pts
+        # Retrospective debugging — flag mismatches between hand quality
+        # and outcome. Opt-in via TIM_RETRO_ENABLED env var.
+        try:
+            from clients.python.players.retro import (
+                retro_enabled, evaluate_round, is_suspicious, save_retro,
+            )
+            if retro_enabled():
+                difficulties, my_diff, my_pts = evaluate_round(
+                    round, round_points, self.player_tag_session,
+                )
+                label = is_suspicious(my_diff, my_pts)
+                if label is not None:
+                    save_retro(
+                        round, round_points, self.player_tag_session,
+                        difficulties, label,
+                    )
+        except Exception:
+            pass  # retro is best-effort; never crash a game over it
         # Detect shoot attempts: any single player taking ≥20 raw round
         # points (before moon-flip) means they took most points; if exactly
         # one opponent has 26 (post-flip score) and others have 26, it's a
