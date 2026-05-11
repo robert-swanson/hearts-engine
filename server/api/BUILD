@@ -8,6 +8,10 @@ cc_library(
         "managed_connection.h",
         "message.h",
     ],
-    visibility = ["//server:__subpackages__", "//tests:__pkg__"],
+    visibility = [
+        "//server:__subpackages__",
+        "//tests:__pkg__",
+        "//tools/bench_runner:__pkg__",
+    ],
     deps = ["//server/game/objects"],
 )

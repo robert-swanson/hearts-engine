@@ -8,5 +8,6 @@ cc_library(
         "//server:__pkg__",
         "//server/matching:__pkg__",
         "//tests:__pkg__",
+        "//tools/bench_runner:__pkg__",
     ],
 )

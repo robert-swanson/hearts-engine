@@ -11,7 +11,10 @@ cc_library(
         "logging.h",
         "types.h",
     ],
-    visibility = ["//server:__subpackages__"],
+    visibility = [
+        "//server:__subpackages__",
+        "//tools/bench_runner:__pkg__",
+    ],
     deps = [
         "@boost.asio",
         "@nlohmann_json//:json",
