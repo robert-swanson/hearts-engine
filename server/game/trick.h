@@ -22,11 +22,15 @@ public:
         {
             CardCollection legalMoves = legalMovesForPlayer(currentPlayer);
             Card card = currentPlayer->getMove(legalMoves);
+            bool autoMoved = currentPlayer->wasLastMoveAuto();
+            // RemotePlayer validates and auto-substitutes on bad input, so a card
+            // reaching here should always be legal. Keep as a sanity-check assertion.
+            ASRT(legalMoves.contains(card), "Illegal card %s reached trick (should have been caught in RemotePlayer)",
+                 card.getAbbreviation().c_str());
             currentPlayer->removeCardsFromHand(CardCollection{card});
-            ASRT(legalMoves.contains(card), "Player played illegal card %s", card.getAbbreviation().c_str());
             mPlayedCards = mPlayedCards + card;
             mBrokenHearts |= (card.getSuit() == HEARTS);
-            notifyMove(currentPlayer, card);
+            notifyMove(currentPlayer, card, autoMoved);
         }
         determineTrickWinner();
         notifyEndTrick(mPlayers[mTrickWinnerIdx]);
@@ -128,11 +132,11 @@ private:
         }
     }
 
-    void notifyMove(PlayerRef player, Card card)
+    void notifyMove(PlayerRef player, Card card, bool autoMoved)
     {
         for (PlayerRef & otherPlayer : mPlayers)
         {
-            otherPlayer->notifyMove(player->getTagSession(), card);
+            otherPlayer->notifyMove(player->getTagSession(), card, autoMoved);
         }
     }
 

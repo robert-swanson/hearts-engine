@@ -93,12 +93,12 @@ public:
         return CardCollection{filtered};
     }
 
-    bool contains(std::function<bool(Card)> lambdaFilter)
+    bool contains(std::function<bool(Card)> lambdaFilter) const
     {
         return std::any_of(mCards.begin(), mCards.end(), std::move(lambdaFilter));
     }
 
-    bool contains(Card card)
+    bool contains(Card card) const
     {
         return std::find(mCards.begin(), mCards.end(), card) != mCards.end();
     }

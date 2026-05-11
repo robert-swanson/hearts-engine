@@ -30,13 +30,43 @@ public:
         mConnection.sendOnSession(sessionMessage, mGameSessionID);
     }
 
-    Message::Message receive()
+    // Returns nullopt on timeout, disconnect, or bad sequence number.
+    // Always advances the sequence counter to stay in sync with the client.
+    std::optional<Message::Message> receive()
     {
-        auto sessionMessage = mConnection.receiveOnSession(mGameSessionID);
-        auto expectedSeqNum = getSeqNumAndIncrement();
-        ASRT_EQ(sessionMessage.getSessionID(), mGameSessionID);
-        ASRT(sessionMessage.getSeqNum() == expectedSeqNum, "Expected %lld.%u, but got %lld.%u", mGameSessionID, expectedSeqNum, sessionMessage.getSessionID(), sessionMessage.getSeqNum());
-        return sessionMessage;
+        while (true)
+        {
+            auto raw = mConnection.receiveOnSession(mGameSessionID);
+            if (!raw)
+            {
+                // Timeout or disconnect: consume the slot the client would have used
+                // so both counters remain aligned going forward.
+                ++mSessionSeqNum;
+                return std::nullopt;
+            }
+
+            ASRT_EQ(raw->getSessionID(), mGameSessionID);
+
+            if (raw->getSeqNum() < mSessionSeqNum)
+            {
+                // Stale late-arrival (e.g. a decided_move that arrived after a timeout).
+                // Drop it without advancing the counter, then wait for the right message.
+                LOG("Discarding stale message %lld.%u (expected .%u)",
+                    mGameSessionID, raw->getSeqNum(), mSessionSeqNum);
+                continue;
+            }
+
+            if (raw->getSeqNum() != mSessionSeqNum)
+            {
+                LOG("Unexpected seq %u on session %lld (expected %u) — treating as timeout",
+                    raw->getSeqNum(), mGameSessionID, mSessionSeqNum);
+                ++mSessionSeqNum;
+                return std::nullopt;
+            }
+
+            ++mSessionSeqNum;
+            return *raw;
+        }
     }
 
     void setMessageLogger(const std::shared_ptr<Common::MessageLogger>& messageLogger)

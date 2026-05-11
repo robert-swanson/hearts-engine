@@ -13,6 +13,7 @@ cc_library(
         "//server/api:__pkg__",
         "//server/game:__pkg__",
         "//tests:__pkg__",
+        "//tools/bench_runner:__pkg__",
     ],
     deps = [
         "//server/util",

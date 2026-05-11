@@ -25,6 +25,8 @@ class Tags:
     PASS_DIRECTION = "pass_direction"
     CARDS = "cards"
     CARD = "card"
+    DONATED_CARDS = "donated_cards"
+    MOVE_SOURCE = "move_source"
     ROUND_INDEX = "round_index"
     TRICK_INDEX = "trick_index"
     LEGAL_MOVES = "legal_moves"
@@ -52,6 +54,11 @@ class ClientMsgTypes:
     REQUEST_GAME_SESSION = "game_session_request"
     DONATED_CARDS = "donated_cards"
     DECIDED_MOVE = "decided_move"
+
+
+class MoveSource:
+    PLAYER = "player"
+    SERVER = "server"
 
 
 class ServerStatus:
