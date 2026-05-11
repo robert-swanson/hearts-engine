@@ -75,8 +75,8 @@ def _card_point(c: Card) -> int:
     return 0
 
 
-class TimMCTSPlayer(TimClaudePlayer):
-    player_tag = "tim_mcts_player"
+class TimMCTSv1Augment(TimClaudePlayer):
+    player_tag = "tim_mcts_v1_augment"
 
     def __init__(self, player_tag_session):
         super().__init__(player_tag_session)
