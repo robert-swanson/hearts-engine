@@ -81,7 +81,16 @@ DEFAULT_PARAMS: Dict[str, float] = {
     "lead_rank_weight": 0.3,
     "lead_hearts_penalty": 3.0,
     "lead_spades_pre_qs_penalty": 5.0,
+    # Spade-bait params kept in DEFAULT_PARAMS for future tuning, but
+    # disabled (reward=0) — hurt tournament play in v27 even though it
+    # helped against Expert and Random in isolation.
+    "lead_spade_bait_low_count": 4.0,
+    "lead_spade_bait_reward": 0.0,
     "lead_short_suit_weight": 0.2,
+    # void-passing — disabled. Idea: when no high-danger pass candidates,
+    # pass 3 cards from a short suit to create a forced void. Bench didn't
+    # show consistent lift on mixed-field play. Kept for tuning.
+    "pass_void_max_top_danger": 0.0,
     # moon defense triggers
     "defense_streak_min": 3.0,
     "defense_streak_pts_min": 4.0,
@@ -206,6 +215,10 @@ class TimClaudePlayer(Player):
     message_print_logging_enabled = False
     # Class-level params dict — env var TIM_PARAMS_PATH overrides defaults.
     params: Dict[str, float] = _load_tuned_params()
+    # Persistent cross-game opponent profile. Keyed by player_tag (string),
+    # so the same opponent class is recognized across games even though
+    # PlayerTagSession IDs change every game.
+    _shared_models: Dict[str, OpponentStats] = {}
 
     # ── lifecycle ──────────────────────────────────────────────────────────
     def __init__(self, player_tag_session: PlayerTagSession):
@@ -229,11 +242,13 @@ class TimClaudePlayer(Player):
 
         # state per game
         self.cumulative_score: Dict[PlayerTagSession, int] = {}
+        # Per-game session→model map. Resolves through _shared_models so
+        # opponent stats persist across games against the same player_tag.
         self.models: Dict[PlayerTagSession, OpponentStats] = {}
 
     def initialize_for_game(self, game: Game) -> None:
         self.cumulative_score = {}
-        self.models = {}
+        self.models = {}  # session-level reset; shared profiles persist
 
     def handle_end_game(self, players_to_points, winner) -> None:
         pass
@@ -245,6 +260,10 @@ class TimClaudePlayer(Player):
         self.played_cards = set()
         self.opponent_voids = {p: set() for p in round.player_order if p != self.player_tag_session}
         # Lazy-init per-opponent models on first round.
+        # Note: cross-game persistence (_shared_models) was tested and
+        # caused major regression (Madison 67→33, Rob 35→16) because
+        # accidental moon-shoots were remembered and triggered chronic
+        # defense escalation. Reverted to per-game stats.
         for p in round.player_order:
             if p != self.player_tag_session and p not in self.models:
                 self.models[p] = OpponentStats(p)
@@ -389,9 +408,67 @@ class TimClaudePlayer(Player):
             picks = self._pass_for_moon(self.hand)
         else:
             picks = self._pass_dangerous(self.hand, pass_dir)
+            picks = self._maybe_pass_for_void(picks, self.hand, pass_dir)
             picks = self._adjust_pass_for_receiver(picks, self.hand)
         self.cards_passed = picks
         return picks
+
+    def _maybe_pass_for_void(
+        self, picks: List[Card], hand: List[Card], pass_dir: PassDirection
+    ) -> List[Card]:
+        """When the picked cards aren't very dangerous, prefer voiding a suit
+        over passing slightly-dangerous cards. Creates a real strategic edge
+        on weak hands — future discards become free.
+
+        Risk: the donor may pass us back into that suit, especially LEFT.
+        """
+        P = self.params
+        top_danger = self._danger_score_for(picks[0]) if picks else 0
+        if top_danger >= P["pass_void_max_top_danger"]:
+            return picks  # high-danger picks are too valuable to swap out
+        by_suit = GroupCardsBySuit(hand)
+        # Find a suit with exactly 3 cards (or fewer 1-2; need ≥3 to pass).
+        # Don't void hearts (we want to keep low hearts for moon defense).
+        # Don't void spades if we have QS — QS needs cover.
+        void_candidates = []
+        for suit, cards in by_suit.items():
+            if suit == Suit.HEARTS:
+                continue
+            if suit == Suit.SPADES and QS in hand:
+                continue
+            if len(cards) == 3:
+                void_candidates.append((suit, cards))
+        if not void_candidates:
+            return picks
+        # Pick the suit with the lowest total rank (least valuable to keep).
+        void_candidates.sort(key=lambda sc: sum(c.rank.to_int() for c in sc[1]))
+        _, void_cards = void_candidates[0]
+        return list(void_cards)
+
+    def _danger_score_for(self, card: Card) -> float:
+        """Standalone danger score for a single card (mirrors _pass_dangerous)."""
+        P = self.params
+        if card == QS: return P["danger_qs_naked"]
+        if card == AS_: return P["danger_as_no_cover"]
+        if card == KS: return P["danger_ks_no_cover"]
+        if card == JS: return P["danger_js"]
+        if card.suit == Suit.SPADES:
+            return card.rank.to_int() * P["danger_low_spade_mult"]
+        if card.suit == Suit.HEARTS:
+            rank = card.rank.to_int()
+            if rank == 14: return P["danger_ah"]
+            if rank == 13: return P["danger_kh"]
+            if rank == 12: return P["danger_qh"]
+            if rank == 11: return P["danger_jh"]
+            if rank == 10: return P["danger_th"]
+            if rank == 9:  return P["danger_9h"]
+            return P["danger_8h"]
+        rank = card.rank.to_int()
+        if rank == 14: return P["danger_a_cd"]
+        if rank == 13: return P["danger_k_cd"]
+        if rank == 12: return P["danger_q_cd"]
+        if rank == 11: return P["danger_j_cd"]
+        return P["danger_t_cd"]
 
     def _adjust_pass_for_receiver(
         self, picks: List[Card], hand: List[Card]
@@ -643,7 +720,17 @@ class TimClaudePlayer(Player):
                 score += 100
             score += P["lead_hearts_penalty"]
         if suit == Suit.SPADES and not qs_played and QS not in self.hand:
-            score += P["lead_spades_pre_qs_penalty"]
+            # Bait-the-queen: if we hold many low spades, leading spades is
+            # actually safe — opponent must eventually shed QS, and we have
+            # cover. Negate the penalty when we have ≥4 low spades.
+            low_spade_count = sum(
+                1 for c in self.hand
+                if c.suit == Suit.SPADES and c.rank.to_int() < 12
+            )
+            if low_spade_count >= P["lead_spade_bait_low_count"]:
+                score -= P["lead_spade_bait_reward"]
+            else:
+                score += P["lead_spades_pre_qs_penalty"]
         score += len(cards) * P["lead_short_suit_weight"]
         return score
 
