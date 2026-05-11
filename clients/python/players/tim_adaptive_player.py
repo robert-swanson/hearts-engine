@@ -73,10 +73,17 @@ class TimAdaptivePlayer(TimClaudePlayer):
 
     # Tunables — exposed as class attrs so tuner can sweep them later.
     search_budget_s: float = 0.5  # per pivotal decision
-    min_trust_to_override: float = 0.50  # opp-prediction accuracy ≥ this
-    min_predict_samples: int = 8  # need at least N opp moves observed
-    override_effect_threshold: float = 1.0  # MCTS pick must save ≥ this many pts
-    override_pvalue_t: float = -1.65  # one-sided t ≤ this (p<0.05)
+    # NOTE: empirical max prediction accuracy is ~0.40 against
+    # TimClaudePlayer; threshold above that means MCTS never fires.
+    # 0.30 lets MCTS fire when at least one policy is clearly fitted.
+    min_trust_to_override: float = 0.30
+    min_predict_samples: int = 5  # need at least N opp moves observed
+    # Looser thresholds to actually test if MCTS picks beat heuristic.
+    # Originally 1.0 + t<-1.65 (p<0.05): override fired only 2× in 5 games.
+    # 0.3 + t<-1.0 (p<0.16): override should fire more often, exposing
+    # whether MCTS's picks are genuinely better.
+    override_effect_threshold: float = 0.3
+    override_pvalue_t: float = -1.0
     max_candidates: int = 3
     # Pivotal-decision gates
     min_played_for_pivotal: int = 8
