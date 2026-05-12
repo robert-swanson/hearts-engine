@@ -53,15 +53,22 @@
 //     stays clean and machine-readable.
 //
 // FOLLOW-UP — making this useful for training-data generation
-//   1. Add PyBridgePlayer (pybind11) that wraps a Python Player instance.
-//      Build: add @pybind11 as a Bazel dep (or via rules_python), link
-//      libpython at runtime. Map Card<->str, CardCollection<->List[str],
-//      PassDirection<->enum string. Mirror the eight Player virtuals.
+//   1. [DONE] PyBridgePlayer (pybind11) — wraps a Python Player instance.
+//      See py_bridge_player.h. Built with vendored pybind11 + Python 3.14
+//      headers under //third_party (Homebrew install on Apple Silicon).
+//      Measured ~22 games/sec for a 4-seat mixed-Python lineup
+//      (claude_v1+claude_player+expert_player+random); ~38 g/s with a
+//      single Python target vs 3 randoms. Compare to ~0.77 g/s over TCP —
+//      roughly 29× speedup for the mixed lineup, 50× for the single-Python
+//      lineup.
 //   2. Add a --decision-log mode that emits per-decision NDJSON records
 //      (state features + chosen card + final game score) — the actual
 //      training-data format consumed downstream.
 //   3. Optional: thread pool over games (game state is per-player and
-//      independent; the runner is embarassingly parallel).
+//      independent; the runner is embarassingly parallel). Note: pybind11
+//      requires GIL acquisition for Python calls, so parallelism here only
+//      helps for C++-only AIs unless we run multiple sub-interpreters or
+//      release the GIL around C++-only work.
 //
 // USAGE
 //   bazel run //tools/bench_runner:bench_runner -- \
@@ -81,13 +88,19 @@
 #include <unordered_map>
 #include <vector>
 
+#include <pybind11/embed.h>
+#include <pybind11/pybind11.h>
+
 #include "tools/bench_runner/local_player.h"
+#include "tools/bench_runner/py_bridge_player.h"
 #include "server/game/game.h"
 #include "server/game/objects/player.h"
 #include "server/util/logging.h"
 
 namespace Tools::BenchRunner
 {
+
+namespace py = pybind11;
 
 struct CliArgs
 {
@@ -104,14 +117,22 @@ struct CliArgs
         "                    [--p0 SPEC] [--p1 SPEC] [--p2 SPEC] [--p3 SPEC]\n"
         "\n"
         "Built-in player SPECs:\n"
-        "  random  — uniform-random over legal moves (matches RandomPlayer)\n"
-        "  lowest  — always play the lowest legal card; pass the three highest\n"
+        "  random      — uniform-random over legal moves (matches RandomPlayer)\n"
+        "  lowest      — always play the lowest legal card; pass the three highest\n"
+        "  py:<spec>   — load a Python Player via embedded pybind11. Resolution\n"
+        "                mirrors scripts/bench.py:\n"
+        "                  py:claude_v1                  -> tim.players.claude_v1\n"
+        "                                                   then clients.python.players.claude_v1\n"
+        "                  py:claude_player              -> clients.python.players.claude_player\n"
+        "                  py:tim.players.claude_v1      -> fully-qualified module\n"
+        "                  py:tim.players.claude_v1:ClaudeV1   -> explicit class\n"
         "\n"
         "Output: one line per game on stdout (game_idx,p0,p1,p2,p3 scores),\n"
         "then a summary block per target seat.\n"
         "\n"
         "Example:\n"
-        "  bench_runner --games 100 --p0 random --p1 lowest --p2 lowest --p3 lowest\n"
+        "  bench_runner --games 100 \\\n"
+        "      --p0 py:claude_v1 --p1 py:claude_player --p2 py:expert_player --p3 random\n"
     );
     std::exit(code);
 }
@@ -143,6 +164,18 @@ static CliArgs parseArgs(int argc, char** argv)
 // map keys) doesn't collide when two seats use the same algorithm.
 static Common::Game::PlayerRef makePlayer(const std::string& spec, int seatIdx, std::mt19937& seatRng)
 {
+    // py:<rest> specs: forward to the pybind11 bridge. The bridge derives
+    // the canonical PlayerTagSession from the Python class's declared
+    // `player_tag` (the C++ tag is updated to match — see
+    // PyBridgePlayer::getTagSession after construction). We pass a
+    // placeholder tag here; MakePyBridgePlayer rewrites it.
+    if (spec.rfind("py:", 0) == 0)
+    {
+        std::string pySpec = spec.substr(3);
+        std::string placeholder = "py(" + std::to_string(seatIdx) + ")";
+        return MakePyBridgePlayer(placeholder, pySpec, seatIdx);
+    }
+
     // Tag format: <spec>(<seat>) — readable in logs, unique per seat.
     Common::Server::PlayerTagSession tag = spec + "(" + std::to_string(seatIdx) + ")";
     if (spec == "random")
@@ -153,7 +186,69 @@ static Common::Game::PlayerRef makePlayer(const std::string& spec, int seatIdx, 
     {
         return std::make_shared<LowestLocalPlayer>(tag);
     }
-    throw std::runtime_error("unknown player spec: " + spec + " (try 'random' or 'lowest')");
+    throw std::runtime_error("unknown player spec: " + spec
+                             + " (try 'random', 'lowest', or 'py:<module>[:Class]')");
+}
+
+// Initialize the embedded CPython interpreter and add the project repos to
+// sys.path. Mirrors scripts/bench.py's resolution rules. Called once per
+// process; no-op if Python is already initialized.
+//
+// Paths added:
+//   - /Users/tim/Documents/CS/Hearts Server/hearts-engine  (clients.python.*)
+//   - /Users/tim/Documents/CS/Tim-hearts-ais                (tim.*)
+//
+// We resolve the first path from the workspace root that Bazel sets via
+// $BUILD_WORKSPACE_DIRECTORY when running with `bazel run`. Fallback to the
+// hard-coded absolute path for direct invocation of the binary.
+static void initPython()
+{
+    static bool initialized = false;
+    if (initialized) return;
+    initialized = true;
+    pybind11::initialize_interpreter();
+
+    pybind11::module_ sys = pybind11::module_::import("sys");
+    pybind11::list path = sys.attr("path");
+
+    auto addPath = [&](const std::string& p) {
+        if (p.empty()) return;
+        path.attr("insert")(0, p);
+    };
+
+    // Hearts-engine workspace root (clients.python.* lives here).
+    std::string workspaceRoot;
+    const char* workspace = std::getenv("BUILD_WORKSPACE_DIRECTORY");
+    if (workspace && *workspace) workspaceRoot = workspace;
+    else workspaceRoot = "/Users/tim/Documents/CS/Hearts Server/hearts-engine";
+    addPath(workspaceRoot);
+
+    // Tim-hearts-ais sibling repo (tim.* lives here).
+    const char* timRepo = std::getenv("TIM_HEARTS_AIS");
+    if (timRepo && *timRepo)
+    {
+        addPath(timRepo);
+    }
+    else
+    {
+        addPath("/Users/tim/Documents/CS/Tim-hearts-ais");
+    }
+
+    // clients/python/util/Env.py reads sys.argv[1] as the config path at
+    // import time. We never actually open a server connection from this
+    // binary, but importing ManagedConnection (transitively via any AI's
+    // module-level imports) still triggers Env. Point it at the workspace's
+    // config.env to satisfy the read.
+    pybind11::list argv = sys.attr("argv");
+    if (py::len(argv) < 2)
+    {
+        argv.append(workspaceRoot + "/config.env");
+    }
+    else
+    {
+        argv[0] = pybind11::cast(std::string("bench_runner"));
+        argv[1] = pybind11::cast(workspaceRoot + "/config.env");
+    }
 }
 
 // Wilson 95% CI for k wins out of n trials. Mirrors scripts/bench.py.
@@ -201,6 +296,16 @@ static GameResult runOneGame(const CliArgs& args, std::mt19937& seedRng,
 static int runMain(int argc, char** argv)
 {
     CliArgs args = parseArgs(argc, argv);
+
+    // Initialize the embedded Python interpreter iff any spec uses py:. We
+    // intentionally don't initialize it for pure-C++ runs so the binary
+    // startup stays sub-millisecond for the random/lowest panels.
+    bool needPython = false;
+    for (auto& s : args.playerSpecs)
+    {
+        if (s.rfind("py:", 0) == 0) { needPython = true; break; }
+    }
+    if (needPython) initPython();
 
     // Use /dev/null for game logging by default — we want the bench fast,
     // not flooded with logs. To re-enable, change "/dev/null" below to

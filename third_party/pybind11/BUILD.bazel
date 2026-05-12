@@ -1,0 +1,22 @@
+# Local pybind11 binding for the in-process bench runner.
+#
+# Headers are vendored (a snapshot copy) from the Homebrew install:
+#   /opt/homebrew/opt/pybind11/include/pybind11
+# Bazel rejects absolute include paths via copts/cxxopts for external paths
+# it can't validate, so vendoring is the simplest way to get the headers
+# into the sandbox. They're ~1MB total; cheap to keep checked in.
+#
+# To refresh:
+#   cp -R /opt/homebrew/opt/pybind11/include/pybind11/. \
+#         third_party/pybind11/include/pybind11/
+
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+cc_library(
+    name = "pybind11",
+    hdrs = glob([
+        "include/pybind11/**/*.h",
+    ]),
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+)

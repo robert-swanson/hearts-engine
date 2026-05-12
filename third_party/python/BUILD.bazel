@@ -1,0 +1,31 @@
+# Vendored Python 3.14 C API headers for the in-process bench runner.
+#
+# Snapshot copy of
+#   /opt/homebrew/opt/python@3.14/Frameworks/Python.framework/Versions/3.14/include/python3.14
+# We link the library at runtime via linkopts (libpython3.14 stays on the
+# host); only headers are vendored. ~2.6MB.
+#
+# To refresh:
+#   cp -R /opt/homebrew/opt/python@3.14/Frameworks/Python.framework/Versions/3.14/include/python3.14/. \
+#         third_party/python/include/python3.14/
+
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+cc_library(
+    name = "python_embed",
+    hdrs = glob([
+        "include/python3.14/**/*.h",
+    ]),
+    # The python headers are referenced as <Python.h> by pybind11 — i.e.
+    # they need to live at the include-root level. We expose
+    # include/python3.14 directly.
+    includes = ["include/python3.14"],
+    linkopts = [
+        "-L/opt/homebrew/opt/python@3.14/Frameworks/Python.framework/Versions/3.14/lib",
+        "-lpython3.14",
+        "-ldl",
+        "-framework",
+        "CoreFoundation",
+    ],
+    visibility = ["//visibility:public"],
+)

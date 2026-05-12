@@ -15,10 +15,9 @@
 //                        three highest cards. Provides a deterministic
 //                        sanity baseline (a "rock" opponent).
 //
-// A future PyBridgePlayer (not yet present) will subclass Player the same
-// way and forward each virtual method into a Python Player instance held
-// via pybind11. Adding it does not require changes to Game/Round/Trick or
-// to this header — see bench_runner.cpp for the integration plan.
+// PyBridgePlayer (in py_bridge_player.h) subclasses Player the same way
+// and forwards each virtual method into a Python Player instance held via
+// pybind11.
 
 #include <algorithm>
 #include <memory>
