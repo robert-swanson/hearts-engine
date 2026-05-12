@@ -274,16 +274,24 @@ struct GameResult
 };
 
 static GameResult runOneGame(const CliArgs& args, std::mt19937& seedRng,
-                             const std::shared_ptr<Common::GameLogger>& logger)
+                             const std::shared_ptr<Common::GameLogger>& logger,
+                             std::array<int, 4>& specForSeat)
 {
+    // Per-game seat permutation: removes positional bias (seat 0 leads 2C,
+    // pass-direction-by-seat asymmetries, etc.) so two identical specs
+    // converge to the same long-run win rate. The specForSeat[s] output
+    // tells the caller which playerSpecs[*] is at seat s for THIS game.
+    std::array<int, 4> perm = {0, 1, 2, 3};
+    std::shuffle(perm.begin(), perm.end(), seedRng);
     Common::Game::PlayerArray players;
     for (int seat = 0; seat < 4; ++seat)
     {
-        players[seat] = makePlayer(args.playerSpecs[seat], seat, seedRng);
+        int specIdx = perm[seat];
+        specForSeat[seat] = specIdx;
+        players[seat] = makePlayer(args.playerSpecs[specIdx], seat, seedRng);
     }
     Common::Game::Game game(players, logger);
     Common::Game::PlayerArray ranked = game.runGame();
-    // ranked is sorted by decreasing score; winner is the last entry.
     GameResult result;
     for (auto& p : players)
     {
@@ -340,21 +348,22 @@ static int runMain(int argc, char** argv)
     auto t0 = std::chrono::steady_clock::now();
     for (int gameIdx = 0; gameIdx < args.numGames; ++gameIdx)
     {
-        GameResult r = runOneGame(args, seedRng, logger);
+        std::array<int, 4> specForSeat;
+        GameResult r = runOneGame(args, seedRng, logger, specForSeat);
         std::printf("%d", gameIdx);
         for (int seat = 0; seat < 4; ++seat)
         {
             auto& [tag, score] = r.scoresInSeatOrder[seat];
             std::printf(",%s,%d", tag.c_str(), score);
-            specPointsTotal[args.playerSpecs[seat]] += score;
+            // Aggregate by the spec that was AT this seat for this game.
+            specPointsTotal[args.playerSpecs[specForSeat[seat]]] += score;
         }
         std::printf(",%s\n", r.winnerTag.c_str());
-        // Attribute the win to the spec of the seat whose tag matches.
         for (int seat = 0; seat < 4; ++seat)
         {
             if (r.scoresInSeatOrder[seat].first == r.winnerTag)
             {
-                specWins[args.playerSpecs[seat]]++;
+                specWins[args.playerSpecs[specForSeat[seat]]]++;
                 break;
             }
         }
