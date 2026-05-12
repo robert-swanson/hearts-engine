@@ -92,6 +92,7 @@
 #include <pybind11/pybind11.h>
 
 #include "tools/bench_runner/local_player.h"
+#include "tools/bench_runner/logging_player_proxy.h"
 #include "tools/bench_runner/py_bridge_player.h"
 #include "server/game/game.h"
 #include "server/game/objects/player.h"
@@ -108,6 +109,11 @@ struct CliArgs
     std::string playerSpecs[4] = {"random", "random", "random", "random"};
     unsigned long seed = 0;
     bool seedExplicit = false;
+    // When non-empty, the runner wraps every player in a LoggingPlayerProxy
+    // and writes one NDJSON record per AI decision (move + pass) plus a
+    // per-game `game_end` record to this path. This is the training-data
+    // format for the supervised neural-network player.
+    std::string decisionLogPath;
 };
 
 [[noreturn]] static void printUsageAndExit(int code)
@@ -115,6 +121,7 @@ struct CliArgs
     std::fprintf(stderr,
         "Usage: bench_runner [--games N] [--seed S]\n"
         "                    [--p0 SPEC] [--p1 SPEC] [--p2 SPEC] [--p3 SPEC]\n"
+        "                    [--decision-log PATH]\n"
         "\n"
         "Built-in player SPECs:\n"
         "  random      — uniform-random over legal moves (matches RandomPlayer)\n"
@@ -153,6 +160,7 @@ static CliArgs parseArgs(int argc, char** argv)
         else if (a == "--p1")    { need(i); args.playerSpecs[1] = argv[++i]; }
         else if (a == "--p2")    { need(i); args.playerSpecs[2] = argv[++i]; }
         else if (a == "--p3")    { need(i); args.playerSpecs[3] = argv[++i]; }
+        else if (a == "--decision-log") { need(i); args.decisionLogPath = argv[++i]; }
         else { std::fprintf(stderr, "unknown arg: %s\n", a.c_str()); printUsageAndExit(1); }
     }
     if (args.numGames <= 0) { std::fprintf(stderr, "--games must be > 0\n"); std::exit(1); }
@@ -274,12 +282,27 @@ struct GameResult
 };
 
 static GameResult runOneGame(const CliArgs& args, std::mt19937& seedRng,
-                             const std::shared_ptr<Common::GameLogger>& logger)
+                             const std::shared_ptr<Common::GameLogger>& logger,
+                             const std::shared_ptr<DecisionLogContext>& logCtx)
 {
     Common::Game::PlayerArray players;
     for (int seat = 0; seat < 4; ++seat)
     {
-        players[seat] = makePlayer(args.playerSpecs[seat], seat, seedRng);
+        auto inner = makePlayer(args.playerSpecs[seat], seat, seedRng);
+        if (logCtx)
+        {
+            // Wrap each inner player in a logging proxy. The engine sees
+            // the proxy as the Player (so all hand/state mutations target
+            // the proxy's inherited Player members). The proxy syncs the
+            // inner's hand on demand inside getMove/getCardsToPass — see
+            // LoggingPlayerProxy::syncInnerHand for the rationale.
+            players[seat] = std::make_shared<LoggingPlayerProxy>(
+                inner, seat, logCtx);
+        }
+        else
+        {
+            players[seat] = inner;
+        }
     }
     Common::Game::Game game(players, logger);
     Common::Game::PlayerArray ranked = game.runGame();
@@ -314,6 +337,27 @@ static int runMain(int argc, char** argv)
     if (!nullSink) nullSink = stderr;  // fallback
     auto logger = std::make_shared<Common::GameLogger>(nullSink);
 
+    // If --decision-log was provided, open the NDJSON sink. One global
+    // file handle is shared by all four LoggingPlayerProxy instances per
+    // game; the proxies don't lock (single-threaded runner).
+    std::shared_ptr<DecisionLogContext> logCtx;
+    FILE* decisionLogFile = nullptr;
+    if (!args.decisionLogPath.empty())
+    {
+        decisionLogFile = std::fopen(args.decisionLogPath.c_str(), "w");
+        if (!decisionLogFile)
+        {
+            std::fprintf(stderr, "bench_runner: failed to open --decision-log %s\n",
+                         args.decisionLogPath.c_str());
+            std::exit(1);
+        }
+        logCtx = std::make_shared<DecisionLogContext>();
+        logCtx->fp = decisionLogFile;
+        logCtx->gameIndex = 0;
+        std::fprintf(stderr, "bench_runner: writing decision log to %s\n",
+                     args.decisionLogPath.c_str());
+    }
+
     unsigned long seed = args.seedExplicit
         ? args.seed
         : static_cast<unsigned long>(std::chrono::steady_clock::now().time_since_epoch().count());
@@ -340,7 +384,8 @@ static int runMain(int argc, char** argv)
     auto t0 = std::chrono::steady_clock::now();
     for (int gameIdx = 0; gameIdx < args.numGames; ++gameIdx)
     {
-        GameResult r = runOneGame(args, seedRng, logger);
+        if (logCtx) logCtx->gameIndex = gameIdx;
+        GameResult r = runOneGame(args, seedRng, logger, logCtx);
         std::printf("%d", gameIdx);
         for (int seat = 0; seat < 4; ++seat)
         {
@@ -380,6 +425,11 @@ static int runMain(int argc, char** argv)
     }
 
     if (nullSink && nullSink != stderr) std::fclose(nullSink);
+    if (decisionLogFile)
+    {
+        std::fflush(decisionLogFile);
+        std::fclose(decisionLogFile);
+    }
     return 0;
 }
 

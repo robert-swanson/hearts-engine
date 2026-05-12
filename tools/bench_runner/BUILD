@@ -11,6 +11,7 @@ cc_binary(
     srcs = [
         "bench_runner.cpp",
         "local_player.h",
+        "logging_player_proxy.h",
         "py_bridge_player.h",
     ],
     copts = [
