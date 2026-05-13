@@ -199,8 +199,11 @@ def main():
 
     # ── 3. Register teams (once — persists across both tournaments) ────────────
     for team, pw in TEAMS.items():
+        # Pass tournament_server.env so register_team.py reads SERVER_ADDR=127.0.0.1
+        # (written by competition_runner before opening the listener).
         result = subprocess.run(
-            [sys.executable, 'register_team.py', f'--team={team}', f'--password={pw}'],
+            [sys.executable, 'register_team.py',
+             f'--team={team}', f'--password={pw}', 'tournament_server.env'],
             env=env, capture_output=True, text=True,
         )
         if result.returncode != 0:
@@ -211,7 +214,7 @@ def main():
 
     # ── 4. Wait for tournament.config.env ─────────────────────────────────────
     print("Waiting for tournament.config.env...")
-    cfg_path = Path('tournament.config.env')
+    cfg_path = Path('tournament_server.env')
     deadline = time.time() + REGISTRATION_WINDOW + 30
     while time.time() < deadline:
         if cfg_path.exists() and cfg_path.stat().st_mtime > test_start and cfg_path.stat().st_size > 50:

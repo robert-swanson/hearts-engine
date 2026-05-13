@@ -1,18 +1,15 @@
 #!/usr/bin/env python3
 """
-register_team.py — one-time team setup for Hearts tournament competitors.
+register_team.py — register for a Hearts tournament and save credentials to config.env.
 
-Prompts for team name + password, tests TCP connectivity to the tournament
-server, and writes credentials to team.config.env.  After running this once,
-tournament_client.py reads credentials automatically — no --team/--password
-flags needed.
+During the organiser's registration window, this script connects to competition_runner.py,
+claims a team name and password, then writes them into the local config.env so that
+tournament_client.py picks them up automatically.
 
 Usage:
-    python3 register_team.py [tournament.config.env]
-
-The optional argument lets you point at the organiser's config file so the
-server address is picked up automatically.  Without it, defaults to
-127.0.0.1:40406.
+    python3 register_team.py                              # interactive; uses server from config.env
+    python3 register_team.py tournament_server.env        # reads server address from organiser's file
+    python3 register_team.py --team=my_team --password=secret   # non-interactive
 """
 
 import argparse
@@ -22,7 +19,7 @@ import socket
 import sys
 from pathlib import Path
 
-TEAM_ENV = Path('team.config.env')
+CONFIG_ENV = Path('config.env')
 
 
 def _read_env(path) -> dict:
@@ -39,18 +36,48 @@ def _read_env(path) -> dict:
     return result
 
 
+def _patch_env(path: Path, updates: dict):
+    """Update specific keys in an env file in-place, adding any that are missing."""
+    lines = []
+    try:
+        lines = path.read_text().splitlines(keepends=True)
+    except FileNotFoundError:
+        pass
+
+    found = set()
+    new_lines = []
+    for line in lines:
+        if '=' in line and not line.lstrip().startswith('#'):
+            key = line.partition('=')[0].strip()
+            if key in updates:
+                new_lines.append(f'{key}={updates[key]}\n')
+                found.add(key)
+                continue
+        new_lines.append(line)
+
+    for key, val in updates.items():
+        if key not in found:
+            new_lines.append(f'{key}={val}\n')
+
+    path.write_text(''.join(new_lines))
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description='Register a Hearts tournament team and save credentials to team.config.env')
+        description="Register for a Hearts tournament; saves credentials to config.env")
     parser.add_argument('--team',     default=None, help='Team name (non-interactive)')
     parser.add_argument('--password', default=None, help='Team password (non-interactive)')
     parser.add_argument('env_file',   nargs='?',
-                        help="Organiser's tournament.config.env (sets server address)")
+                        help="Organiser's config file — used to read server address "
+                             "(e.g. their tournament_server.env or config.env)")
     args = parser.parse_args()
 
-    cfg = _read_env(args.env_file) if args.env_file else {}
-    host = cfg.get('SERVER_ADDR', '127.0.0.1')
-    port = int(cfg.get('TOURNAMENT_PORT', cfg.get('SERVER_PORT', 40406)))
+    # Server address: organiser's file first, then local config.env, then defaults.
+    organiser_cfg = _read_env(args.env_file) if args.env_file else {}
+    local_cfg     = _read_env(CONFIG_ENV)
+    host = organiser_cfg.get('SERVER_ADDR') or local_cfg.get('SERVER_ADDR', '127.0.0.1')
+    port = int(organiser_cfg.get('TOURNAMENT_PORT') or organiser_cfg.get('SERVER_PORT')
+               or local_cfg.get('TOURNAMENT_PORT') or local_cfg.get('SERVER_PORT', 40406))
 
     non_interactive = args.team is not None and args.password is not None
 
@@ -61,7 +88,7 @@ def main():
         print('=== Hearts Tournament — Team Registration ===\n')
         print(f'Server: {host}:{port}')
         if not args.env_file:
-            print('(Pass the organiser\'s tournament.config.env as an argument to use a different address.)')
+            print("(Pass the organiser's config file as an argument to use a different address.)")
         print()
 
         name = input('Team name: ').strip()
@@ -98,18 +125,19 @@ def main():
         print('Make sure competition_runner.py is running and the registration window is open.')
         sys.exit(1)
 
-    TEAM_ENV.write_text(
-        f'TEAM_NAME={name}\n'
-        f'TEAM_PASSWORD={pw}\n'
-        f'SERVER_ADDR={host}\n'
-        f'SERVER_PORT={port}\n'
-    )
-    print(f'Credentials saved to {TEAM_ENV}')
+    _patch_env(CONFIG_ENV, {
+        'TEAM_NAME':     name,
+        'TEAM_PASSWORD': pw,
+        'SERVER_ADDR':   host,
+        'TOURNAMENT_PORT': str(port),
+        'SERVER_PORT':   str(port),
+    })
+    print(f'Credentials saved to {CONFIG_ENV}')
     if not non_interactive:
         print('\nTo join a tournament, run:')
         print('  python3 clients/python/tournament_client.py --player=my_player')
-        print('\nYou can run multiple clients with different --player or --score values')
-        print('to fill all your team\'s slots and maximise your leaderboard coverage.')
+        print('\nRun multiple clients with different --player or --score values')
+        print("to fill all your team's slots.")
 
 
 if __name__ == '__main__':

@@ -48,10 +48,8 @@ versions/
 results/
 results_ci/
 
-# Per-user / generated configs (do NOT commit credentials)
-team.config.env
-tournament.config.env
-tournament_ci.config.env
+# Local config override (optional; takes precedence over config.env when passed explicitly)
+local.config.env
 
 # Bazel (entries listed without trailing slash to also match symlinks Bazel creates)
 bazel-bin

@@ -101,23 +101,31 @@ def discover_player_class(module_name: str):
 # ─── Config writing ───────────────────────────────────────────────────────────
 
 def write_config(path: str, cfg: dict, teams: Dict[str, str], filler_teams: Dict[str, str]):
-    """Write tournament.config.env with the full TEAMS list."""
+    """Write tournament_server.env: game rules + connection info + TEAMS.
+    The port and server address come from cfg (read from config.env by main()).
+    """
     all_teams = {**teams, **filler_teams}
     teams_str = ','.join(f'{n}:{p}' for n, p in all_teams.items())
     with open(path, 'w') as f:
+        # Connection info (port from config.env, address always local for competition_runner)
         f.write(f"TOURNAMENT_PORT={cfg['port']}\n")
         f.write(f"SERVER_PORT={cfg['port']}\n")
         f.write(f"SERVER_ADDR=127.0.0.1\n")
+        # Competition orchestration (read back as defaults next run)
+        f.write(f"REGISTRATION_WINDOW={cfg.get('registration_window', 60)}\n")
+        f.write(f"INTERVAL={cfg['interval']}\n")
+        # Tournament rules
         f.write(f"QUALIFYING_GAMES={cfg['qualifying_games']}\n")
         f.write(f"FINALS_GAMES={cfg['finals_games']}\n")
         f.write(f"MAX_PLAYERS_PER_TEAM={cfg['max_players']}\n")
         f.write(f"QUALIFYING_POINTS={cfg['qualifying_points']}\n")
         f.write(f"ALLOW_MULTI_TEAM_FINALS={1 if cfg['multi_team_finals'] else 0}\n")
-        f.write(f"TEAMS={teams_str}\n")
-        f.write(f"FALLBACK_PLAYER_TAG=random_player\n")
         f.write(f"RESULTS_DIR={cfg['results_dir']}\n")
         f.write(f"LOG_DIR={cfg.get('log_dir', './log')}\n")
         f.write(f"AUTO_MOVE_AFTER_TIMEOUTS={cfg.get('auto_move_after_timeouts', 2)}\n")
+        f.write(f"FALLBACK_PLAYER_TAG=random_player\n")
+        # Populated at runtime
+        f.write(f"TEAMS={teams_str}\n")
     print(f"Config written to {path}")
 
 
@@ -266,37 +274,54 @@ def prompt(msg: str, default=None):
 
 def configure_rules(non_interactive: bool = False,
                     registration_window: Optional[int] = None,
-                    interval: Optional[int] = None) -> dict:
+                    interval: Optional[int] = None,
+                    port: int = 40406,
+                    defaults: Optional[dict] = None) -> dict:
+    """Build competition config.  Defaults come from tournament_server.env."""
+    d = defaults or {}
+
+    def d_int(key, fallback):
+        try: return int(d.get(key, fallback))
+        except ValueError: return fallback
+
+    def d_str(key, fallback):
+        return d.get(key, fallback) or fallback
+
+    def d_bool(key, fallback):
+        return d.get(key, '1' if fallback else '0') == '1'
+
     if non_interactive:
         return {
-            'port': 40406,
-            'qualifying_games': 20,
-            'finals_games': 7,
-            'max_players': 4,
-            'qualifying_points': '10,5,3,1',
-            'multi_team_finals': False,
-            'registration_window': registration_window if registration_window is not None else 30,
-            'client_window': 20,   # seconds the tournament server waits for game clients to connect
-            'interval': interval if interval is not None else 30,
-            'results_dir': './results',
-            'log_dir': './log',
-            'auto_move_after_timeouts': 2,
+            'port':                  port,
+            'qualifying_games':      d_int('QUALIFYING_GAMES', 20),
+            'finals_games':          d_int('FINALS_GAMES', 7),
+            'max_players':           d_int('MAX_PLAYERS_PER_TEAM', 4),
+            'qualifying_points':     d_str('QUALIFYING_POINTS', '10,5,3,1'),
+            'multi_team_finals':     d_bool('ALLOW_MULTI_TEAM_FINALS', False),
+            'registration_window':   registration_window if registration_window is not None
+                                     else d_int('REGISTRATION_WINDOW', 60),
+            'client_window':         20,
+            'interval':              interval if interval is not None
+                                     else d_int('INTERVAL', 300),
+            'results_dir':           d_str('RESULTS_DIR', './results'),
+            'log_dir':               d_str('LOG_DIR', './log'),
+            'auto_move_after_timeouts': d_int('AUTO_MOVE_AFTER_TIMEOUTS', 2),
         }
 
     print('\n=== Competition Rules ===')
     return {
-        'port':               int(prompt('Tournament server port', 40406)),
-        'qualifying_games':   int(prompt('Qualifying games', 20)),
-        'finals_games':       int(prompt('Finals games', 7)),
-        'max_players':        int(prompt('Max players per team (multiple of 4)', 4)),
-        'qualifying_points':  prompt('Qualifying points (1st,2nd,3rd,4th)', '10,5,3,1'),
-        'multi_team_finals':  prompt('Allow multiple players from same team in finals? (y/n)', 'n').lower() == 'y',
-        'registration_window': registration_window,  # None = wait for organiser signal
+        'port':               port,
+        'qualifying_games':   int(prompt('Qualifying games',             d_int('QUALIFYING_GAMES', 20))),
+        'finals_games':       int(prompt('Finals games',                 d_int('FINALS_GAMES', 7))),
+        'max_players':        int(prompt('Max players per team (mult. of 4)', d_int('MAX_PLAYERS_PER_TEAM', 4))),
+        'qualifying_points':  prompt('Qualifying points (1st,2nd,3rd,4th)', d_str('QUALIFYING_POINTS', '10,5,3,1')),
+        'multi_team_finals':  prompt('Allow same team in finals? (y/n)', 'y' if d_bool('ALLOW_MULTI_TEAM_FINALS', False) else 'n').lower() == 'y',
+        'registration_window': registration_window,
         'client_window':      30,
-        'interval':           interval if interval is not None else int(prompt('Tournament interval seconds', 300)),
-        'results_dir':        prompt('Results directory', './results'),
-        'log_dir':            prompt('Log directory', './log'),
-        'auto_move_after_timeouts': int(prompt('Auto-move after N consecutive timeouts (0=never)', 2)),
+        'interval':           interval if interval is not None else int(prompt('Interval between tournaments (s)', d_int('INTERVAL', 300))),
+        'results_dir':        prompt('Results directory',                d_str('RESULTS_DIR', './results')),
+        'log_dir':            prompt('Log directory',                    d_str('LOG_DIR', './log')),
+        'auto_move_after_timeouts': int(prompt('Auto-move after N timeouts (0=never)', d_int('AUTO_MOVE_AFTER_TIMEOUTS', 2))),
     }
 
 
@@ -415,12 +440,34 @@ def main():
 
     print(f'Found {len(available_modules)} player modules: {", ".join(available_modules)}')
 
+    # ── Read defaults from config files ────────────────────────────────────
+
+    def _read_kv(path):
+        result = {}
+        try:
+            with open(path) as f:
+                for line in f:
+                    line = line.strip()
+                    if line and '=' in line and not line.startswith('#'):
+                        k, _, v = line.partition('=')
+                        result[k.strip()] = v.strip()
+        except FileNotFoundError:
+            pass
+        return result
+
+    client_env = _read_kv('config.env')        # connection info (address, ports)
+    server_env = _read_kv('tournament_server.env')  # game rule defaults
+
+    port = int(client_env.get('TOURNAMENT_PORT') or client_env.get('SERVER_PORT', 40406))
+
     # ── Configure ──────────────────────────────────────────────────────────
 
     cfg = configure_rules(
         non_interactive=non_interactive,
         registration_window=args.registration_window,
         interval=args.interval,
+        port=port,
+        defaults=server_env,
     )
 
     # ── Validate max_players ───────────────────────────────────────────────
@@ -443,6 +490,13 @@ def main():
         print(result.stderr[-3000:])
         sys.exit(1)
     print('Build successful.\n')
+
+    # ── Write initial tournament_server.env ────────────────────────────────
+    # Write connection info + game rule defaults before opening registration so
+    # competitors can pass tournament_server.env to register_team.py to pick up
+    # the server address automatically. TEAMS will be added after registration.
+
+    write_config('tournament_server.env', cfg, {}, {})
 
     # ── One-time team registration ─────────────────────────────────────────
     # Teams register once here; their clients reconnect automatically for each
@@ -470,7 +524,7 @@ def main():
 
     # ── Run competition loop ───────────────────────────────────────────────
 
-    config_path = 'tournament.config.env'
+    config_path = 'tournament_server.env'
     run_competition(cfg, real_teams, config_path, available_modules)
 
 

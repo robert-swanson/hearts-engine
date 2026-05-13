@@ -2,10 +2,10 @@
 """
 tournament_client.py — connect a player to a Hearts tournament.
 
-With team.config.env (created by register_team.py):
+Credentials are read from config.env (written by register_team.py):
     python3 clients/python/tournament_client.py --player=my_player [--score=3]
 
-Without team.config.env (explicit credentials):
+Override credentials or env file explicitly:
     python3 clients/python/tournament_client.py \\
         --team=alpha --password=secret --player=my_player [--score=3] \\
         [env_file]
@@ -20,8 +20,6 @@ import inspect
 import sys
 import time
 from pathlib import Path
-
-TEAM_ENV = Path('team.config.env')
 
 
 def _read_env(path) -> dict:
@@ -40,17 +38,15 @@ def _read_env(path) -> dict:
 
 # Env.py reads sys.argv[1] as the env file path.  Ensure an env file is at
 # position 1 before Env.py is imported.  Prefer an explicit positional arg;
-# fall back to team.config.env (which carries SERVER_ADDR/SERVER_PORT written
-# by register_team.py); last resort is local.config.env.
+# fall back to config.env (which holds team credentials written by register_team.py
+# and server address).
 _non_flag = [i for i, a in enumerate(sys.argv[1:], 1) if not a.startswith('--')]
 if _non_flag:
     _idx = _non_flag[-1]
     if _idx != 1:
         sys.argv.insert(1, sys.argv.pop(_idx))
-elif TEAM_ENV.exists():
-    sys.argv.insert(1, str(TEAM_ENV))
 else:
-    sys.argv.insert(1, './local.config.env')
+    sys.argv.insert(1, './config.env')
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -71,24 +67,24 @@ def discover_player(module_name: str):
 
 
 def main():
-    team_env = _read_env(TEAM_ENV)
+    cfg = _read_env('config.env')
 
     parser = argparse.ArgumentParser(description='Hearts tournament client')
-    parser.add_argument('--team',     default=team_env.get('TEAM_NAME'),
-                        help='Team name (default: TEAM_NAME from team.config.env)')
-    parser.add_argument('--password', default=team_env.get('TEAM_PASSWORD'),
-                        help='Team password (default: TEAM_PASSWORD from team.config.env)')
+    parser.add_argument('--team',     default=cfg.get('TEAM_NAME'),
+                        help='Team name (default: TEAM_NAME from config.env)')
+    parser.add_argument('--password', default=cfg.get('TEAM_PASSWORD'),
+                        help='Team password (default: TEAM_PASSWORD from config.env)')
     parser.add_argument('--player',   required=True,  help='Player module name (e.g. my_player)')
     parser.add_argument('--score',    type=int, default=0,
                         help='Priority score — higher-scored clients get preferred slots')
     parser.add_argument('env_file',   nargs='?',
-                        help='Server config env file (default: team.config.env or local.config.env)')
+                        help='Server config env file (default: config.env)')
     args = parser.parse_args()
 
     if not args.team:
-        parser.error('--team is required (or run register_team.py to create team.config.env)')
+        parser.error('--team is required (or run register_team.py to populate config.env)')
     if not args.password:
-        parser.error('--password is required (or run register_team.py to create team.config.env)')
+        parser.error('--password is required (or run register_team.py to populate config.env)')
 
     player_cls = discover_player(args.player)
     tag = f"[{args.team}/{player_cls.player_tag}]"
