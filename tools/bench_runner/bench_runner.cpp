@@ -121,9 +121,17 @@ struct CliArgs
     std::optional<unsigned long> dealSeed;
     // Rotate the 4 player specs through all 4 cyclic seat positions for
     // each logical deal. --games N becomes N logical deals × 4 rotations
-    // = 4·N total games played. Per METHODOLOGY §5 paired CRN: each
-    // variant plays each seat with the same hand assignment.
+    // = 4·N total games played. This removes seat-position bias but
+    // preserves relative-position bias (claude_v1 and claude_player are
+    // always neighbors in the pass chain, etc.).
     bool rotateSeats = false;
+    // Full S_4 permutations of the player specs for each logical deal.
+    // --games N becomes N logical deals × 24 permutations = 24·N games.
+    // This removes BOTH seat-position bias and relative-position bias:
+    // two identical strategies converge to exactly equal totals because
+    // every pair of specs experiences every relative configuration with
+    // equal frequency. Per METHODOLOGY §13.1 (GO-MCTS style).
+    bool fullPermutations = false;
 };
 
 [[noreturn]] static void printUsageAndExit(int code)
@@ -173,6 +181,7 @@ static CliArgs parseArgs(int argc, char** argv)
         else if (a == "--decision-log") { need(i); args.decisionLogPath = argv[++i]; }
         else if (a == "--deal-seed") { need(i); args.dealSeed = std::strtoul(argv[++i], nullptr, 10); }
         else if (a == "--rotate-seats") { args.rotateSeats = true; }
+        else if (a == "--full-permutations" || a == "--perm") { args.fullPermutations = true; }
         else { std::fprintf(stderr, "unknown arg: %s\n", a.c_str()); printUsageAndExit(1); }
     }
     if (args.numGames <= 0) { std::fprintf(stderr, "--games must be > 0\n"); std::exit(1); }
@@ -297,24 +306,17 @@ static GameResult runOneGame(const CliArgs& args, std::mt19937& seedRng,
                              const std::shared_ptr<Common::GameLogger>& logger,
                              std::array<int, 4>& specForSeat,
                              const std::shared_ptr<DecisionLogContext>& logCtx,
-                             std::optional<int> rotationOffset = std::nullopt,
+                             std::optional<std::array<int, 4>> explicitPerm = std::nullopt,
                              std::optional<unsigned long> dealSeed = std::nullopt)
 {
     // Seat assignment:
-    //   - rotationOffset set: cyclic permutation, spec i goes to seat
-    //     (i + rotationOffset) % 4. Used for paired CRN.
+    //   - explicitPerm set: use the caller-supplied perm[s] = spec idx
+    //     at seat s. Used for paired CRN (cyclic or full-S_4).
     //   - otherwise: random shuffle (legacy bias-removal behavior).
     std::array<int, 4> perm;
-    if (rotationOffset.has_value())
+    if (explicitPerm.has_value())
     {
-        int r = *rotationOffset;
-        for (int seat = 0; seat < 4; ++seat)
-        {
-            // perm[seat] = spec index sitting at this seat.
-            // We want spec i at seat (i + r) % 4, so seat s gets
-            // spec (s - r + 4) % 4.
-            perm[seat] = (seat - r + 4) % 4;
-        }
+        perm = *explicitPerm;
     }
     else
     {
@@ -411,11 +413,12 @@ static int runMain(int argc, char** argv)
         args.playerSpecs[2].c_str(), args.playerSpecs[3].c_str(),
         seed);
 
-    // CSV header. In rotation mode, also reports per-spec totals across
-    // a logical deal — see "deal_total" rows after the per-game rows.
-    if (args.rotateSeats)
+    // CSV header. In paired-CRN modes (rotation or full-perms) include
+    // per-deal indexing.
+    bool pairedMode = args.rotateSeats || args.fullPermutations;
+    if (pairedMode)
     {
-        std::printf("logical_deal,rotation,p0_tag,p0_score,p1_tag,p1_score,p2_tag,p2_score,p3_tag,p3_score,winner\n");
+        std::printf("logical_deal,perm_idx,p0_tag,p0_score,p1_tag,p1_score,p2_tag,p2_score,p3_tag,p3_score,winner\n");
     }
     else
     {
@@ -437,22 +440,38 @@ static int runMain(int argc, char** argv)
     // We emit these per-deal to /tmp via the CSV columns plus a tail summary.
     std::vector<std::unordered_map<std::string, long long>> perDealSpecPoints;
 
+    // Pre-build the list of permutations for paired modes.
+    // rotateSeats: 4 cyclic perms. fullPermutations: 24 full S_4 perms.
+    std::vector<std::array<int, 4>> perms;
+    if (args.fullPermutations)
+    {
+        std::array<int, 4> p = {0, 1, 2, 3};
+        do { perms.push_back(p); } while (std::next_permutation(p.begin(), p.end()));
+        // 24 permutations.
+    }
+    else if (args.rotateSeats)
+    {
+        for (int r = 0; r < 4; ++r)
+        {
+            std::array<int, 4> p;
+            for (int s = 0; s < 4; ++s) p[s] = (s - r + 4) % 4;
+            perms.push_back(p);
+        }
+    }
+
     auto t0 = std::chrono::steady_clock::now();
     int gameIdxGlobal = 0;
     int numLogicalDeals = args.numGames;
     for (int dealIdx = 0; dealIdx < numLogicalDeals; ++dealIdx)
     {
-        // Each logical deal gets its own dealSeed. When --deal-seed is set,
-        // we use args.dealSeed+dealIdx; otherwise we draw a seed from the
-        // master seedRng so each deal is reproducible from the master seed.
+        // Each logical deal gets its own dealSeed.
         std::optional<unsigned long> thisDealSeed;
         if (args.dealSeed.has_value())
         {
             thisDealSeed = *args.dealSeed + static_cast<unsigned long>(dealIdx);
         }
-        else if (args.rotateSeats || args.seedExplicit)
+        else if (pairedMode || args.seedExplicit)
         {
-            // Derive a deal seed from the master RNG so rotations share it.
             std::uniform_int_distribution<unsigned long> dist;
             thisDealSeed = dist(seedRng);
         }
@@ -460,19 +479,19 @@ static int runMain(int argc, char** argv)
         std::unordered_map<std::string, long long> dealSpecPoints;
         for (auto& kv : specSeats) dealSpecPoints[kv.first] = 0;
 
-        int rotationsThisDeal = args.rotateSeats ? 4 : 1;
-        for (int rot = 0; rot < rotationsThisDeal; ++rot)
+        int gamesThisDeal = pairedMode ? static_cast<int>(perms.size()) : 1;
+        for (int pIdx = 0; pIdx < gamesThisDeal; ++pIdx)
         {
             std::array<int, 4> specForSeat;
             if (logCtx) logCtx->gameIndex = gameIdxGlobal;
-            std::optional<int> rotOpt = args.rotateSeats
-                ? std::optional<int>(rot)
-                : std::nullopt;
+            std::optional<std::array<int, 4>> permOpt =
+                pairedMode ? std::optional<std::array<int, 4>>(perms[pIdx])
+                           : std::nullopt;
             GameResult r = runOneGame(args, seedRng, logger, specForSeat,
-                                       logCtx, rotOpt, thisDealSeed);
-            if (args.rotateSeats)
+                                       logCtx, permOpt, thisDealSeed);
+            if (pairedMode)
             {
-                std::printf("%d,%d", dealIdx, rot);
+                std::printf("%d,%d", dealIdx, pIdx);
             }
             else
             {
@@ -496,7 +515,7 @@ static int runMain(int argc, char** argv)
             }
             ++gameIdxGlobal;
         }
-        if (args.rotateSeats) perDealSpecPoints.push_back(std::move(dealSpecPoints));
+        if (pairedMode) perDealSpecPoints.push_back(std::move(dealSpecPoints));
     }
     auto t1 = std::chrono::steady_clock::now();
     double elapsed = std::chrono::duration<double>(t1 - t0).count();
@@ -519,11 +538,10 @@ static int runMain(int argc, char** argv)
             wins, gameSeats);
     }
 
-    // Paired-CRN diagnostics. In rotation mode each spec plays each seat
-    // exactly once per logical deal, so per-deal point totals are PAIRED.
-    // Report mean & SE of per-deal totals plus paired differences against
-    // the first spec (a useful default baseline).
-    if (args.rotateSeats && !perDealSpecPoints.empty())
+    // Paired-CRN diagnostics. In paired mode (rotation or full-perm),
+    // each spec plays balanced seat configurations within a logical
+    // deal, so per-deal point totals are PAIRED.
+    if (pairedMode && !perDealSpecPoints.empty())
     {
         std::fprintf(stderr, "\nPaired per-deal totals (%lu deals × 4 rotations each):\n",
                      perDealSpecPoints.size());
