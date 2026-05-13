@@ -44,43 +44,44 @@ If you wish to run a local instance of the game server do the following:
 
 ## Running a competition
 
-The repo ships a `competition_runner.py` orchestrator and a separate `tournament_server` binary for running recurring, two-stage (qualifying + finals) competitions.
+The repo ships a `competition_runner.py` orchestrator and a separate `tournament_server` binary for recurring, two-stage (qualifying + finals) competitions.  The competition has one registration phase up front, then runs tournaments in a loop indefinitely — competitor clients reconnect automatically for each cycle without re-registering.
 
-### How it works
-
-A competition has one registration phase followed by a recurring tournament loop:
-
-1. **Registration** (once) — `competition_runner.py` opens a TCP listener. Competitors connect via `register_team.py` to claim a team name and password. When the organiser closes the window, the runner records all registered teams and enters the loop.
-2. **Tournament loop** — for each cycle: pad registered teams to 4 with filler bots if needed, write `tournament.config.env`, start the tournament server, run qualifying + finals, write JSON results to `./results/`, sleep the configured interval, repeat. Competitor clients (`tournament_client.py`) reconnect automatically for each cycle without re-registering.
-
-### Organiser (server host)
+### Organiser (run on the server host)
 
 ```bash
-# Interactive — prompts for port, game counts, registration window duration, etc.
-python3 competition_runner.py
-
-# Non-interactive — built-in defaults, useful for smoke-testing or scripted runs
-python3 competition_runner.py --non-interactive [--registration-window=30] [--interval=60]
+export PYTHONPATH=$PYTHONPATH:$(pwd)
+python3 competition_runner.py        # prompts for rules, then opens registration
 ```
 
-> **Note for Claude / scripted use:** use `--non-interactive` with explicit `--registration-window=N` (seconds) and `--interval=N`. To register teams programmatically during the window, run `register_team.py --team=<name> --password=<pw>` once per team while the listener is open (poll port 40406 with `nc -z 127.0.0.1 40406` until it accepts). Then start `tournament_client.py` processes (they retry automatically until the tournament server opens after the window closes).
+The runner builds the `tournament_server` binary, then opens a registration listener. Once you press Enter to close the window, it loops forever: start server → run qualifying + finals → write JSON to `./results/` → sleep → repeat.
 
-### Competitor
-
+For non-interactive / scripted use:
 ```bash
-# Step 1 — during the registration window, claim your team name and password.
-# The organiser's server address is needed only if they're not on localhost.
-python3 register_team.py [--team=my_team --password=secret] [tournament.config.env]
-
-# Step 2 — start one client per player slot you want to fill, then leave it running.
-# It connects when the first tournament server opens and automatically reconnects
-# for every subsequent tournament — no re-registration needed.
-python3 clients/python/tournament_client.py --player=my_player [--score=N]
+python3 competition_runner.py --non-interactive [--registration-window=30] [--interval=300]
 ```
 
-`register_team.py` saves credentials to `team.config.env` (gitignored); `tournament_client.py` reads them automatically — no `--team`/`--password` flags needed after that. A team with one client registered gets all four of its slots on the same connection. Multiple clients with different `--player` or `--score` values spread across slots.
+### Competitor (run on each team's machine)
 
-See [`server/tournament_server.cpp`](server/tournament_server.cpp) for the full set of config keys and [`clients/python/api/networking/TournamentSession.py`](clients/python/api/networking/TournamentSession.py) for the client-side protocol.
+**Step 1 — register your team** (do this once, while the organiser's registration window is open):
+```bash
+export PYTHONPATH=$PYTHONPATH:$(pwd)
+python3 register_team.py             # prompts for team name + password
+```
+If the server isn't on localhost, pass the organiser's config file:
+```bash
+python3 register_team.py path/to/organisers/tournament.config.env
+```
+This saves credentials to `team.config.env` (gitignored).
+
+**Step 2 — start your player client(s)** (leave running for the whole competition):
+```bash
+python3 clients/python/tournament_client.py --player=my_player
+```
+The client retries until the first tournament server opens, plays, then automatically reconnects for every subsequent tournament. Run multiple clients with different `--player` or `--score` values to fill more slots.
+
+> **Note for Claude / scripted use:** poll `nc -z 127.0.0.1 40406` until it succeeds before running `register_team.py --team=<name> --password=<pw>`. Start `tournament_client.py` processes immediately after — they retry automatically once the server opens.
+
+See [`server/tournament_server.cpp`](server/tournament_server.cpp) for the full set of config keys.
 
 
 ## Use a Player AI in a physical game of hearts
