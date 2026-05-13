@@ -8,7 +8,7 @@ Flow:
   1. competition_runner.py opens a TCP registration listener
   2. register_team.py registers two teams non-interactively
   3. tournament_client.py processes connect for the first tournament
-  4. Tournament 1 runs; result validated (teams present, 2 fillers, all games complete)
+  4. Tournament 1 runs; result validated (teams present, 4 fillers, all games complete)
   5. Real-team clients are killed (simulating a competitor taking their clients down)
   6. Clients are restarted before the second tournament server opens
   7. Tournament 2 runs; result validated the same way
@@ -99,7 +99,7 @@ def validate_result(data: dict, result_dir: Optional[Path], label: str) -> list:
 
     team_names = {k.split('/')[0] for k in qtotals}
     fillers = {t for t in team_names if t.startswith('filler_')}
-    expected_fillers = max(0, 4 - len(TEAMS))
+    expected_fillers = 4  # always 4 fillers regardless of real team count
     if len(fillers) != expected_fillers:
         errors.append(
             f"{label}: expected {expected_fillers} filler team(s), got {len(fillers)}: {fillers}"

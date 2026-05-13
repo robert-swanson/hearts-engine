@@ -338,7 +338,7 @@ def run_competition(cfg: dict, real_teams: Dict[str, str],
     # Filler teams are computed once with stable passwords so their clients
     # can be started once and loop across all tournament cycles, just like
     # real-team clients.
-    filler_count = max(0, 4 - len(real_teams))
+    filler_count = 4  # always 4 fillers so games run even if real teams submit no players
     filler_teams = build_filler_teams(filler_count, max_players, real_teams)
 
     all_teams     = {**real_teams, **filler_teams}
