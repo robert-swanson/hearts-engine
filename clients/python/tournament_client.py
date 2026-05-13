@@ -110,8 +110,8 @@ def main():
                 ts.register()
                 registered = True
                 results = ts.run()
-                print(f"{tag} Done. Played {len(results)} games.")
-                return
+                print(f"{tag} Done. Played {len(results)} games. Waiting for next tournament...")
+                # Loop back — reconnect automatically when the next tournament server opens.
         except ConnectionRefusedError:
             print(f"{tag} Server not yet open; retrying in {retry_interval}s...")
             time.sleep(retry_interval)

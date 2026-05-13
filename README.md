@@ -48,10 +48,10 @@ The repo ships a `competition_runner.py` orchestrator and a separate `tournament
 
 ### How it works
 
-Each tournament cycle has two phases:
+A competition has one registration phase followed by a recurring tournament loop:
 
-1. **Registration window** — `competition_runner.py` opens a TCP listener on the tournament port. Competitors connect via `register_team.py` to claim a team name and password. When the window closes, the runner counts real teams, pads to 4 with filler bots, writes `tournament.config.env`, and starts the server.
-2. **Game window** — the tournament server accepts player connections (`tournament_client.py`). It runs qualifying games (all teams), selects finalists, runs finals, writes JSON results to `./results/`, then exits. The runner sleeps for the configured interval before opening the next registration window.
+1. **Registration** (once) — `competition_runner.py` opens a TCP listener. Competitors connect via `register_team.py` to claim a team name and password. When the organiser closes the window, the runner records all registered teams and enters the loop.
+2. **Tournament loop** — for each cycle: pad registered teams to 4 with filler bots if needed, write `tournament.config.env`, start the tournament server, run qualifying + finals, write JSON results to `./results/`, sleep the configured interval, repeat. Competitor clients (`tournament_client.py`) reconnect automatically for each cycle without re-registering.
 
 ### Organiser (server host)
 
@@ -72,12 +72,13 @@ python3 competition_runner.py --non-interactive [--registration-window=30] [--in
 # The organiser's server address is needed only if they're not on localhost.
 python3 register_team.py [--team=my_team --password=secret] [tournament.config.env]
 
-# Step 2 — start one client per player slot you want to fill.
-# Run this before or after the registration window; it retries until the server is up.
+# Step 2 — start one client per player slot you want to fill, then leave it running.
+# It connects when the first tournament server opens and automatically reconnects
+# for every subsequent tournament — no re-registration needed.
 python3 clients/python/tournament_client.py --player=my_player [--score=N]
 ```
 
-`register_team.py` saves credentials to `team.config.env` (gitignored); `tournament_client.py` reads them automatically — no `--team`/`--password` flags needed after that. A team with one client registered gets all four of its slots on the same connection. Multiple clients can be started with different `--player` or `--score` values to spread across slots.
+`register_team.py` saves credentials to `team.config.env` (gitignored); `tournament_client.py` reads them automatically — no `--team`/`--password` flags needed after that. A team with one client registered gets all four of its slots on the same connection. Multiple clients with different `--player` or `--score` values spread across slots.
 
 See [`server/tournament_server.cpp`](server/tournament_server.cpp) for the full set of config keys and [`clients/python/api/networking/TournamentSession.py`](clients/python/api/networking/TournamentSession.py) for the client-side protocol.
 

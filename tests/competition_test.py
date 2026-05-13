@@ -122,8 +122,8 @@ def main():
     print("Config written. Starting game clients (will retry until tournament server is up)...")
 
     # ── 5. Start game clients ──────────────────────────────────────────────────
-    # These retry automatically until the tournament server opens, then play through
-    # the full game and exit.
+    # These retry until the tournament server opens, play the tournament, then
+    # loop back to reconnect for the next one (clients are long-running now).
     client_procs = []
     for team, pw in TEAMS.items():
         p = subprocess.Popen(

@@ -302,39 +302,29 @@ def configure_rules(non_interactive: bool = False,
 
 # ─── Main loop ────────────────────────────────────────────────────────────────
 
-def run_competition(cfg: dict, config_path: str, available_modules: List[str]):
-    interval         = cfg['interval']
-    registration_window = cfg.get('registration_window')  # None = interactive
-    client_window    = cfg.get('client_window', 30)
-    host             = '127.0.0.1'
-    port             = cfg['port']
-    max_players      = cfg['max_players']
+def run_competition(cfg: dict, real_teams: Dict[str, str],
+                    config_path: str, available_modules: List[str]):
+    interval      = cfg['interval']
+    client_window = cfg.get('client_window', 30)
+    host          = '127.0.0.1'
+    port          = cfg['port']
+    max_players   = cfg['max_players']
 
-    print(f'\n=== Starting competition loop (interval={interval}s) ===')
-    if registration_window is not None:
-        print(f'Registration window: {registration_window}s  |  Client window: {client_window}s')
-    else:
-        print('Registration window: interactive  |  '
-              f'Client window: {client_window}s after organiser confirms')
-    print(f'Registration address: {host}:{port}  (run register_team.py to join)')
+    print(f'\n=== Starting competition loop ===')
+    print(f'Teams: {list(real_teams.keys())}  |  interval={interval}s  |  client_window={client_window}s')
     print()
 
     tournament_num = 0
     while True:
         tournament_num += 1
-        print(f'\n--- Tournament #{tournament_num} registration open ---')
+        print(f'\n--- Tournament #{tournament_num} ---')
 
-        # ── Phase 1: registration listener ──────────────────────────────────
-        real_teams = run_registration_listener(host, port, registration_window)
-        print(f'{len(real_teams)} real team(s) registered: {list(real_teams.keys())}')
-
-        # ── Phase 2: compute fillers and write config ────────────────────────
+        # ── Compute fillers and write config ─────────────────────────────────
         filler_count = max(0, 4 - len(real_teams))
         filler_teams = build_filler_teams(filler_count, max_players, real_teams)
         if filler_teams:
-            print(f'Adding {len(filler_teams)} filler team(s): {list(filler_teams.keys())}')
+            print(f'Filler team(s): {list(filler_teams.keys())}')
 
-        # Adjust qualifying_games to be a multiple of (total_player_slots / 4).
         all_teams     = {**real_teams, **filler_teams}
         total_slots   = len(all_teams) * max_players
         required_mult = total_slots // 4
@@ -346,7 +336,7 @@ def run_competition(cfg: dict, config_path: str, available_modules: List[str]):
 
         write_config(config_path, round_cfg, real_teams, filler_teams)
 
-        # ── Phase 3: start tournament server ────────────────────────────────
+        # ── Start tournament server ───────────────────────────────────────────
         start_at = int(time.time()) + client_window
         server_proc = subprocess.Popen(
             ['./bazel-bin/server/tournament_server', config_path, f'--start-at={start_at}'],
@@ -361,11 +351,11 @@ def run_competition(cfg: dict, config_path: str, available_modules: List[str]):
             except OSError:
                 time.sleep(0.5)
 
-        # ── Phase 4: start filler clients ────────────────────────────────────
+        # ── Start filler clients ──────────────────────────────────────────────
         filler_procs = start_filler_clients(
             filler_teams, max_players, available_modules, config_path, host, port)
 
-        print(f'Tournament server up. Clients have {client_window}s to connect to {host}:{port}')
+        print(f'Tournament server up. Real-team clients have {client_window}s to connect to {host}:{port}')
 
         # Stream server output until it exits.
         for line in server_proc.stdout:
@@ -447,10 +437,34 @@ def main():
         sys.exit(1)
     print('Build successful.\n')
 
+    # ── One-time team registration ─────────────────────────────────────────
+    # Teams register once here; their clients reconnect automatically for each
+    # successive tournament cycle without re-registering.
+
+    host = '127.0.0.1'
+    port = cfg['port']
+    registration_window = cfg.get('registration_window')
+
+    print(f'=== Team Registration ===')
+    print(f'Address: {host}:{port}')
+    if registration_window is not None:
+        print(f'Window: {registration_window}s')
+    else:
+        print('Window: interactive (press Enter to close)')
+    print('Run: python3 register_team.py [--team=<name> --password=<pw>]')
+    print()
+
+    real_teams = run_registration_listener(host, port, registration_window)
+
+    if not real_teams:
+        print('No teams registered — running with filler bots only.')
+    else:
+        print(f'{len(real_teams)} team(s) registered: {list(real_teams.keys())}')
+
     # ── Run competition loop ───────────────────────────────────────────────
 
     config_path = 'tournament.config.env'
-    run_competition(cfg, config_path, available_modules)
+    run_competition(cfg, real_teams, config_path, available_modules)
 
 
 if __name__ == '__main__':
