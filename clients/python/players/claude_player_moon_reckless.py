@@ -3,8 +3,8 @@ claude_player_moon_reckless — ClaudePlayer + very-aggressive moon offense.
 
 Extends ClaudePlayer's defensive heuristic with a moon-shoot offensive
 mode at the lowest practically useful commit thresholds (11/13).
-Compared to claude_player_moon_aggressive (13/15) and expert_player (14/16),
-this player commits to shooting in even more borderline hands.
+Compared to claude_player_moon_aggressive (13/15), this player commits
+to shooting in even more borderline hands.
 
 The trade-off is documented and intentional: this calibration
 outperforms the more moderate variants in strong-field play (where

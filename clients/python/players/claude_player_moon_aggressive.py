@@ -8,15 +8,15 @@ mode. When the dealt hand has high moon-potential (threshold 13 pre-pass
   - Tries to take every points-trick until the round ends (success) or
     a points-trick goes to another player (abort, revert to defense)
 
-Compared to expert_player (which uses 14/16): more aggressive moon
-commits, so it attempts moon shoots in more borderline hands.
 Compared to claude_player: same defense, but adds the offensive mode.
+The 13/15 commit thresholds are tuned to engage in genuinely
+moon-shootable hands without firing on marginal ones.
 
 Paired-CRN benches (full S_4 seating permutation, 2400 games × 2
 independent deal seeds) confirm this calibration outperforms
-claude_player by ~+3 pts/game in Panel B (strong field), with no
-regression vs weak/duck-style opponents in Panel A. Wilcoxon-style
-paired t-stats: +2.91 and +3.33 (p < 0.005 / p < 0.001).
+claude_player by ~+3 pts/game in mixed strong fields, with no
+regression vs weak/duck-style opponents in mixed weak fields.
+Paired t-stats: +2.91 and +3.33 (p < 0.005 / p < 0.001).
 
 Authored by Tim Swanson during the 2026-05 rebuild iteration.
 """
