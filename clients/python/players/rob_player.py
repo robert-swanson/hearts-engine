@@ -1,6 +1,10 @@
+import sys
 import threading
 import time
+from pathlib import Path
 from typing import List, Dict, Optional
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from clients.python.api import Game
 from clients.python.api.Trick import Trick

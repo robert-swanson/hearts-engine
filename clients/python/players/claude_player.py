@@ -9,7 +9,11 @@ Strategy:
               dump most dangerous card when points are at stake
   - Moon blocking: block if one opponent has sole possession of points above threshold
 """
+import sys
+from pathlib import Path
 from typing import List, Dict, Optional
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from clients.python.api.Game import Game
 from clients.python.api.Trick import Trick

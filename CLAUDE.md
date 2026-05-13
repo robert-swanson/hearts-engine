@@ -17,7 +17,6 @@ bazel test --cxxopt=-std=c++17 --features=external_include_paths //tests:all  # 
 
 **Python clients:**
 ```bash
-export PYTHONPATH=$PYTHONPATH:$(pwd)
 python3 clients/python/players/random_player.py                    # run a player against the live server
 python3 competition_runner.py --non-interactive                    # orchestrate a local tournament end-to-end
 ```

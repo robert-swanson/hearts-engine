@@ -52,6 +52,8 @@ elif TEAM_ENV.exists():
 else:
     sys.argv.insert(1, './local.config.env')
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
 from clients.python.api.Player import Player
 from clients.python.api.networking.ManagedConnection import ManagedConnection
 from clients.python.api.networking.TournamentSession import TournamentSession

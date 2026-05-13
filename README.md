@@ -18,10 +18,7 @@ Each of the four players are controlled by a client which communicates its moves
 2. Edit `config.env` (or `local.config.env`) so `SERVER_ADDR` and `SERVER_PORT` point to the server you want to play against.
    The Python client reads `./config.env` by default; pass a different file as the first positional arg to use it instead, e.g.
    `python3 clients/python/players/random_player.py local.config.env`
-3. Add the project directory to your PYTHONPATH
-   * `export PYTHONPATH=$PYTHONPATH:$(pwd)`
-   * or if you don't want to do that each time `echo "export PYTHONPATH=\$PYTHONPATH:$(pwd)" >> ~/.bashrc`
-4. `python3 clients/python/players/random_player.py`
+3. `python3 clients/python/players/random_player.py`
    ```txt
    Connected to hearts.radiswanson.org:40405
    Scores:
@@ -49,7 +46,6 @@ The repo ships a `competition_runner.py` orchestrator and a separate `tournament
 ### Organiser (run on the server host)
 
 ```bash
-export PYTHONPATH=$PYTHONPATH:$(pwd)
 python3 competition_runner.py        # prompts for rules, then opens registration
 ```
 
@@ -64,7 +60,6 @@ python3 competition_runner.py --non-interactive [--registration-window=30] [--in
 
 **Step 1 — register your team** (do this once, while the organiser's registration window is open):
 ```bash
-export PYTHONPATH=$PYTHONPATH:$(pwd)
 python3 register_team.py             # prompts for team name + password
 ```
 If the server isn't on localhost, pass the organiser's config file:
