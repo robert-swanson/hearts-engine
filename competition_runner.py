@@ -219,7 +219,7 @@ def run_registration_listener(host: str, port: int,
         print(f'  Window closes automatically in {registration_window}s...')
         time.sleep(registration_window)
     else:
-        input('  Press Enter when all teams have registered...')
+        input('  Press Enter when all teams have registered...\n')
 
     stop_event.set()
     t.join(timeout=2)
