@@ -15,7 +15,9 @@ It includes
 Each of the four players are controlled by a client which communicates its moves to the server. The server will then relay the moves to the other clients.
 
 1. After cloning the repository, `cd hearts-engine`
-2. `vi config.env` and make sure SERVER_PORT and SERVER_ADDR are pointing to a known server
+2. Edit `config.env` (or `local.config.env`) so `SERVER_ADDR` and `SERVER_PORT` point to the server you want to play against.
+   The Python client reads `./config.env` by default; pass a different file as the first positional arg to use it instead, e.g.
+   `python3 clients/python/players/random_player.py local.config.env`
 3. Add the project directory to your PYTHONPATH
    * `export PYTHONPATH=$PYTHONPATH:$(pwd)`
    * or if you don't want to do that each time `echo "export PYTHONPATH=\$PYTHONPATH:$(pwd)" >> ~/.bashrc`
@@ -37,7 +39,47 @@ If you wish to run a local instance of the game server do the following:
 
 1. `cd hearts-engine`
 2. Install Bazel 9+ (if not already installed): `scripts/install_bazel.sh`
-3. Build and run the server: `bazel run //server:server`
+3. Build and run the server: `bazel run //server:server -- "$(pwd)/config.env"`
+
+
+## Running a competition
+
+The repo ships a `competition_runner.py` orchestrator and a separate `tournament_server` binary for running recurring, two-stage (qualifying + finals) competitions.
+
+### How it works
+
+Each tournament cycle has two phases:
+
+1. **Registration window** — `competition_runner.py` opens a TCP listener on the tournament port. Competitors connect via `register_team.py` to claim a team name and password. When the window closes, the runner counts real teams, pads to 4 with filler bots, writes `tournament.config.env`, and starts the server.
+2. **Game window** — the tournament server accepts player connections (`tournament_client.py`). It runs qualifying games (all teams), selects finalists, runs finals, writes JSON results to `./results/`, then exits. The runner sleeps for the configured interval before opening the next registration window.
+
+### Organiser (server host)
+
+```bash
+# Interactive — prompts for port, game counts, registration window duration, etc.
+python3 competition_runner.py
+
+# Non-interactive — built-in defaults, useful for smoke-testing or scripted runs
+python3 competition_runner.py --non-interactive [--registration-window=30] [--interval=60]
+```
+
+> **Note for Claude / scripted use:** use `--non-interactive` with explicit `--registration-window=N` (seconds) and `--interval=N`. To register teams programmatically during the window, run `register_team.py --team=<name> --password=<pw>` once per team while the listener is open (poll port 40406 with `nc -z 127.0.0.1 40406` until it accepts). Then start `tournament_client.py` processes (they retry automatically until the tournament server opens after the window closes).
+
+### Competitor
+
+```bash
+# Step 1 — during the registration window, claim your team name and password.
+# The organiser's server address is needed only if they're not on localhost.
+python3 register_team.py [--team=my_team --password=secret] [tournament.config.env]
+
+# Step 2 — start one client per player slot you want to fill.
+# Run this before or after the registration window; it retries until the server is up.
+python3 clients/python/tournament_client.py --player=my_player [--score=N]
+```
+
+`register_team.py` saves credentials to `team.config.env` (gitignored); `tournament_client.py` reads them automatically — no `--team`/`--password` flags needed after that. A team with one client registered gets all four of its slots on the same connection. Multiple clients can be started with different `--player` or `--score` values to spread across slots.
+
+See [`server/tournament_server.cpp`](server/tournament_server.cpp) for the full set of config keys and [`clients/python/api/networking/TournamentSession.py`](clients/python/api/networking/TournamentSession.py) for the client-side protocol.
 
 
 ## Use a Player AI in a physical game of hearts

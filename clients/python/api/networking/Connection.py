@@ -21,9 +21,9 @@ class Connection:
         self.port = port
         self.client_socket = socket(AF_INET, SOCK_STREAM)
         try:
-            self.client_socket.connect((SERVER_IP, SERVER_PORT))
+            self.client_socket.connect((self.host, self.port))
         except ConnectionRefusedError as e:
-            print(f"Failed to connect to {SERVER_IP}:{SERVER_PORT}, is the server running?")
+            print(f"Failed to connect to {self.host}:{self.port}, is the server running?")
             raise e
 
         self.client_socket.settimeout(connection_micro_timeout_s)
@@ -34,7 +34,7 @@ class Connection:
         self.logger = ConnectionLogger() if LOG_CONNECTIONS else None
 
         self.setup()
-        print(f"Connected to {SERVER_IP}:{SERVER_PORT}")
+        print(f"Connected to {self.host}:{self.port}")
 
     def receive(self) -> json:
         if len(self.pending_messages) == 0:

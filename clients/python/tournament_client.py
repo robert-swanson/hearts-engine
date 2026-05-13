@@ -18,6 +18,7 @@ import argparse
 import importlib
 import inspect
 import sys
+import time
 from pathlib import Path
 
 TEAM_ENV = Path('team.config.env')
@@ -54,7 +55,7 @@ else:
 from clients.python.api.Player import Player
 from clients.python.api.networking.ManagedConnection import ManagedConnection
 from clients.python.api.networking.TournamentSession import TournamentSession
-from clients.python.util.Env import SERVER_IP, SERVER_PORT
+from clients.python.util.Env import SERVER_IP, TOURNAMENT_PORT
 
 
 def discover_player(module_name: str):
@@ -88,14 +89,38 @@ def main():
         parser.error('--password is required (or run register_team.py to create team.config.env)')
 
     player_cls = discover_player(args.player)
+    tag = f"[{args.team}/{player_cls.player_tag}]"
 
-    print(f"[{args.team}/{player_cls.player_tag}] Connecting to {SERVER_IP}:{SERVER_PORT}...")
-    with ManagedConnection(SERVER_IP, SERVER_PORT, timeout_s=600) as conn:
-        ts = TournamentSession(conn, args.team, args.password, player_cls,
-                               priority_score=args.score)
-        ts.register()
-        results = ts.run()
-        print(f"[{args.team}/{player_cls.player_tag}] Done. Played {len(results)} games.")
+    # Retry until the tournament server accepts this team's registration.
+    # Transient failures:
+    #   ConnectionRefusedError — server not up yet (between tournaments or before start)
+    #   Exception before connected=True — hit the registration listener (wrong protocol)
+    #   Exception before registered=True — auth rejected (team not in this round's config);
+    #     retry so we catch the next round once register_team.py has been run.
+    retry_interval = 5
+    while True:
+        print(f"{tag} Connecting to {SERVER_IP}:{TOURNAMENT_PORT}...")
+        connected = False
+        registered = False
+        try:
+            with ManagedConnection(SERVER_IP, TOURNAMENT_PORT, timeout_s=600) as conn:
+                connected = True
+                ts = TournamentSession(conn, args.team, args.password, player_cls,
+                                       priority_score=args.score)
+                ts.register()
+                registered = True
+                results = ts.run()
+                print(f"{tag} Done. Played {len(results)} games.")
+                return
+        except ConnectionRefusedError:
+            print(f"{tag} Server not yet open; retrying in {retry_interval}s...")
+            time.sleep(retry_interval)
+        except Exception as e:
+            if not registered:
+                print(f"{tag} Not registered for this round ({type(e).__name__}); retrying in {retry_interval}s...")
+                time.sleep(retry_interval)
+            else:
+                raise
 
 
 if __name__ == '__main__':

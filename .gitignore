@@ -45,7 +45,13 @@ CMakeFiles/
 externals/
 log/
 versions/
-config.env
+results/
+results_ci/
+
+# Per-user / generated configs (do NOT commit credentials)
+team.config.env
+tournament.config.env
+tournament_ci.config.env
 
 # Bazel (entries listed without trailing slash to also match symlinks Bazel creates)
 bazel-bin

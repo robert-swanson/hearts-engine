@@ -40,14 +40,13 @@ int main(int argc, char **argv)
         }
         catch (boost::system::system_error &e)
         {
-            if (std::string(e.what()).find("Broken pipe") != std::string::npos)
-            {
+            auto code = e.code().value();
+            if (e.code() == boost::asio::error::connection_aborted || code == EINVAL)
+                LOG("Client aborted connection before accept completed");
+            else if (std::string(e.what()).find("Broken pipe") != std::string::npos)
                 LOG("Client broke the pipe while connecting");
-            }
             else
-            {
                 LOG("Error: %s", e.what());
-            }
         }
     }
 

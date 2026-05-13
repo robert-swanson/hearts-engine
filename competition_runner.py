@@ -3,13 +3,15 @@
 competition_runner.py — configure and run a recurring Hearts tournament competition.
 
 Steps:
-  1. Configure rules interactively (or via --config flag for non-interactive mode)
-  2. Register teams (name + password)
-  3. Add filler teams if <4 teams registered
-  4. Write tournament.config.env
-  5. Loop: build tournament server binary, start filler clients,
-           start registered-team clients (if --auto-clients),
-           run tournament_server, wait for exit, repeat after interval
+  1. Configure rules interactively (or use --non-interactive for testing)
+  2. Build tournament_server binary
+  3. Loop:
+       a. Open a registration listener — teams connect and register (name + password)
+       b. When the window closes (timeout or organiser confirms): compute how many
+          filler teams are needed to reach 4 total, write tournament.config.env
+       c. Start tournament_server and filler bot clients
+       d. Tournament runs; results written to ./results/
+       e. Sleep interval, repeat
 """
 
 import argparse
@@ -17,15 +19,18 @@ import atexit
 import glob
 import importlib
 import inspect
+import json
 import os
 import random
 import secrets
 import signal
+import socket as _socket
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 # ─── Single-instance guard ────────────────────────────────────────────────────
 
@@ -95,9 +100,8 @@ def discover_player_class(module_name: str):
 
 # ─── Config writing ───────────────────────────────────────────────────────────
 
-def write_config(path: str, cfg: dict, teams: Dict[str, str],
-                  filler_teams: Dict[str, str]):
-    """Write tournament.config.env."""
+def write_config(path: str, cfg: dict, teams: Dict[str, str], filler_teams: Dict[str, str]):
+    """Write tournament.config.env with the full TEAMS list."""
     all_teams = {**teams, **filler_teams}
     teams_str = ','.join(f'{n}:{p}' for n, p in all_teams.items())
     with open(path, 'w') as f:
@@ -131,6 +135,99 @@ def build_filler_teams(count: int, max_players: int,
     return filler
 
 
+def run_registration_listener(host: str, port: int,
+                               registration_window: Optional[int]) -> Dict[str, str]:
+    """
+    Open a TCP listener and collect team registrations until the window closes.
+
+    Clients (register_team.py) connect and send one JSON line:
+        {"type": "register", "team": "<name>", "password": "<pw>"}
+    Server responds with:
+        {"status": "ok"} or {"status": "error", "message": "..."}
+
+    If registration_window is None, waits for the organiser to press Enter.
+    Returns {team_name: password} for all successfully registered teams.
+    """
+    teams: Dict[str, str] = {}
+    teams_lock = threading.Lock()
+    stop_event = threading.Event()
+
+    def handle_client(conn: _socket.socket):
+        try:
+            conn.settimeout(10)
+            data = b''
+            while b'\n' not in data:
+                chunk = conn.recv(1024)
+                if not chunk:
+                    break
+                data += chunk
+            msg = json.loads(data.decode().strip())
+            msg_type = msg.get('type', '')
+
+            if msg_type == 'connection_request':
+                # tournament_client.py connecting early — tell it registration isn't done.
+                # Respond with valid JSON containing 'type' so Connection.setup() can parse
+                # it, but with a non-"success" status so it knows to retry later.
+                resp = {'type': 'connection_response', 'status': 'registration_window_open'}
+                conn.sendall((json.dumps(resp) + '\n').encode())
+                return
+
+            team     = msg.get('team', '').strip()
+            password = msg.get('password', '').strip()
+            if not team or not password:
+                resp = {'status': 'error', 'message': 'team and password are required'}
+            else:
+                with teams_lock:
+                    if team in teams and teams[team] != password:
+                        resp = {'status': 'error',
+                                'message': f"Team '{team}' already registered with a different password"}
+                    else:
+                        is_new = team not in teams
+                        teams[team] = password
+                        if is_new:
+                            print(f"  Registered: '{team}' ({len(teams)} team(s) so far)")
+                        resp = {'status': 'ok'}
+            conn.sendall((json.dumps(resp) + '\n').encode())
+        except Exception as e:
+            try:
+                conn.sendall((json.dumps({'status': 'error', 'message': str(e)}) + '\n').encode())
+            except Exception:
+                pass
+        finally:
+            conn.close()
+
+    def listener():
+        srv = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+        srv.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
+        srv.bind((host, port))
+        srv.listen(10)
+        srv.settimeout(0.5)
+        while not stop_event.is_set():
+            try:
+                conn, _ = srv.accept()
+                threading.Thread(target=handle_client, args=(conn,), daemon=True).start()
+            except _socket.timeout:
+                continue
+            except Exception:
+                break
+        srv.close()
+
+    t = threading.Thread(target=listener, daemon=True)
+    t.start()
+
+    if registration_window is not None:
+        print(f'  Window closes automatically in {registration_window}s...')
+        time.sleep(registration_window)
+    else:
+        input('  Press Enter when all teams have registered...')
+
+    stop_event.set()
+    t.join(timeout=2)
+
+    with teams_lock:
+        return dict(teams)
+
+
 def start_filler_clients(filler_teams: Dict[str, str], max_players: int,
                           available_modules: List[str], config_path: str,
                           host: str, port: int) -> List[subprocess.Popen]:
@@ -158,29 +255,6 @@ def start_filler_clients(filler_teams: Dict[str, str], max_players: int,
     return procs
 
 
-def start_registered_clients(teams_clients: Dict[str, List[Tuple[str, int]]],
-                               team_passwords: Dict[str, str],
-                               config_path: str) -> List[subprocess.Popen]:
-    """Start client processes for registered teams (for auto-client mode)."""
-    procs = []
-    for team_name, player_specs in teams_clients.items():
-        password = team_passwords[team_name]
-        for module, score in player_specs:
-            cmd = [
-                sys.executable, 'clients/python/tournament_client.py',
-                f'--team={team_name}',
-                f'--password={password}',
-                f'--player={module}',
-                f'--score={score}',
-                config_path
-            ]
-            env = {**os.environ, 'PYTHONPATH': os.getcwd()}
-            proc = subprocess.Popen(cmd, env=env)
-            procs.append(proc)
-            _child_procs.append(proc)
-            print(f"  Started client: {team_name}/{module} (score={score})")
-    return procs
-
 
 # ─── Interactive setup ────────────────────────────────────────────────────────
 
@@ -190,7 +264,9 @@ def prompt(msg: str, default=None):
     return val if val else default
 
 
-def configure_rules(non_interactive: bool = False) -> dict:
+def configure_rules(non_interactive: bool = False,
+                    registration_window: Optional[int] = None,
+                    interval: Optional[int] = None) -> dict:
     if non_interactive:
         return {
             'port': 40406,
@@ -199,7 +275,9 @@ def configure_rules(non_interactive: bool = False) -> dict:
             'max_players': 4,
             'qualifying_points': '10,5,3,1',
             'multi_team_finals': False,
-            'interval': 30,
+            'registration_window': registration_window if registration_window is not None else 30,
+            'client_window': 20,   # seconds the tournament server waits for game clients to connect
+            'interval': interval if interval is not None else 30,
             'results_dir': './results',
             'log_dir': './log',
             'auto_move_after_timeouts': 2,
@@ -213,91 +291,69 @@ def configure_rules(non_interactive: bool = False) -> dict:
         'max_players':        int(prompt('Max players per team (multiple of 4)', 4)),
         'qualifying_points':  prompt('Qualifying points (1st,2nd,3rd,4th)', '10,5,3,1'),
         'multi_team_finals':  prompt('Allow multiple players from same team in finals? (y/n)', 'n').lower() == 'y',
-        'interval':           int(prompt('Tournament interval seconds', 300)),
+        'registration_window': registration_window,  # None = wait for organiser signal
+        'client_window':      30,
+        'interval':           interval if interval is not None else int(prompt('Tournament interval seconds', 300)),
         'results_dir':        prompt('Results directory', './results'),
         'log_dir':            prompt('Log directory', './log'),
         'auto_move_after_timeouts': int(prompt('Auto-move after N consecutive timeouts (0=never)', 2)),
     }
 
 
-def register_teams(non_interactive: bool = False,
-                    preset: Optional[Dict] = None) -> Tuple[Dict[str, str], Dict[str, List[Tuple[str, int]]]]:
-    """
-    Returns:
-      teams:        {name: password}
-      team_clients: {name: [(module, score), ...]} for auto-client mode
-    """
-    if non_interactive and preset:
-        return preset['teams'], preset.get('team_clients', {})
-
-    print('\n=== Team Registration ===')
-    print("Enter team registrations. Type 'done' when all teams have registered.\n")
-    teams: Dict[str, str] = {}
-    team_clients: Dict[str, List[Tuple[str, int]]] = {}
-    available = discover_player_modules()
-
-    while True:
-        name = prompt("Team name (or 'done')").strip()
-        if name.lower() == 'done':
-            break
-        if not name:
-            continue
-        if name in teams:
-            print(f"  Team '{name}' already registered.")
-            continue
-        password = prompt(f"Password for '{name}'")
-        teams[name] = password
-
-        auto = prompt(f"Auto-start clients for '{name}'? (y/n)", 'n').lower() == 'y'
-        if auto:
-            print(f"  Available players: {', '.join(available)}")
-            specs = []
-            num = int(prompt('  How many client processes', 1))
-            for i in range(num):
-                mod   = prompt(f'  Client {i+1} player module', available[0])
-                score = int(prompt(f'  Client {i+1} priority score', i + 1))
-                specs.append((mod, score))
-            team_clients[name] = specs
-
-        print(f"  Team '{name}' registered.")
-
-    return teams, team_clients
-
-
 # ─── Main loop ────────────────────────────────────────────────────────────────
 
-def run_competition(cfg: dict, teams: Dict[str, str],
-                     team_clients: Dict[str, List[Tuple[str, int]]],
-                     filler_teams: Dict[str, str],
-                     config_path: str,
-                     available_modules: List[str]):
-    interval = cfg['interval']
-    host = '127.0.0.1'
-    port = cfg['port']
+def run_competition(cfg: dict, config_path: str, available_modules: List[str]):
+    interval         = cfg['interval']
+    registration_window = cfg.get('registration_window')  # None = interactive
+    client_window    = cfg.get('client_window', 30)
+    host             = '127.0.0.1'
+    port             = cfg['port']
+    max_players      = cfg['max_players']
 
     print(f'\n=== Starting competition loop (interval={interval}s) ===')
-    print(f'Tournament server will listen on {host}:{port}')
-    print(f'Teams can connect their clients at any time before tournament start.\n')
+    if registration_window is not None:
+        print(f'Registration window: {registration_window}s  |  Client window: {client_window}s')
+    else:
+        print('Registration window: interactive  |  '
+              f'Client window: {client_window}s after organiser confirms')
+    print(f'Registration address: {host}:{port}  (run register_team.py to join)')
+    print()
 
     tournament_num = 0
     while True:
         tournament_num += 1
-        start_at = int(time.time()) + interval
-        print(f'\n--- Tournament #{tournament_num} ---')
-        print(f'Start at: {time.strftime("%H:%M:%S", time.localtime(start_at))} '
-              f'(in {interval}s)')
+        print(f'\n--- Tournament #{tournament_num} registration open ---')
 
-        # Start tournament server first, then wait for it to be listening before
-        # spawning clients (otherwise clients get "Connection refused").
+        # ── Phase 1: registration listener ──────────────────────────────────
+        real_teams = run_registration_listener(host, port, registration_window)
+        print(f'{len(real_teams)} real team(s) registered: {list(real_teams.keys())}')
+
+        # ── Phase 2: compute fillers and write config ────────────────────────
+        filler_count = max(0, 4 - len(real_teams))
+        filler_teams = build_filler_teams(filler_count, max_players, real_teams)
+        if filler_teams:
+            print(f'Adding {len(filler_teams)} filler team(s): {list(filler_teams.keys())}')
+
+        # Adjust qualifying_games to be a multiple of (total_player_slots / 4).
+        all_teams     = {**real_teams, **filler_teams}
+        total_slots   = len(all_teams) * max_players
+        required_mult = total_slots // 4
+        q = cfg['qualifying_games']
+        if required_mult > 0 and q % required_mult != 0:
+            q = ((q // required_mult) + 1) * required_mult
+            print(f'qualifying_games adjusted to {q} (multiple of {required_mult})')
+        round_cfg = {**cfg, 'qualifying_games': q}
+
+        write_config(config_path, round_cfg, real_teams, filler_teams)
+
+        # ── Phase 3: start tournament server ────────────────────────────────
+        start_at = int(time.time()) + client_window
         server_proc = subprocess.Popen(
-            ['./bazel-bin/server/tournament_server',
-             config_path,
-             f'--start-at={start_at}'],
+            ['./bazel-bin/server/tournament_server', config_path, f'--start-at={start_at}'],
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         _child_procs.append(server_proc)
 
-        # Wait for the server port to be accepting connections (up to 10s).
-        import socket as _socket
+        # Wait for the server port to be listening (up to 10s).
         for _ in range(20):
             try:
                 with _socket.create_connection((host, port), timeout=0.5):
@@ -305,36 +361,31 @@ def run_competition(cfg: dict, teams: Dict[str, str],
             except OSError:
                 time.sleep(0.5)
 
-        # Start filler clients
+        # ── Phase 4: start filler clients ────────────────────────────────────
         filler_procs = start_filler_clients(
-            filler_teams, cfg['max_players'], available_modules, config_path, host, port)
+            filler_teams, max_players, available_modules, config_path, host, port)
 
-        # Start auto-managed registered team clients
-        reg_procs = start_registered_clients(team_clients, teams, config_path)
+        print(f'Tournament server up. Clients have {client_window}s to connect to {host}:{port}')
 
-        print(f'\nRegistration window open. Clients can connect to {host}:{port}')
-        print(f'Tournament starts in {interval}s...\n')
-
-        # Stream server output
+        # Stream server output until it exits.
         for line in server_proc.stdout:
             print(f'  [server] {line}', end='')
 
         server_proc.wait()
 
-        # Clean up client processes
-        for p in filler_procs + reg_procs + [server_proc]:
-            p.terminate()
+        # Clean up.
+        for p in filler_procs + [server_proc]:
+            try: p.terminate()
+            except Exception: pass
             try: p.wait(timeout=5)
             except subprocess.TimeoutExpired: p.kill()
-
-        # Prune dead entries from the global child list
         _child_procs[:] = [p for p in _child_procs if p.poll() is None]
 
         if server_proc.returncode != 0:
             print(f'WARNING: tournament server exited with code {server_proc.returncode}')
 
         print(f'Tournament #{tournament_num} finished. Next in {interval}s.')
-        time.sleep(max(0, interval - (time.time() - start_at)))
+        time.sleep(interval)
 
 
 # ─── Entry point ─────────────────────────────────────────────────────────────
@@ -342,7 +393,13 @@ def run_competition(cfg: dict, teams: Dict[str, str],
 def main():
     parser = argparse.ArgumentParser(description='Hearts competition runner')
     parser.add_argument('--non-interactive', action='store_true',
-                        help='Use defaults for testing (3 auto-registered teams)')
+                        help='Use built-in defaults; skip all interactive prompts')
+    parser.add_argument('--registration-window', type=int, default=None, metavar='SECONDS',
+                        help='Seconds to accept team registrations before the tournament starts '
+                             '(default: 30 non-interactive, interactive prompt otherwise)')
+    parser.add_argument('--interval', type=int, default=None, metavar='SECONDS',
+                        help='Seconds between successive tournaments (default: 30 non-interactive, '
+                             'prompts otherwise)')
     args = parser.parse_args()
 
     non_interactive = args.non_interactive
@@ -363,25 +420,11 @@ def main():
 
     # ── Configure ──────────────────────────────────────────────────────────
 
-    if non_interactive:
-        # Pre-built test scenario: 3 teams with 1 client each using different players
-        cfg = configure_rules(non_interactive=True)
-        preset = {
-            'teams': {'alpha': 'alpha123', 'beta': 'beta456', 'gamma': 'gamma789'},
-            'team_clients': {
-                'alpha': [(available_modules[0], 1)],
-                'beta':  [(available_modules[min(1, len(available_modules)-1)], 1)],
-                'gamma': [(available_modules[min(2, len(available_modules)-1)], 1)],
-            }
-        }
-        teams, team_clients = register_teams(non_interactive=True, preset=preset)
-    else:
-        cfg = configure_rules()
-        teams, team_clients = register_teams()
-
-    if not teams:
-        print('No teams registered. Exiting.')
-        sys.exit(1)
+    cfg = configure_rules(
+        non_interactive=non_interactive,
+        registration_window=args.registration_window,
+        interval=args.interval,
+    )
 
     # ── Validate max_players ───────────────────────────────────────────────
 
@@ -390,28 +433,6 @@ def main():
         max_players = ((max_players // 4) + 1) * 4
         cfg['max_players'] = max_players
         print(f'max_players rounded up to {max_players} (must be multiple of 4)')
-
-    # ── Add filler teams ───────────────────────────────────────────────────
-
-    num_real = len(teams)
-    filler_count = max(0, 4 - num_real)
-    filler_teams = build_filler_teams(filler_count, max_players, teams)
-    if filler_teams:
-        print(f'\nAdding {len(filler_teams)} filler team(s): {list(filler_teams.keys())}')
-
-    total_teams = num_real + len(filler_teams)
-    total_players = total_teams * max_players
-    required_multiple = total_players // 4
-    q = cfg['qualifying_games']
-    if q % required_multiple != 0:
-        q = ((q // required_multiple) + 1) * required_multiple
-        cfg['qualifying_games'] = q
-        print(f'qualifying_games adjusted to {q} (multiple of {required_multiple})')
-
-    # ── Write config ───────────────────────────────────────────────────────
-
-    config_path = 'tournament.config.env'
-    write_config(config_path, cfg, teams, filler_teams)
 
     # ── Build server ───────────────────────────────────────────────────────
 
@@ -428,7 +449,8 @@ def main():
 
     # ── Run competition loop ───────────────────────────────────────────────
 
-    run_competition(cfg, teams, team_clients, filler_teams, config_path, available_modules)
+    config_path = 'tournament.config.env'
+    run_competition(cfg, config_path, available_modules)
 
 
 if __name__ == '__main__':

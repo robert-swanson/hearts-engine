@@ -92,7 +92,7 @@ if __name__ == '__main__':
     games_won = 0
     start_time = time.time()
 
-    with ManagedConnection("rob_player") as connection:
+    with ManagedConnection() as connection:
         games = RunMultipleGames(connection, GameType.ANY, players, 100)
         for game_result in games:
             if "rob_player" in str(game_result[0].winner):

@@ -744,7 +744,7 @@ int main(int argc, char** argv)
     std::vector<std::thread> listenerThreads; // kept joinable so we can clean up cleanly
     std::mutex connMtx;
 
-    // Accept connections until start_at
+    // Accept connections until start_at.
     std::thread acceptThread([&]() {
         while (true)
         {
@@ -774,17 +774,16 @@ int main(int argc, char** argv)
         }
     });
 
-    // Wait until start_at
+    // Wait until start_at.
     {
         int64_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
         if (now < startAt)
         {
-            LOG("Waiting %lld seconds for tournament start...", startAt - now);
+            LOG("Waiting %lld seconds for clients to connect...", startAt - now);
             std::this_thread::sleep_for(std::chrono::seconds(startAt - now));
         }
     }
     // Close the acceptor to unblock any pending synchronous accept() in the thread.
-    // ioContext.stop() alone does not interrupt synchronous ASIO calls.
     try { acceptor.close(); } catch (...) {}
     ioContext.stop();
     acceptThread.join();
