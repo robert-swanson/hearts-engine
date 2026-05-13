@@ -310,8 +310,34 @@ def run_competition(cfg: dict, real_teams: Dict[str, str],
     port          = cfg['port']
     max_players   = cfg['max_players']
 
+    # Filler teams are computed once with stable passwords so their clients
+    # can be started once and loop across all tournament cycles, just like
+    # real-team clients.
+    filler_count = max(0, 4 - len(real_teams))
+    filler_teams = build_filler_teams(filler_count, max_players, real_teams)
+
+    all_teams     = {**real_teams, **filler_teams}
+    total_slots   = len(all_teams) * max_players
+    required_mult = total_slots // 4
+    q = cfg['qualifying_games']
+    if required_mult > 0 and q % required_mult != 0:
+        q = ((q // required_mult) + 1) * required_mult
+        print(f'qualifying_games adjusted to {q} (multiple of {required_mult})')
+    round_cfg = {**cfg, 'qualifying_games': q}
+
+    # Write config before starting filler clients so they can read server address.
+    write_config(config_path, round_cfg, real_teams, filler_teams)
+
+    # Start filler clients once — they loop automatically across all tournament
+    # cycles using the same retry mechanism as real-team clients.
+    filler_procs = start_filler_clients(
+        filler_teams, max_players, available_modules, config_path, host, port)
+
     print(f'\n=== Starting competition loop ===')
-    print(f'Teams: {list(real_teams.keys())}  |  interval={interval}s  |  client_window={client_window}s')
+    print(f'Teams: {list(real_teams.keys())}')
+    if filler_teams:
+        print(f'Fillers: {list(filler_teams.keys())} (stable across all tournaments)')
+    print(f'interval={interval}s  |  client_window={client_window}s')
     print()
 
     tournament_num = 0
@@ -319,24 +345,10 @@ def run_competition(cfg: dict, real_teams: Dict[str, str],
         tournament_num += 1
         print(f'\n--- Tournament #{tournament_num} ---')
 
-        # ── Compute fillers and write config ─────────────────────────────────
-        filler_count = max(0, 4 - len(real_teams))
-        filler_teams = build_filler_teams(filler_count, max_players, real_teams)
-        if filler_teams:
-            print(f'Filler team(s): {list(filler_teams.keys())}')
-
-        all_teams     = {**real_teams, **filler_teams}
-        total_slots   = len(all_teams) * max_players
-        required_mult = total_slots // 4
-        q = cfg['qualifying_games']
-        if required_mult > 0 and q % required_mult != 0:
-            q = ((q // required_mult) + 1) * required_mult
-            print(f'qualifying_games adjusted to {q} (multiple of {required_mult})')
-        round_cfg = {**cfg, 'qualifying_games': q}
-
+        # Re-write config each cycle (content is stable; ensures it's current on disk).
         write_config(config_path, round_cfg, real_teams, filler_teams)
 
-        # ── Start tournament server ───────────────────────────────────────────
+        # Start tournament server.
         start_at = int(time.time()) + client_window
         server_proc = subprocess.Popen(
             ['./bazel-bin/server/tournament_server', config_path, f'--start-at={start_at}'],
@@ -351,11 +363,7 @@ def run_competition(cfg: dict, real_teams: Dict[str, str],
             except OSError:
                 time.sleep(0.5)
 
-        # ── Start filler clients ──────────────────────────────────────────────
-        filler_procs = start_filler_clients(
-            filler_teams, max_players, available_modules, config_path, host, port)
-
-        print(f'Tournament server up. Real-team clients have {client_window}s to connect to {host}:{port}')
+        print(f'Tournament server up. Clients have {client_window}s to connect to {host}:{port}')
 
         # Stream server output until it exits.
         for line in server_proc.stdout:
@@ -363,12 +371,11 @@ def run_competition(cfg: dict, real_teams: Dict[str, str],
 
         server_proc.wait()
 
-        # Clean up.
-        for p in filler_procs + [server_proc]:
-            try: p.terminate()
-            except Exception: pass
-            try: p.wait(timeout=5)
-            except subprocess.TimeoutExpired: p.kill()
+        # Clean up server only — filler clients keep running and reconnect next cycle.
+        try: server_proc.terminate()
+        except Exception: pass
+        try: server_proc.wait(timeout=5)
+        except subprocess.TimeoutExpired: server_proc.kill()
         _child_procs[:] = [p for p in _child_procs if p.poll() is None]
 
         if server_proc.returncode != 0:

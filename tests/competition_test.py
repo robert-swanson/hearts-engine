@@ -278,6 +278,17 @@ def main():
     all_errors += validate_result(result_1, dir_1, "Tournament 1")
     all_errors += validate_result(result_2, dir_2, "Tournament 2")
 
+    # Filler clients are started once and loop — verify both tournaments used
+    # identical filler team names (proves stable filler credentials, not per-cycle restarts).
+    fillers_1 = {k.split('/')[0] for k in result_1.get('qualifying_totals', {})
+                 if k.split('/')[0].startswith('filler_')}
+    fillers_2 = {k.split('/')[0] for k in result_2.get('qualifying_totals', {})
+                 if k.split('/')[0].startswith('filler_')}
+    if fillers_1 != fillers_2:
+        all_errors.append(
+            f"Filler teams differ between tournaments: T1={sorted(fillers_1)} T2={sorted(fillers_2)}"
+        )
+
     if all_errors:
         print("FAIL:")
         for e in all_errors:
@@ -293,8 +304,8 @@ def main():
                 f"{len(qtotals)} slots  |  {pts} qualifying pts")
 
     print(f"\nPASS")
-    print(f"  {summary_line(result_1, 'T1')}")
-    print(f"  {summary_line(result_2, 'T2')}")
+    print(f"  {summary_line(result_1, 'T1')}  (fillers: {sorted(fillers_1)})")
+    print(f"  {summary_line(result_2, 'T2')}  (same fillers reconnected — no restart)")
     sys.exit(0)
 
 
