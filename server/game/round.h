@@ -12,8 +12,10 @@ namespace Common::Game
 class Round
 {
 public:
-    explicit Round(int roundIndex, PlayerArray &players, PassDirection passDirection, std::shared_ptr<GameLogger> gameLogger):
-            mPlayers(players), mPassDirection(passDirection), mRoundIndex(roundIndex), mGameLogger(std::move(gameLogger))
+    explicit Round(int roundIndex, PlayerArray &players, PassDirection passDirection,
+                   std::shared_ptr<GameLogger> gameLogger, std::mt19937* dealRng = nullptr):
+            mPlayers(players), mPassDirection(passDirection), mRoundIndex(roundIndex),
+            mGameLogger(std::move(gameLogger)), mDealRng(dealRng)
     {
     }
 
@@ -74,7 +76,9 @@ private:
 
     void dealCards()
     {
-        auto fullDeck = CardCollection::ShuffledDeck();
+        auto fullDeck = (mDealRng != nullptr)
+            ? CardCollection::ShuffledDeck(*mDealRng)
+            : CardCollection::ShuffledDeck();
         auto hands = fullDeck.divide(Constants::NUM_PLAYERS);
 
         for (int i = 0; i < Constants::NUM_PLAYERS; i++)
@@ -178,6 +182,9 @@ private:
     std::vector<Trick> mTricks;
     std::map<PlayerID, int> mRoundScores;
     std::shared_ptr<GameLogger> mGameLogger;
+    // Non-owning pointer to a deal RNG that lives in Game (when present).
+    // If null, dealCards() falls back to a per-call random_device shuffle.
+    std::mt19937* mDealRng;
 };
 
 }

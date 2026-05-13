@@ -62,6 +62,16 @@ public:
         return deck;
     }
 
+    // Variant of ShuffledDeck that uses a caller-supplied RNG, enabling
+    // reproducible deals for paired Common-Random-Numbers benchmarking
+    // (see METHODOLOGY.md §5, §10).
+    static CardCollection ShuffledDeck(std::mt19937& rng)
+    {
+        auto deck = OrderedDeck();
+        deck.shuffle(rng);
+        return deck;
+    }
+
 
     [[nodiscard]] std::vector<CardCollection> divide(int divisions) const
     {
@@ -101,6 +111,12 @@ public:
     bool contains(Card card) const
     {
         return std::find(mCards.begin(), mCards.end(), card) != mCards.end();
+    }
+
+    // Public seeded shuffle (used by ShuffledDeck(rng)). Caller owns the RNG.
+    void shuffle(std::mt19937& rng)
+    {
+        std::shuffle(mCards.begin(), mCards.end(), rng);
     }
 
 private:

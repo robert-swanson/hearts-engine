@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+#include <random>
 #include <utility>
 
 #include "objects/player.h"
@@ -13,6 +15,17 @@ class Game
 public:
     explicit Game(PlayerArray players, std::shared_ptr<GameLogger> gameLogger):
     mPlayers(players), mRankings(players), mMaxScore(0), mGameLogger(std::move(gameLogger))
+    {
+    }
+
+    // Constructor with seeded deal RNG. The same seed produces an
+    // identical sequence of card deals across the rounds of the game,
+    // enabling paired Common-Random-Numbers benchmarking (see
+    // METHODOLOGY.md §5.paired and §10.1).
+    explicit Game(PlayerArray players, std::shared_ptr<GameLogger> gameLogger,
+                  unsigned long dealSeed):
+    mPlayers(players), mRankings(players), mMaxScore(0),
+    mGameLogger(std::move(gameLogger)), mDealRng(std::mt19937(dealSeed))
     {
     }
 
@@ -32,7 +45,8 @@ public:
             notifyStartGame();
             while (mMaxScore <= Constants::GAME_END_SCORE)
             {
-                Round round(mCurrentRoundIdx, mPlayers, passDirection, mGameLogger);
+                Round round(mCurrentRoundIdx, mPlayers, passDirection, mGameLogger,
+                            mDealRng.has_value() ? &mDealRng.value() : nullptr);
                 round.runDeal();
                 passDirection = NextPassDirection(passDirection);
                 updateRankings();
@@ -108,5 +122,8 @@ private:
     int mMaxScore;
     int mCurrentRoundIdx = 0;
     std::shared_ptr<GameLogger> mGameLogger;
+    // When set, Round uses this RNG to deal cards. Same seed → same deals.
+    // Unset → falls back to random_device per round (existing behavior).
+    std::optional<std::mt19937> mDealRng;
 };
 }

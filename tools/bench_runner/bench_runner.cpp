@@ -114,6 +114,16 @@ struct CliArgs
     // per-game `game_end` record to this path. This is the training-data
     // format for the supervised neural-network player.
     std::string decisionLogPath;
+    // When set, the C++ Game uses this as the master deal RNG seed (cards
+    // are dealt deterministically across rounds for paired CRN). When
+    // unset, dealing falls back to the engine's default random_device.
+    // With --rotate-seats, each "logical deal" k uses dealSeed + k.
+    std::optional<unsigned long> dealSeed;
+    // Rotate the 4 player specs through all 4 cyclic seat positions for
+    // each logical deal. --games N becomes N logical deals × 4 rotations
+    // = 4·N total games played. Per METHODOLOGY §5 paired CRN: each
+    // variant plays each seat with the same hand assignment.
+    bool rotateSeats = false;
 };
 
 [[noreturn]] static void printUsageAndExit(int code)
@@ -161,6 +171,8 @@ static CliArgs parseArgs(int argc, char** argv)
         else if (a == "--p2")    { need(i); args.playerSpecs[2] = argv[++i]; }
         else if (a == "--p3")    { need(i); args.playerSpecs[3] = argv[++i]; }
         else if (a == "--decision-log") { need(i); args.decisionLogPath = argv[++i]; }
+        else if (a == "--deal-seed") { need(i); args.dealSeed = std::strtoul(argv[++i], nullptr, 10); }
+        else if (a == "--rotate-seats") { args.rotateSeats = true; }
         else { std::fprintf(stderr, "unknown arg: %s\n", a.c_str()); printUsageAndExit(1); }
     }
     if (args.numGames <= 0) { std::fprintf(stderr, "--games must be > 0\n"); std::exit(1); }
@@ -284,14 +296,31 @@ struct GameResult
 static GameResult runOneGame(const CliArgs& args, std::mt19937& seedRng,
                              const std::shared_ptr<Common::GameLogger>& logger,
                              std::array<int, 4>& specForSeat,
-                             const std::shared_ptr<DecisionLogContext>& logCtx)
+                             const std::shared_ptr<DecisionLogContext>& logCtx,
+                             std::optional<int> rotationOffset = std::nullopt,
+                             std::optional<unsigned long> dealSeed = std::nullopt)
 {
-    // Per-game seat permutation: removes positional bias (seat 0 leads 2C,
-    // pass-direction-by-seat asymmetries, etc.) so two identical specs
-    // converge to the same long-run win rate. specForSeat[s] tells the
-    // caller which playerSpecs[*] is at seat s for THIS game.
-    std::array<int, 4> perm = {0, 1, 2, 3};
-    std::shuffle(perm.begin(), perm.end(), seedRng);
+    // Seat assignment:
+    //   - rotationOffset set: cyclic permutation, spec i goes to seat
+    //     (i + rotationOffset) % 4. Used for paired CRN.
+    //   - otherwise: random shuffle (legacy bias-removal behavior).
+    std::array<int, 4> perm;
+    if (rotationOffset.has_value())
+    {
+        int r = *rotationOffset;
+        for (int seat = 0; seat < 4; ++seat)
+        {
+            // perm[seat] = spec index sitting at this seat.
+            // We want spec i at seat (i + r) % 4, so seat s gets
+            // spec (s - r + 4) % 4.
+            perm[seat] = (seat - r + 4) % 4;
+        }
+    }
+    else
+    {
+        perm = {0, 1, 2, 3};
+        std::shuffle(perm.begin(), perm.end(), seedRng);
+    }
     Common::Game::PlayerArray players;
     for (int seat = 0; seat < 4; ++seat)
     {
@@ -300,10 +329,6 @@ static GameResult runOneGame(const CliArgs& args, std::mt19937& seedRng,
         auto inner = makePlayer(args.playerSpecs[specIdx], seat, seedRng);
         if (logCtx)
         {
-            // Wrap each inner player in a logging proxy. The engine sees
-            // the proxy as the Player (so all hand/state mutations target
-            // the proxy's inherited Player members). The proxy syncs the
-            // inner's hand on demand inside getMove/getCardsToPass.
             players[seat] = std::make_shared<LoggingPlayerProxy>(
                 inner, seat, logCtx);
         }
@@ -312,8 +337,17 @@ static GameResult runOneGame(const CliArgs& args, std::mt19937& seedRng,
             players[seat] = inner;
         }
     }
-    Common::Game::Game game(players, logger);
-    Common::Game::PlayerArray ranked = game.runGame();
+    Common::Game::PlayerArray ranked;
+    if (dealSeed.has_value())
+    {
+        Common::Game::Game game(players, logger, *dealSeed);
+        ranked = game.runGame();
+    }
+    else
+    {
+        Common::Game::Game game(players, logger);
+        ranked = game.runGame();
+    }
     GameResult result;
     for (auto& p : players)
     {
@@ -377,8 +411,16 @@ static int runMain(int argc, char** argv)
         args.playerSpecs[2].c_str(), args.playerSpecs[3].c_str(),
         seed);
 
-    // Per-game CSV header on stdout for machine consumption.
-    std::printf("game,p0_tag,p0_score,p1_tag,p1_score,p2_tag,p2_score,p3_tag,p3_score,winner\n");
+    // CSV header. In rotation mode, also reports per-spec totals across
+    // a logical deal — see "deal_total" rows after the per-game rows.
+    if (args.rotateSeats)
+    {
+        std::printf("logical_deal,rotation,p0_tag,p0_score,p1_tag,p1_score,p2_tag,p2_score,p3_tag,p3_score,winner\n");
+    }
+    else
+    {
+        std::printf("game,p0_tag,p0_score,p1_tag,p1_score,p2_tag,p2_score,p3_tag,p3_score,winner\n");
+    }
 
     // Aggregate stats per spec (NOT per tag — two seats with the same
     // spec aggregate together, like bench.py's "target_seats" logic).
@@ -388,41 +430,86 @@ static int runMain(int argc, char** argv)
     std::unordered_map<std::string, int> specWins;
     for (auto& kv : specSeats) { specPointsTotal[kv.first] = 0; specWins[kv.first] = 0; }
 
+    // For paired-CRN diagnostics: per-logical-deal, per-spec total points
+    // summed across the 4 rotations. In rotation mode each spec plays each
+    // seat exactly once per logical deal, so these totals are paired.
+    // Schema: dealPointsPerSpec[dealIdx][spec] = sum of points across 4 rotations.
+    // We emit these per-deal to /tmp via the CSV columns plus a tail summary.
+    std::vector<std::unordered_map<std::string, long long>> perDealSpecPoints;
+
     auto t0 = std::chrono::steady_clock::now();
-    for (int gameIdx = 0; gameIdx < args.numGames; ++gameIdx)
+    int gameIdxGlobal = 0;
+    int numLogicalDeals = args.numGames;
+    for (int dealIdx = 0; dealIdx < numLogicalDeals; ++dealIdx)
     {
-        std::array<int, 4> specForSeat;
-        if (logCtx) logCtx->gameIndex = gameIdx;
-        GameResult r = runOneGame(args, seedRng, logger, specForSeat, logCtx);
-        std::printf("%d", gameIdx);
-        for (int seat = 0; seat < 4; ++seat)
+        // Each logical deal gets its own dealSeed. When --deal-seed is set,
+        // we use args.dealSeed+dealIdx; otherwise we draw a seed from the
+        // master seedRng so each deal is reproducible from the master seed.
+        std::optional<unsigned long> thisDealSeed;
+        if (args.dealSeed.has_value())
         {
-            auto& [tag, score] = r.scoresInSeatOrder[seat];
-            std::printf(",%s,%d", tag.c_str(), score);
-            // Aggregate by the spec that was AT this seat for this game.
-            specPointsTotal[args.playerSpecs[specForSeat[seat]]] += score;
+            thisDealSeed = *args.dealSeed + static_cast<unsigned long>(dealIdx);
         }
-        std::printf(",%s\n", r.winnerTag.c_str());
-        for (int seat = 0; seat < 4; ++seat)
+        else if (args.rotateSeats || args.seedExplicit)
         {
-            if (r.scoresInSeatOrder[seat].first == r.winnerTag)
+            // Derive a deal seed from the master RNG so rotations share it.
+            std::uniform_int_distribution<unsigned long> dist;
+            thisDealSeed = dist(seedRng);
+        }
+
+        std::unordered_map<std::string, long long> dealSpecPoints;
+        for (auto& kv : specSeats) dealSpecPoints[kv.first] = 0;
+
+        int rotationsThisDeal = args.rotateSeats ? 4 : 1;
+        for (int rot = 0; rot < rotationsThisDeal; ++rot)
+        {
+            std::array<int, 4> specForSeat;
+            if (logCtx) logCtx->gameIndex = gameIdxGlobal;
+            std::optional<int> rotOpt = args.rotateSeats
+                ? std::optional<int>(rot)
+                : std::nullopt;
+            GameResult r = runOneGame(args, seedRng, logger, specForSeat,
+                                       logCtx, rotOpt, thisDealSeed);
+            if (args.rotateSeats)
             {
-                specWins[args.playerSpecs[specForSeat[seat]]]++;
-                break;
+                std::printf("%d,%d", dealIdx, rot);
             }
+            else
+            {
+                std::printf("%d", gameIdxGlobal);
+            }
+            for (int seat = 0; seat < 4; ++seat)
+            {
+                auto& [tag, score] = r.scoresInSeatOrder[seat];
+                std::printf(",%s,%d", tag.c_str(), score);
+                specPointsTotal[args.playerSpecs[specForSeat[seat]]] += score;
+                dealSpecPoints[args.playerSpecs[specForSeat[seat]]] += score;
+            }
+            std::printf(",%s\n", r.winnerTag.c_str());
+            for (int seat = 0; seat < 4; ++seat)
+            {
+                if (r.scoresInSeatOrder[seat].first == r.winnerTag)
+                {
+                    specWins[args.playerSpecs[specForSeat[seat]]]++;
+                    break;
+                }
+            }
+            ++gameIdxGlobal;
         }
+        if (args.rotateSeats) perDealSpecPoints.push_back(std::move(dealSpecPoints));
     }
     auto t1 = std::chrono::steady_clock::now();
     double elapsed = std::chrono::duration<double>(t1 - t0).count();
+    int actualGames = gameIdxGlobal;
 
     // Summary block per unique spec — matches bench.py's reporting shape.
     std::fprintf(stderr, "\nSummary (%d games, %.2fs, %.1f games/sec):\n",
-                 args.numGames, elapsed, args.numGames / std::max(elapsed, 1e-9));
+                 actualGames, elapsed, actualGames / std::max(elapsed, 1e-9));
     for (auto& [spec, seats] : specSeats)
     {
         long long total = specPointsTotal[spec];
         int wins = specWins[spec];
-        int gameSeats = args.numGames * seats;
+        int gameSeats = actualGames * seats;
         double avg = static_cast<double>(total) / gameSeats;
         WilsonInterval w = wilson(wins, gameSeats);
         std::fprintf(stderr,
@@ -430,6 +517,69 @@ static int runMain(int argc, char** argv)
             "(win rate %4.1f%% [%4.1f-%4.1f%%], %d/%d seats)\n",
             spec.c_str(), avg, w.p * 100.0, w.lo * 100.0, w.hi * 100.0,
             wins, gameSeats);
+    }
+
+    // Paired-CRN diagnostics. In rotation mode each spec plays each seat
+    // exactly once per logical deal, so per-deal point totals are PAIRED.
+    // Report mean & SE of per-deal totals plus paired differences against
+    // the first spec (a useful default baseline).
+    if (args.rotateSeats && !perDealSpecPoints.empty())
+    {
+        std::fprintf(stderr, "\nPaired per-deal totals (%lu deals × 4 rotations each):\n",
+                     perDealSpecPoints.size());
+        // Per-spec mean and standard deviation of the per-deal totals.
+        std::unordered_map<std::string, double> mean, var;
+        for (auto& [spec, _seats] : specSeats) { mean[spec] = 0.0; var[spec] = 0.0; }
+        for (auto& deal : perDealSpecPoints)
+        {
+            for (auto& [spec, total] : deal) mean[spec] += static_cast<double>(total);
+        }
+        double n = static_cast<double>(perDealSpecPoints.size());
+        for (auto& kv : mean) kv.second /= n;
+        for (auto& deal : perDealSpecPoints)
+        {
+            for (auto& [spec, total] : deal)
+            {
+                double d = static_cast<double>(total) - mean[spec];
+                var[spec] += d * d;
+            }
+        }
+        for (auto& kv : var) kv.second = (n > 1) ? kv.second / (n - 1) : 0.0;
+        for (auto& [spec, _seats] : specSeats)
+        {
+            double se = std::sqrt(var[spec] / n);
+            std::fprintf(stderr,
+                "  %-20s per-deal total mean = %6.2f pts  SE = %.2f\n",
+                spec.c_str(), mean[spec], se);
+        }
+
+        // Paired differences vs the first spec as a baseline.
+        const std::string& base = args.playerSpecs[0];
+        std::fprintf(stderr, "\nPaired Δ vs %s (per logical deal, both played all 4 seats):\n",
+                     base.c_str());
+        for (auto& [spec, _seats] : specSeats)
+        {
+            if (spec == base) continue;
+            std::vector<double> diffs;
+            diffs.reserve(perDealSpecPoints.size());
+            for (auto& deal : perDealSpecPoints)
+            {
+                long long s = deal.count(spec) ? deal[spec] : 0;
+                long long b = deal.count(base) ? deal[base] : 0;
+                diffs.push_back(static_cast<double>(s - b));
+            }
+            double dmean = 0.0;
+            for (double d : diffs) dmean += d;
+            dmean /= static_cast<double>(diffs.size());
+            double dvar = 0.0;
+            for (double d : diffs) dvar += (d - dmean) * (d - dmean);
+            dvar = (diffs.size() > 1) ? dvar / static_cast<double>(diffs.size() - 1) : 0.0;
+            double dse = std::sqrt(dvar / static_cast<double>(diffs.size()));
+            double t = dse > 0.0 ? dmean / dse : 0.0;
+            std::fprintf(stderr,
+                "  %s − %s : mean=%+.2f pts/deal  SE=%.2f  t=%+.2f  (n=%lu deals)\n",
+                spec.c_str(), base.c_str(), dmean, dse, t, diffs.size());
+        }
     }
 
     if (nullSink && nullSink != stderr) std::fclose(nullSink);
