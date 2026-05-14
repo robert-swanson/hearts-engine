@@ -151,7 +151,7 @@ class TournamentSession:
             game.run_game(player)
             self.game_results.append(game)
         except Exception as e:
-            print(f"[{self.team_name}] Game {game_id} error: {e}")
+            print(f"[{self.team_name}/{self.player_cls.player_tag}] Game {game_id} ({stage}) error: {e}")
 
     def run(self):
         """Block until the tournament is complete, running all assigned games."""

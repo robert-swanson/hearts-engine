@@ -158,7 +158,7 @@ struct TournamentLobby {
 
         std::lock_guard<std::mutex> lock(mtx);
         players.push_back({team, tag, score, session, &conn});
-        LOG("Registered %s/%s (score=%d) as session %lld", team.c_str(), tag.c_str(), score, sid);
+        LOG("Registered %s/%s/%lld (score=%d)", team.c_str(), tag.c_str(), sid, score);
         return sid;
     }
 
@@ -440,40 +440,52 @@ public:
 
 // ─── Result JSON writing ──────────────────────────────────────────────────────
 
-// Return a copy of m with keys remapped through tagToSlotId (keys not in the map pass through).
+// Standard player ID format: team/player_tag/slot/session_id
+// Truncated from the right when components are unavailable.
+//
+// toFullId: converts "playerTag(sessionId)" → "team/player_tag/slot/session_id"
+//   using the tagToSlotId map (which carries the team/player_tag/slot part).
+static std::string toFullId(const std::string& playerTagSession,
+                             const std::map<std::string, std::string>& tagToSlotId)
+{
+    auto it = tagToSlotId.find(playerTagSession);
+    if (it == tagToSlotId.end()) return playerTagSession;          // fallback: unknown
+    auto open  = playerTagSession.rfind('(');
+    auto close = playerTagSession.rfind(')');
+    if (open == std::string::npos || close == std::string::npos || close <= open)
+        return it->second;                                         // slotId only
+    return it->second + "/" + playerTagSession.substr(open + 1, close - open - 1);
+}
+
+// Remap keys of m through toFullId; values are preserved unchanged.
 template<typename V>
 static json remapKeys(const std::map<std::string, V>& m,
                       const std::map<std::string, std::string>& tagToSlotId)
 {
     json j = json::object();
-    for (const auto& [k, v] : m) {
-        auto it = tagToSlotId.find(k);
-        j[it != tagToSlotId.end() ? it->second : k] = v;
-    }
+    for (const auto& [k, v] : m)
+        j[toFullId(k, tagToSlotId)] = v;
     return j;
 }
 
 static json gameResultToSummaryJson(const GameResult& gr)
 {
     json j;
-    j["game_id"]      = gr.gameId;
-    j["stage"]        = gr.stage;
-    // Remap PlayerTagSession strings → stable slotIds where available
+    j["game_id"]   = gr.gameId;
+    j["stage"]     = gr.stage;
+
+    // Per-game fields: use full team/player_tag/slot/session_id format.
     std::vector<std::string> mappedOrder;
-    for (const auto& ts : gr.playerOrder) {
-        auto it = gr.playerTagToSlotId.find(ts);
-        mappedOrder.push_back(it != gr.playerTagToSlotId.end() ? it->second : ts);
-    }
+    for (const auto& ts : gr.playerOrder)
+        mappedOrder.push_back(toFullId(ts, gr.playerTagToSlotId));
     j["player_order"]          = mappedOrder;
-    j["final_scores"]          = remapKeys(gr.finalScores,         gr.playerTagToSlotId);
-    j["winner"]                = [&]() {
-        auto it = gr.playerTagToSlotId.find(gr.winner);
-        return it != gr.playerTagToSlotId.end() ? it->second : gr.winner;
-    }();
+    j["final_scores"]          = remapKeys(gr.finalScores,        gr.playerTagToSlotId);
+    j["winner"]                = toFullId(gr.winner,              gr.playerTagToSlotId);
     j["rounds_played"]         = gr.roundsPlayed;
-    j["moon_shots"]            = remapKeys(gr.moonShots,           gr.playerTagToSlotId);
-    j["total_move_latency_ms"] = remapKeys(gr.totalMoveLatencyMs,  gr.playerTagToSlotId);
-    j["auto_move_count"]       = remapKeys(gr.autoMoveCount,       gr.playerTagToSlotId);
+    j["moon_shots"]            = remapKeys(gr.moonShots,          gr.playerTagToSlotId);
+    j["total_move_latency_ms"] = remapKeys(gr.totalMoveLatencyMs, gr.playerTagToSlotId);
+    j["auto_move_count"]       = remapKeys(gr.autoMoveCount,      gr.playerTagToSlotId);
+    // placement_points keys are already stable slotIds (team/player_tag/slot).
     j["placement_points"]      = gr.placementPoints;
     j["detail_file"]           = "games/" + gr.gameId + ".json";
     return j;
@@ -482,27 +494,32 @@ static json gameResultToSummaryJson(const GameResult& gr)
 static json gameResultToDetailJson(const GameResult& gr)
 {
     json j;
-    j["game_id"]      = gr.gameId;
-    j["player_order"] = gr.playerOrder;
+    j["game_id"] = gr.gameId;
+
+    std::vector<std::string> fullOrder;
+    for (const auto& ts : gr.playerOrder)
+        fullOrder.push_back(toFullId(ts, gr.playerTagToSlotId));
+    j["player_order"] = fullOrder;
+
     json rounds = json::array();
     for (const auto& r : gr.rounds)
     {
         json rj;
-        rj["round_idx"]       = r.roundIdx;
-        rj["pass_direction"]  = r.passDir;
-        rj["hands_after_passing"] = r.handsAfterPass;
+        rj["round_idx"]           = r.roundIdx;
+        rj["pass_direction"]      = r.passDir;
+        rj["hands_after_passing"] = remapKeys(r.handsAfterPass, gr.playerTagToSlotId);
         json tricks = json::array();
         for (const auto& t : r.tricks)
         {
             json tj;
-            tj["first_player"] = t.firstPlayer;
+            tj["first_player"] = toFullId(t.firstPlayer, gr.playerTagToSlotId);
             tj["moves"]        = t.cards;
-            tj["winner"]       = t.winner;
+            tj["winner"]       = toFullId(t.winner,      gr.playerTagToSlotId);
             tj["points"]       = t.points;
             tricks.push_back(tj);
         }
-        rj["tricks"]        = tricks;
-        rj["round_scores"]  = r.roundScores;
+        rj["tricks"]       = tricks;
+        rj["round_scores"] = remapKeys(r.roundScores, gr.playerTagToSlotId);
         rounds.push_back(rj);
     }
     j["rounds"] = rounds;
@@ -583,7 +600,7 @@ static GameResult runOneGame(
         if (slot->source == nullptr)
         {
             LOG("Slot %s has no source player — skipping game %s",
-                slot->playerTag.c_str(), assignment.gameId.c_str());
+                slot->slotId.c_str(), assignment.gameId.c_str());
             observer->result.winner = "no_players";
             return observer->result;
         }
