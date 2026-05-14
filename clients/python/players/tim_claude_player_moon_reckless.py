@@ -1,22 +1,32 @@
 """
-claude_player_moon_aggressive — ClaudePlayer + low-threshold moon offense.
+tim_claude_player_moon_reckless — ClaudePlayer + very-aggressive moon offense.
 
 Extends ClaudePlayer's defensive heuristic with a moon-shoot offensive
-mode. When the dealt hand has high moon-potential (threshold 13 pre-pass
-/ 15 post-receive), the player commits to "shooting the moon":
-  - Passes low junk (preserving points-takers + high control cards)
-  - Tries to take every points-trick until the round ends (success) or
-    a points-trick goes to another player (abort, revert to defense)
+mode at the lowest practically useful commit thresholds (11/13).
+Compared to tim_claude_player_moon_aggressive (13/15), this player commits
+to shooting in even more borderline hands.
 
-Compared to claude_player: same defense, but adds the offensive mode.
-The 13/15 commit thresholds are tuned to engage in genuinely
-moon-shootable hands without firing on marginal ones.
+The trade-off is documented and intentional: this calibration
+outperforms the more moderate variants in strong-field play (where
+opponents are good moon-defenders), but **regresses against
+rob_player** (the max-duck specialist) in mixed-weak-field benches.
+Rob's max-duck strategy disrupts the high-frequency moon attempts
+more reliably than weaker opponents can.
 
-Paired-CRN benches (full S_4 seating permutation, 2400 games × 2
-independent deal seeds) confirm this calibration outperforms
-claude_player by ~+3 pts/game in mixed strong fields, with no
-regression vs weak/duck-style opponents in mixed weak fields.
-Paired t-stats: +2.91 and +3.33 (p < 0.005 / p < 0.001).
+This makes tim_claude_player_moon_reckless useful as a diagnostic panel
+opponent rather than a tournament champion:
+  - It exposes weak moon-blocking (an AI that beats reckless cleanly
+    almost certainly has decent moon defense).
+  - It interacts asymmetrically with duck specialists (a panel that
+    includes both reckless and rob produces interesting variance).
+
+Empirical (paired-CRN, full S_4 seating permutation, 2400 games × 2
+independent seeds):
+  - vs tim_claude_player_moon_aggressive (13/15) in Panel B:
+      Seed 70000:  paired Δ = +67.52 pts/deal, t = +3.03 (p < 0.005)
+      Seed 100000: paired Δ = +39.90 pts/deal, t = +2.08 (p ≈ 0.02)
+  - vs rob_player in Panel A (random + madison + rob):
+      Rob 51.1% wr vs reckless 38.3% wr, paired t = -3.84 (p < 0.0001)
 
 Authored by Tim Swanson during the 2026-05 rebuild iteration.
 """
@@ -44,12 +54,12 @@ KH = Card("KH")
 QH = Card("QH")
 
 
-class ClaudePlayerMoonAggressive(ClaudePlayer):
-    """ClaudePlayer with aggressive moon-shoot offense (thresholds 13/15)."""
-    player_tag = "claude_player_moon_aggressive"
+class TimClaudePlayerMoonReckless(ClaudePlayer):
+    """ClaudePlayer with reckless moon-shoot offense (thresholds 11/13)."""
+    player_tag = "tim_claude_player_moon_reckless"
 
-    PRE_PASS_THRESHOLD: float = 13.0
-    POST_RECEIVE_THRESHOLD: float = 15.0
+    PRE_PASS_THRESHOLD: float = 11.0
+    POST_RECEIVE_THRESHOLD: float = 13.0
 
     def __init__(self, player_tag_session: PlayerTagSession):
         super().__init__(player_tag_session)
@@ -66,7 +76,6 @@ class ClaudePlayerMoonAggressive(ClaudePlayer):
         if winning_player == self.player_tag_session:
             return
         if trick.get_current_point_value() > 0:
-            # A points trick went to someone else — moon attempt dies.
             self.shooting = False
 
     def get_cards_to_pass(self, pass_dir: PassDirection,
@@ -94,7 +103,6 @@ class ClaudePlayerMoonAggressive(ClaudePlayer):
     # ── Moon helpers ──────────────────────────────────────────────────────
 
     def _moon_potential(self, hand: List[Card]) -> float:
-        """Score the hand for moon-shoot suitability. Higher = more shootable."""
         score = 0.0
         hearts = [c for c in hand if c.suit == Suit.HEARTS]
         spades = [c for c in hand if c.suit == Suit.SPADES]
@@ -116,7 +124,6 @@ class ClaudePlayerMoonAggressive(ClaudePlayer):
         return score
 
     def _pass_for_moon(self, hand: List[Card]) -> List[Card]:
-        """Pass low junk; preserve all points-takers and high control cards."""
         def keep(c: Card) -> bool:
             return c.suit == Suit.HEARTS or c == QS or c in (AS_, KS)
         candidates = [c for c in hand if not keep(c)]
@@ -125,7 +132,6 @@ class ClaudePlayerMoonAggressive(ClaudePlayer):
         return SortCardsByRank(hand)[:3]
 
     def _shoot_move(self, trick: Trick, legal_moves: List[Card]) -> Card:
-        """Take every trick. Abort cleanly if a points-trick goes elsewhere."""
         if len(trick.moves) == 0:
             non_hearts = [c for c in legal_moves if c.suit != Suit.HEARTS]
             return SortCardsByRank(non_hearts or legal_moves, reverse=True)[0]
@@ -136,13 +142,10 @@ class ClaudePlayerMoonAggressive(ClaudePlayer):
                           if m.card.suit == trick_suit)
             winners = [c for c in on_suit if c.rank.to_int() > cur_max]
             if winners:
-                # Smallest winner — preserve high cards for later in the round.
                 return SortCardsByRank(winners)[0]
-            # Can't win this trick. If it has points, abort.
             if trick.get_current_point_value() > 0:
                 self.shooting = False
             return SortCardsByRank(on_suit, reverse=True)[0]
-        # Off-suit: dump low non-points cards.
         non_pts = [c for c in legal_moves
                    if c.suit != Suit.HEARTS and c != QS]
         if non_pts:
@@ -152,14 +155,14 @@ class ClaudePlayerMoonAggressive(ClaudePlayer):
 
 if __name__ == '__main__':
     import time
-    players = [ClaudePlayerMoonAggressive, RandomPlayer, RandomPlayer, RandomPlayer]
+    players = [TimClaudePlayerMoonReckless, RandomPlayer, RandomPlayer, RandomPlayer]
     total_games = 0
     games_won = 0
     start_time = time.time()
-    with ManagedConnection("claude_player_moon_aggressive") as connection:
+    with ManagedConnection("tim_claude_player_moon_reckless") as connection:
         game_results = RunMultipleGames(connection, GameType.ANY, players, 10)
         for result in game_results:
-            if "claude_player_moon_aggressive" in str(result.winner):
+            if "tim_claude_player_moon_reckless" in str(result.winner):
                 games_won += 1
             total_games += 1
     print(f"Games won: {games_won}/{total_games} ({games_won / total_games * 100:.1f}%)")
