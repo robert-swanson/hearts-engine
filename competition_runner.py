@@ -207,7 +207,7 @@ def run_registration_listener(host: str, port: int,
     def listener():
         srv = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
         srv.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
-        srv.bind((host, port))
+        srv.bind(('', port))  # bind to all interfaces so external clients can reach us
         srv.listen(10)
         srv.settimeout(0.5)
         while not stop_event.is_set():
@@ -502,12 +502,14 @@ def main():
     # Teams register once here; their clients reconnect automatically for each
     # successive tournament cycle without re-registering.
 
-    host = '127.0.0.1'
+    host = '127.0.0.1'   # used for internal server connections and port-ready checks
     port = cfg['port']
     registration_window = cfg.get('registration_window')
+    # Show the public address competitors should connect to (from config.env).
+    public_addr = client_env.get('SERVER_ADDR', host)
 
     print(f'=== Team Registration ===')
-    print(f'Address: {host}:{port}')
+    print(f'Address: {public_addr}:{port}')
     if registration_window is not None:
         print(f'Window: {registration_window}s')
     else:
