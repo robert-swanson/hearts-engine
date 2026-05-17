@@ -240,32 +240,32 @@ def run_registration_listener(host: str, port: int,
 def start_filler_clients(filler_teams: Dict[str, str], max_players: int,
                           available_modules: List[str], config_path: str,
                           host: str, port: int, log_dir: str = './log') -> List[subprocess.Popen]:
-    """Start one process per filler player slot, logging each to its own file."""
+    """Start one client per filler team, each using a distinct player module."""
     procs = []
     log_path_base = Path(log_dir)
     log_path_base.mkdir(parents=True, exist_ok=True)
-    for team_name, password in filler_teams.items():
-        # Each filler team: random selection of max_players modules (with replacement).
-        # Different filler teams may get a different random selection.
-        selected = random.choices(available_modules, k=max_players)
-        for i, module in enumerate(selected):
-            priority = max_players - i  # highest score first → equal duplication
-            cmd = [
-                sys.executable, 'clients/python/tournament_client.py',
-                f'--team={team_name}',
-                f'--password={password}',
-                f'--player={module}',
-                f'--score={priority}',
-                '--host=127.0.0.1',  # fillers always run co-located with competition_runner
-                config_path
-            ]
-            env = {**os.environ, 'PYTHONPATH': os.getcwd()}
-            log_file_path = log_path_base / f'{team_name}_{module}_{i}.log'
-            with open(log_file_path, 'a') as lf:
-                proc = subprocess.Popen(cmd, env=env, stdout=lf, stderr=lf)
-            procs.append(proc)
-            _child_procs.append(proc)
-            print(f"  Started filler client: {team_name}/{module} (score={priority}) → {log_file_path}")
+
+    # Shuffle available modules and assign one unique module per filler team.
+    # If there are more filler teams than modules, cycle through the shuffled list.
+    shuffled = random.sample(available_modules, len(available_modules))
+    team_list = list(filler_teams.items())
+    for i, (team_name, password) in enumerate(team_list):
+        module = shuffled[i % len(shuffled)]
+        cmd = [
+            sys.executable, 'clients/python/tournament_client.py',
+            f'--team={team_name}',
+            f'--password={password}',
+            f'--player={module}',
+            '--host=127.0.0.1',  # fillers always run co-located with competition_runner
+            config_path
+        ]
+        env = {**os.environ, 'PYTHONPATH': os.getcwd()}
+        log_file_path = log_path_base / f'{team_name}_{module}.log'
+        with open(log_file_path, 'a') as lf:
+            proc = subprocess.Popen(cmd, env=env, stdout=lf, stderr=lf)
+        procs.append(proc)
+        _child_procs.append(proc)
+        print(f"  Started filler client: {team_name}/{module} → {log_file_path}")
     return procs
 
 
