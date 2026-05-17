@@ -350,6 +350,7 @@ static std::vector<GameAssignment> scheduleGames(
 
 struct TrickRecord {
     std::string firstPlayer;
+    std::vector<std::string> playerTags; // play order (playerTags[i] played cards[i])
     std::vector<std::string> cards;
     std::string winner;
     int points;
@@ -406,12 +407,13 @@ public:
             result.rounds.back().handsAfterPass = hands;
     }
 
-    void onTrickComplete(const std::string& firstPlayer,
+    void onTrickComplete(const std::vector<std::string>& playerOrder,
                           const std::vector<std::string>& cards,
                           const std::string& winner, int points) override
     {
+        std::string firstPlayer = playerOrder.empty() ? "" : playerOrder[0];
         if (!result.rounds.empty())
-            result.rounds.back().tricks.push_back({firstPlayer, cards, winner, points});
+            result.rounds.back().tricks.push_back({firstPlayer, playerOrder, cards, winner, points});
     }
 
     void onRoundComplete(int /*roundIdx*/, const std::map<std::string, int>& scores) override
@@ -480,21 +482,30 @@ static json gameResultToSummaryJson(const GameResult& gr)
     json j;
     j["game_id"]   = gr.gameId;
     j["stage"]     = gr.stage;
-
-    // Per-game fields: use full team/player_tag/slot/session_id format.
-    std::vector<std::string> mappedOrder;
-    for (const auto& ts : gr.playerOrder)
-        mappedOrder.push_back(toFullId(ts, gr.playerTagToSlotId));
-    j["player_order"]          = mappedOrder;
-    j["final_scores"]          = remapKeys(gr.finalScores,        gr.playerTagToSlotId);
     j["winner"]                = toFullId(gr.winner,              gr.playerTagToSlotId);
     j["rounds_played"]         = gr.roundsPlayed;
     j["moon_shots"]            = remapKeys(gr.moonShots,          gr.playerTagToSlotId);
     j["total_move_latency_ms"] = remapKeys(gr.totalMoveLatencyMs, gr.playerTagToSlotId);
     j["auto_move_count"]       = remapKeys(gr.autoMoveCount,      gr.playerTagToSlotId);
-    // placement_points keys are already stable slotIds (team/player_tag/slot).
-    j["placement_points"]      = gr.placementPoints;
     j["detail_file"]           = "games/" + gr.gameId + ".json";
+
+    // Players ordered by game score ascending (lowest = winner in Hearts).
+    std::vector<std::pair<std::string, int>> ranked(gr.finalScores.begin(), gr.finalScores.end());
+    std::sort(ranked.begin(), ranked.end(), [](const auto& a, const auto& b){
+        return a.second < b.second;
+    });
+    json players = json::array();
+    for (auto& [tagSession, score] : ranked)
+    {
+        std::string fullId_ = toFullId(tagSession, gr.playerTagToSlotId);
+        std::string slotId  = gr.playerTagToSlotId.count(tagSession)
+            ? gr.playerTagToSlotId.at(tagSession) : tagSession;
+        int pts = gr.placementPoints.count(slotId) ? gr.placementPoints.at(slotId) : 0;
+        json entry;
+        entry[fullId_] = {{"game_score", score}, {"tournament_points", pts}};
+        players.push_back(entry);
+    }
+    j["players"] = players;
     return j;
 }
 
@@ -503,26 +514,45 @@ static json gameResultToDetailJson(const GameResult& gr)
     json j;
     j["game_id"] = gr.gameId;
 
-    std::vector<std::string> fullOrder;
-    for (const auto& ts : gr.playerOrder)
-        fullOrder.push_back(toFullId(ts, gr.playerTagToSlotId));
-    j["player_order"] = fullOrder;
-
     json rounds = json::array();
     for (const auto& r : gr.rounds)
     {
         json rj;
-        rj["round_idx"]           = r.roundIdx;
-        rj["pass_direction"]      = r.passDir;
-        rj["hands_after_passing"] = remapKeys(r.handsAfterPass, gr.playerTagToSlotId);
+        rj["round_idx"]      = r.roundIdx;
+        rj["pass_direction"] = r.passDir;
+
+        // hands_after_passing: one line per player (cards as space-separated string)
+        json compactHands = json::object();
+        for (const auto& [player, cards] : r.handsAfterPass)
+        {
+            std::string fullPlayer = toFullId(player, gr.playerTagToSlotId);
+            std::string cardsStr;
+            for (int i = 0; i < (int)cards.size(); ++i)
+            {
+                if (i > 0) cardsStr += " ";
+                cardsStr += cards[i];
+            }
+            compactHands[fullPlayer] = cardsStr;
+        }
+        rj["hands_after_passing"] = compactHands;
+
         json tricks = json::array();
         for (const auto& t : r.tricks)
         {
             json tj;
-            tj["first_player"] = toFullId(t.firstPlayer, gr.playerTagToSlotId);
-            tj["moves"]        = t.cards;
-            tj["winner"]       = toFullId(t.winner,      gr.playerTagToSlotId);
-            tj["points"]       = t.points;
+            // moves: [{player, card}, ...] in play order so the winner is unambiguous
+            json moves = json::array();
+            for (int i = 0; i < (int)t.cards.size(); ++i)
+            {
+                json mv;
+                std::string tag = (i < (int)t.playerTags.size()) ? t.playerTags[i] : t.firstPlayer;
+                mv["player"] = toFullId(tag, gr.playerTagToSlotId);
+                mv["card"]   = t.cards[i];
+                moves.push_back(mv);
+            }
+            tj["moves"]  = moves;
+            tj["winner"] = toFullId(t.winner, gr.playerTagToSlotId);
+            tj["points"] = t.points;
             tricks.push_back(tj);
         }
         rj["tricks"]       = tricks;
@@ -959,21 +989,8 @@ int main(int argc, char** argv)
 
     // ── Notify clients and write results ────────────────────────────────────
 
-    std::map<std::string, int> finalTotals;
-    for (const auto& gr : finalsResults)
-    {
-        std::vector<std::pair<std::string,int>> ranked(gr.finalScores.begin(), gr.finalScores.end());
-        std::sort(ranked.begin(), ranked.end(), [](const auto& a, const auto& b){
-            return a.second < b.second;
-        });
-        for (int place = 0; place < (int)ranked.size(); place++)
-        {
-            const auto& tagSession = ranked[place].first;
-            std::string slotId = gr.playerTagToSlotId.count(tagSession)
-                ? gr.playerTagToSlotId.at(tagSession) : tagSession;
-            finalTotals[slotId] += (4 - place); // 4,3,2,1 points
-        }
-    }
+    // Finals use the same point table as qualifying; winner = most finals points.
+    auto finalTotals = tabulateQualifyingPoints(finalsResults, cfg.qualifyingPoints);
 
     {
         json completeMsg;

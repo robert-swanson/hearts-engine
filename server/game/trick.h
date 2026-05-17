@@ -45,17 +45,16 @@ public:
         notifyEndTrick(mPlayers[mTrickWinnerIdx]);
         if (mObserver)
         {
-            std::vector<std::string> cards;
-            for (int i = 0; i < (int)mPlayedCards.size(); ++i)
-                cards.push_back(mPlayedCards[i].getAbbreviation());
+            std::vector<std::string> playerOrder, cards;
             int points = 0;
-            for (int i = 0; i < (int)mPlayedCards.size(); ++i)
+            for (int i = 0; i < (int)mPlayers.size(); ++i)
             {
+                playerOrder.push_back(mPlayers[i]->getTagSession());
+                cards.push_back(mPlayedCards[i].getAbbreviation());
                 if (mPlayedCards[i].getSuit() == HEARTS) points++;
                 if (mPlayedCards[i] == Card(QUEEN, SPADES)) points += Constants::QUEEN_SCORE;
             }
-            mObserver->onTrickComplete(
-                mPlayers[0]->getTagSession(), cards,
+            mObserver->onTrickComplete(playerOrder, cards,
                 mPlayers[mTrickWinnerIdx]->getTagSession(), points);
         }
     }

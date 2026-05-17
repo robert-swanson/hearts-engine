@@ -115,10 +115,10 @@ def validate_result(data: dict, result_dir: Optional[Path], label: str) -> list:
         errors.append(f"{label}: finals_totals is empty")
 
     for game in qualifying + finals:
-        gid    = game.get('game_id', '?')
-        scores = game.get('final_scores', {})
-        if len(scores) != 4:
-            errors.append(f"{label} game {gid}: expected 4 final scores, got {len(scores)}")
+        gid     = game.get('game_id', '?')
+        players = game.get('players', [])
+        if len(players) != 4:
+            errors.append(f"{label} game {gid}: expected 4 players, got {len(players)}")
         if game.get('rounds_played', 0) < 1:
             errors.append(f"{label} game {gid}: rounds_played < 1")
         if not game.get('winner'):

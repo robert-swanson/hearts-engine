@@ -13,8 +13,8 @@ public:
 
     virtual void onStartRound(int roundIdx, const std::string& passDir) {}
     virtual void onHandsAfterPass(const std::map<std::string, std::vector<std::string>>& hands) {}
-    virtual void onTrickComplete(const std::string& firstPlayer,
-                                  const std::vector<std::string>& cards,  // in play order
+    virtual void onTrickComplete(const std::vector<std::string>& playerOrder, // play order
+                                  const std::vector<std::string>& cards,       // play order
                                   const std::string& winner, int points) {}
     virtual void onRoundComplete(int roundIdx, const std::map<std::string, int>& scores) {}
     virtual void onMove(const std::string& playerTag, long latencyMs, bool autoMoved) {}
