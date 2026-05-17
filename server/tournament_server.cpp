@@ -983,13 +983,18 @@ int main(int argc, char** argv)
         for (auto& slot : slots)
             slotIdToPlayer[slot.slotId] = slot.source;
 
-    auto finalistTags = selectFinalists(qualTotals, cfg.allowMultiTeamFinals);
-    LOG("Finalists (qualifying scores):");
-    for (int i = 0; i < 4; i++)
+    // Log full qualifying leaderboard
     {
-        int pts = qualTotals.count(finalistTags[i]) ? qualTotals.at(finalistTags[i]) : 0;
-        LOG("  %d. %s  (%d pts)", i + 1, finalistTags[i].c_str(), pts);
+        std::vector<std::pair<std::string, int>> ranked(qualTotals.begin(), qualTotals.end());
+        std::sort(ranked.begin(), ranked.end(), [](const auto& a, const auto& b){
+            return a.second > b.second;
+        });
+        LOG("Qualifying results (%d slots):", (int)ranked.size());
+        for (int i = 0; i < (int)ranked.size(); i++)
+            LOG("  %d. %s  (%d pts)", i + 1, ranked[i].first.c_str(), ranked[i].second);
     }
+
+    auto finalistTags = selectFinalists(qualTotals, cfg.allowMultiTeamFinals);
 
     std::map<std::string, std::vector<PlayerSlot>> finalsRosters;
     for (int i = 0; i < 4; i++)
@@ -1029,12 +1034,21 @@ int main(int argc, char** argv)
     for (auto& f : fFutures)
         finalsResults.push_back(f.get());
 
-    LOG("Finals complete.");
-
     // ── Notify clients and write results ────────────────────────────────────
 
     // Finals use the same point table as qualifying; winner = most finals points.
     auto finalTotals = tabulateQualifyingPoints(finalsResults, cfg.qualifyingPoints);
+
+    // Log finals-only rankings
+    {
+        std::vector<std::pair<std::string, int>> ranked(finalTotals.begin(), finalTotals.end());
+        std::sort(ranked.begin(), ranked.end(), [](const auto& a, const auto& b){
+            return a.second > b.second;
+        });
+        LOG("Finals results (finals points only):");
+        for (int i = 0; i < (int)ranked.size(); i++)
+            LOG("  %d. %s  (%d pts)", i + 1, ranked[i].first.c_str(), ranked[i].second);
+    }
 
     {
         json completeMsg;
