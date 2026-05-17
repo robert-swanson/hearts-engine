@@ -367,7 +367,7 @@ struct RoundRecord {
 struct GameResult {
     std::string gameId;
     std::string stage;
-    std::vector<std::string> playerOrder; // alphabetically normalised
+    std::vector<std::string> playerOrder; // actual seating order (rotation around table)
     std::map<std::string, int> finalScores;
     std::string winner;
     int roundsPlayed = 0;
@@ -440,10 +440,7 @@ public:
     {
         result.finalScores = finalScores;
         result.winner      = winner;
-
-        // Normalised player order: alphabetically lowest first
-        for (auto& [p, _] : finalScores) result.playerOrder.push_back(p);
-        std::sort(result.playerOrder.begin(), result.playerOrder.end());
+        // playerOrder is populated with the actual seating order in runOneGame.
     }
 };
 
@@ -514,45 +511,30 @@ static json gameResultToDetailJson(const GameResult& gr)
     json j;
     j["game_id"] = gr.gameId;
 
+    // Seating order — lets readers map moves[i] to the correct player.
+    // For each trick: find first_player's index in player_order, then moves[k]
+    // is player_order[(first_player_idx + k) % 4]'s card.
+    std::vector<std::string> fullOrder;
+    for (const auto& ts : gr.playerOrder)
+        fullOrder.push_back(toFullId(ts, gr.playerTagToSlotId));
+    j["player_order"] = fullOrder;
+
     json rounds = json::array();
     for (const auto& r : gr.rounds)
     {
         json rj;
-        rj["round_idx"]      = r.roundIdx;
-        rj["pass_direction"] = r.passDir;
-
-        // hands_after_passing: one line per player (cards as space-separated string)
-        json compactHands = json::object();
-        for (const auto& [player, cards] : r.handsAfterPass)
-        {
-            std::string fullPlayer = toFullId(player, gr.playerTagToSlotId);
-            std::string cardsStr;
-            for (int i = 0; i < (int)cards.size(); ++i)
-            {
-                if (i > 0) cardsStr += " ";
-                cardsStr += cards[i];
-            }
-            compactHands[fullPlayer] = cardsStr;
-        }
-        rj["hands_after_passing"] = compactHands;
+        rj["round_idx"]           = r.roundIdx;
+        rj["pass_direction"]      = r.passDir;
+        rj["hands_after_passing"] = remapKeys(r.handsAfterPass, gr.playerTagToSlotId);
 
         json tricks = json::array();
         for (const auto& t : r.tricks)
         {
             json tj;
-            // moves: [{player, card}, ...] in play order so the winner is unambiguous
-            json moves = json::array();
-            for (int i = 0; i < (int)t.cards.size(); ++i)
-            {
-                json mv;
-                std::string tag = (i < (int)t.playerTags.size()) ? t.playerTags[i] : t.firstPlayer;
-                mv["player"] = toFullId(tag, gr.playerTagToSlotId);
-                mv["card"]   = t.cards[i];
-                moves.push_back(mv);
-            }
-            tj["moves"]  = moves;
-            tj["winner"] = toFullId(t.winner, gr.playerTagToSlotId);
-            tj["points"] = t.points;
+            tj["first_player"] = toFullId(t.firstPlayer, gr.playerTagToSlotId);
+            tj["moves"]        = t.cards; // in play order starting from first_player
+            tj["winner"]       = toFullId(t.winner, gr.playerTagToSlotId);
+            tj["points"]       = t.points;
             tricks.push_back(tj);
         }
         rj["tricks"]       = tricks;
@@ -561,6 +543,63 @@ static json gameResultToDetailJson(const GameResult& gr)
     }
     j["rounds"] = rounds;
     return j;
+}
+
+// Compact the card arrays inside hands_after_passing sections of a JSON string.
+// Every player's hand (array of 2–3-char strings) is collapsed to one line;
+// the rest of the JSON keeps its normal indent.
+static std::string compactHandArrays(const std::string& raw)
+{
+    std::string out;
+    out.reserve(raw.size());
+    std::size_t i = 0;
+    while (i < raw.size())
+    {
+        static const char kKey[] = "\"hands_after_passing\"";
+        auto found = raw.find(kKey, i);
+        if (found == std::string::npos) { out += raw.substr(i); break; }
+        // Copy up to and including the key
+        out += raw.substr(i, found - i + sizeof(kKey) - 1);
+        i = found + sizeof(kKey) - 1;
+        // Find the opening '{' of the value object
+        auto braceOpen = raw.find('{', i);
+        if (braceOpen == std::string::npos) { out += raw.substr(i); break; }
+        out += raw.substr(i, braceOpen - i + 1);
+        i = braceOpen + 1;
+        // Scan the hands object, compacting each player's card array
+        int depth = 1;
+        while (i < raw.size() && depth > 0)
+        {
+            char c = raw[i];
+            if      (c == '{') { ++depth; out += c; ++i; }
+            else if (c == '}') { --depth; if (depth > 0) out += c; ++i; }
+            else if (c == '[' && depth == 1)
+            {
+                // Compact this array to one line
+                auto end = raw.find(']', i);
+                if (end == std::string::npos) { out += c; ++i; continue; }
+                out += '[';
+                bool first = true;
+                std::size_t q = i + 1;
+                while (q <= end)
+                {
+                    auto q1 = raw.find('"', q);
+                    if (q1 == std::string::npos || q1 > end) break;
+                    auto q2 = raw.find('"', q1 + 1);
+                    if (q2 == std::string::npos || q2 > end) break;
+                    if (!first) out += ", ";
+                    out += '"'; out += raw.substr(q1 + 1, q2 - q1 - 1); out += '"';
+                    first = false;
+                    q = q2 + 1;
+                }
+                out += ']';
+                i = end + 1;
+            }
+            else { out += c; ++i; }
+        }
+        if (depth == 0) out += '}'; // closing brace of the hands object
+    }
+    return out;
 }
 
 static void writeResults(
@@ -579,7 +618,7 @@ static void writeResults(
     // Per-game detail files
     auto writeGame = [&](const GameResult& gr) {
         std::ofstream f(gDir / (gr.gameId + ".json"));
-        f << gameResultToDetailJson(gr).dump(2);
+        f << compactHandArrays(gameResultToDetailJson(gr).dump(2));
     };
     for (const auto& g : qualifying) writeGame(g);
     for (const auto& g : finals)     writeGame(g);
@@ -650,7 +689,9 @@ static GameResult runOneGame(
         slot->source->connection->addSession(sid, autoMoveAfterTimeouts);
 
         // Record playerTagSession → slotId so tabulation can aggregate by slot across games.
-        observer->result.playerTagToSlotId[slot->playerTag + "(" + std::to_string(sid) + ")"] = slot->slotId;
+        std::string tagSession = slot->playerTag + "(" + std::to_string(sid) + ")";
+        observer->result.playerTagToSlotId[tagSession] = slot->slotId;
+        observer->result.playerOrder.push_back(tagSession); // actual seating order
 
         slot->source->controlSession->send({{
             {Tags::TYPE,                        ServerMsgTypes::Tournament::GAME_ASSIGNMENT},
