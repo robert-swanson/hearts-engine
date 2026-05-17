@@ -147,7 +147,7 @@ def start_clients(env: dict, cfg_path: Path) -> list:
         p = subprocess.Popen(
             [sys.executable, 'clients/python/tournament_client.py',
              f'--team={team}', f'--password={pw}',
-             '--player=random_player', str(cfg_path)],
+             '--player=random_player', '--host=127.0.0.1', str(cfg_path)],
             env=env,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
@@ -199,11 +199,11 @@ def main():
 
     # ── 3. Register teams (once — persists across both tournaments) ────────────
     for team, pw in TEAMS.items():
-        # Pass tournament_server.env so register_team.py reads SERVER_ADDR=127.0.0.1
-        # (written by competition_runner before opening the listener).
+        # Always register to 127.0.0.1 — the competition runs locally in CI.
+        # (tournament_server.env now carries the public SERVER_ADDR for real competitors.)
         result = subprocess.run(
             [sys.executable, 'register_team.py',
-             f'--team={team}', f'--password={pw}', 'tournament_server.env'],
+             f'--team={team}', f'--password={pw}', '--host=127.0.0.1'],
             env=env, capture_output=True, text=True,
         )
         if result.returncode != 0:

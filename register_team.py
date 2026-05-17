@@ -67,15 +67,16 @@ def main():
         description="Register for a Hearts tournament; saves credentials to config.env")
     parser.add_argument('--team',     default=None, help='Team name (non-interactive)')
     parser.add_argument('--password', default=None, help='Team password (non-interactive)')
+    parser.add_argument('--host',     default=None, help='Override server host')
     parser.add_argument('env_file',   nargs='?',
                         help="Organiser's config file — used to read server address "
                              "(e.g. their tournament_server.env or config.env)")
     args = parser.parse_args()
 
-    # Server address: organiser's file first, then local config.env, then defaults.
+    # Server address: --host flag first, then organiser's file, then local config.env, then defaults.
     organiser_cfg = _read_env(args.env_file) if args.env_file else {}
     local_cfg     = _read_env(CONFIG_ENV)
-    host = organiser_cfg.get('SERVER_ADDR') or local_cfg.get('SERVER_ADDR', '127.0.0.1')
+    host = args.host or organiser_cfg.get('SERVER_ADDR') or local_cfg.get('SERVER_ADDR', '127.0.0.1')
     port = int(organiser_cfg.get('TOURNAMENT_PORT') or organiser_cfg.get('SERVER_PORT')
                or local_cfg.get('TOURNAMENT_PORT') or local_cfg.get('SERVER_PORT', 40406))
 
