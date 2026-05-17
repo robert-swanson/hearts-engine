@@ -77,6 +77,8 @@ def main():
     parser.add_argument('--player',   required=True,  help='Player module name (e.g. my_player)')
     parser.add_argument('--score',    type=int, default=0,
                         help='Priority score — higher-scored clients get preferred slots')
+    parser.add_argument('--host',     default=None,
+                        help='Override server host (default: SERVER_ADDR from env file)')
     parser.add_argument('env_file',   nargs='?',
                         help='Server config env file (default: config.env)')
     args = parser.parse_args()
@@ -89,6 +91,8 @@ def main():
     player_cls = discover_player(args.player)
     tag = f"[{args.team}/{player_cls.player_tag}]"
 
+    host = args.host or SERVER_IP
+
     # Retry until the tournament server accepts this team's registration.
     # Transient failures:
     #   ConnectionRefusedError — server not up yet (between tournaments or before start)
@@ -97,11 +101,11 @@ def main():
     #     retry so we catch the next round once register_team.py has been run.
     retry_interval = 5
     while True:
-        print(f"{tag} Connecting to {SERVER_IP}:{TOURNAMENT_PORT}...")
+        print(f"{tag} Connecting to {host}:{TOURNAMENT_PORT}...")
         connected = False
         registered = False
         try:
-            with ManagedConnection(SERVER_IP, TOURNAMENT_PORT, timeout_s=600) as conn:
+            with ManagedConnection(host, TOURNAMENT_PORT, timeout_s=600) as conn:
                 connected = True
                 ts = TournamentSession(conn, args.team, args.password, player_cls,
                                        priority_score=args.score)
@@ -115,7 +119,10 @@ def main():
             time.sleep(retry_interval)
         except Exception as e:
             if not registered:
-                print(f"{tag} Not registered for this round ({type(e).__name__}); retrying in {retry_interval}s...")
+                if "registration_window_open" in str(e):
+                    print(f"{tag} Registration window still open; retrying in {retry_interval}s...")
+                else:
+                    print(f"{tag} Not registered for this round ({type(e).__name__}); retrying in {retry_interval}s...")
                 time.sleep(retry_interval)
             else:
                 raise

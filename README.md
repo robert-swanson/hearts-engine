@@ -38,6 +38,14 @@ If you wish to run a local instance of the game server do the following:
 2. Install Bazel 9+ (if not already installed): `scripts/install_bazel.sh`
 3. Build and run the server: `bazel run //server:server -- "$(pwd)/config.env"`
 
+**macOS firewall:** if the macOS Application Firewall is enabled, you need to allow inbound connections to the server binary once after each clean build (the path is stable across incremental rebuilds):
+```bash
+REAL_BIN=$(python3 -c "import os; print(os.path.realpath('bazel-bin/server/tournament_server'))")
+sudo /usr/libexec/ApplicationFirewall/socketfilterfw --add "$REAL_BIN"
+sudo /usr/libexec/ApplicationFirewall/socketfilterfw --unblockapp "$REAL_BIN"
+```
+This also applies to the `tournament_server` binary used by `competition_runner.py`. Without it, external clients (including other machines on your LAN) will see their connections refused.
+
 
 ## Running a competition
 

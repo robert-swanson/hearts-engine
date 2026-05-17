@@ -44,8 +44,6 @@ protected:
             {Tags::STATUS, ServerStatus::SUCCESS}
         });
         send(connectionResponse);
-
-        LOG("Connected to %s:%d", mClientIP, mClientPort);
     }
 
     std::string readBytes()
@@ -88,7 +86,6 @@ protected:
 
     void closeConnection()
     {
-        LOG("Closing mConnection to %s:%d", mClientIP, mClientPort);
         mStatus = ConnectionStatus::DISCONNECTED;
         try
         {
@@ -96,7 +93,7 @@ protected:
         }
         catch (std::exception &e)
         {
-            LOG("Error closing mConnection to %s:%d: %s", mClientIP, mClientPort, e.what());
+            LOG("Error closing connection to %s:%d: %s", mClientIP, mClientPort, e.what());
         }
     }
 
@@ -105,6 +102,9 @@ public:
     {
         return mStatus == ConnectionStatus::CONNECTED;
     }
+
+    const char* clientIP() const { return mClientIP; }
+    int clientPort() const { return mClientPort; }
 
 private:
     std::string getFirstMessage(std::string buffer)

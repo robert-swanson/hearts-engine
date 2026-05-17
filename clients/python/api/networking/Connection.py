@@ -78,9 +78,11 @@ class Connection:
         return json_objects
 
     def receive_status(self, expected_status: str, expected_msg_type: str) -> json:
-        response = self.receive()
-        if response is None:
-            raise ConnectionError("Server closed connection while waiting for status")
+        # recv() returns None on MICRO_TIMEOUT socket timeout (not a connection close).
+        # Retry until we get data, so high-latency connections (e.g. via port forward) work.
+        response = None
+        while response is None:
+            response = self.receive()
         assert response[Tags.TYPE] == expected_msg_type, \
             f"Expected message type {expected_msg_type}, got {response[Tags.TYPE]}"
         assert response[Tags.STATUS] == expected_status, \

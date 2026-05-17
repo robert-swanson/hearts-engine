@@ -125,7 +125,7 @@ class TournamentSession:
         self.connection._start_receiver_thread()
         # Read until we get tournament_queued (skipping game_session_response)
         while True:
-            msg = self._recv_control(timeout_s=10)
+            msg = self._recv_control()
             if msg[Tags.TYPE] == TournamentMsgTypes.QUEUED:
                 start_at = msg.get(TournamentTags.START_AT, 0)
                 now = datetime.now(timezone.utc).timestamp()

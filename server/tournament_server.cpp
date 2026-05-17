@@ -140,7 +140,12 @@ struct TournamentLobby {
         auto it = cfg.teams.find(team);
         if (it == cfg.teams.end() || it->second != password)
         {
-            LOG("Registration rejected: bad team/password for '%s'", team.c_str());
+            const char* reason = (it == cfg.teams.end()) ? "unknown team" : "wrong password";
+            LOG("Registration rejected (%s): '%s' from %s:%d",
+                reason, team.c_str(), conn.clientIP(), conn.clientPort());
+            // Close the socket so the client sees an immediate connection drop rather
+            // than having to wait out a timeout before retrying.
+            conn.shutdownSocket();
             return 0;
         }
 
@@ -158,7 +163,9 @@ struct TournamentLobby {
 
         std::lock_guard<std::mutex> lock(mtx);
         players.push_back({team, tag, score, session, &conn});
-        LOG("Registered %s/%s/%lld (score=%d)", team.c_str(), tag.c_str(), sid, score);
+        LOG("Registered %s/%s/%lld — %s:%d (score=%d)",
+            team.c_str(), tag.c_str(), (long long)sid,
+            conn.clientIP(), conn.clientPort(), score);
         return sid;
     }
 
@@ -821,7 +828,11 @@ int main(int argc, char** argv)
 
     std::map<std::string, std::vector<PlayerSlot>> teamRosters;
     for (auto& [name, _] : cfg.teams)
+    {
+        // If fallback is disabled ("none") and the team submitted no players, exclude them entirely.
+        if (byTeam[name].empty() && cfg.fallbackPlayerTag == "none") continue;
         teamRosters[name] = buildRoster(name, byTeam[name], cfg.maxPlayersPerTeam, fallback);
+    }
 
     // Validate qualifying game count
     int totalPlayers = 0;
@@ -834,8 +845,25 @@ int main(int argc, char** argv)
         cfg.qualifyingGames = rounded;
     }
 
-    LOG("Rosters built. %d total player slots across %d teams. %d qualifying games.",
-        totalPlayers, (int)teamRosters.size(), cfg.qualifyingGames);
+    // Detailed roster log — one line per slot, grouped by team.
+    LOG("Tournament roster — %d teams, %d slots, %d qualifying games:",
+        (int)teamRosters.size(), totalPlayers, cfg.qualifyingGames);
+    for (const auto& [teamName, slots] : teamRosters)
+    {
+        bool hasRealPlayers = !byTeam[teamName].empty();
+        if (hasRealPlayers)
+            LOG("  %s (%d slot%s):", teamName.c_str(), (int)slots.size(), (int)slots.size() == 1 ? "" : "s");
+        else
+            LOG("  %s (%d slot%s) [autofilled with '%s' — submitted no players]:",
+                teamName.c_str(), (int)slots.size(), (int)slots.size() == 1 ? "" : "s",
+                fallback ? fallback->playerTag.c_str() : "?");
+        for (const auto& slot : slots)
+        {
+            long long sessId = (slot.source && slot.source->controlSession)
+                ? (long long)slot.source->controlSession->getGameSessionID() : 0;
+            LOG("    %s  sess=%lld", slot.slotId.c_str(), sessId);
+        }
+    }
 
     // Shared null logger (game events captured by observer, not log files)
     std::filesystem::create_directories(cfg.resultsDir);
@@ -892,24 +920,27 @@ int main(int argc, char** argv)
     std::map<std::string, std::vector<PlayerSlot>> finalsRosters;
     for (int i = 0; i < 4; i++)
     {
-        const auto& slotId = finalistTags[i]; // "teamName/playerTag/slotIndex"
-        std::string fakeTeam = "finals_team_" + std::to_string(i);
+        const auto& qualSlotId = finalistTags[i]; // "teamName/playerTag/slotIndex"
+        // Each finalist needs a unique key in finalsRosters so the scheduling algorithm
+        // treats them as separate teams (even if two finalists share an original team).
+        std::string schedKey = "finals_seat_" + std::to_string(i);
 
-        // Extract the original playerTag from slotId so the client assertion holds.
+        // Extract the original playerTag from the qualifying slotId so game sessions
+        // use the same tag the client registered with (required for client assertions).
         // slotId format: "teamName/playerTag/slotIndex"
-        auto firstSlash = slotId.find('/');
-        auto lastSlash  = slotId.rfind('/');
+        auto firstSlash = qualSlotId.find('/');
+        auto lastSlash  = qualSlotId.rfind('/');
         std::string origPlayerTag = (firstSlash != std::string::npos && lastSlash != firstSlash)
-            ? slotId.substr(firstSlash + 1, lastSlash - firstSlash - 1)
-            : slotId;
+            ? qualSlotId.substr(firstSlash + 1, lastSlash - firstSlash - 1)
+            : qualSlotId;
 
         PlayerSlot slot;
-        slot.teamName  = fakeTeam;
-        slot.playerTag = origPlayerTag;
+        slot.teamName  = schedKey;      // only used as map key for scheduling
+        slot.playerTag = origPlayerTag; // must match the client's registered player_tag
         slot.slotIndex = 0;
-        slot.slotId    = fakeTeam + "/" + origPlayerTag + "/0";
-        slot.source    = slotIdToPlayer.count(slotId) ? slotIdToPlayer.at(slotId) : fallback;
-        finalsRosters[fakeTeam] = {slot};
+        slot.slotId    = qualSlotId;    // preserve qualifying identity in all output JSON
+        slot.source    = slotIdToPlayer.count(qualSlotId) ? slotIdToPlayer.at(qualSlotId) : fallback;
+        finalsRosters[schedKey] = {slot};
     }
 
     auto fAssignments = scheduleGames(finalsRosters, cfg.finalsGames, "finals");

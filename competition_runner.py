@@ -100,17 +100,18 @@ def discover_player_class(module_name: str):
 
 # ─── Config writing ───────────────────────────────────────────────────────────
 
-def write_config(path: str, cfg: dict, teams: Dict[str, str], filler_teams: Dict[str, str]):
+def write_config(path: str, cfg: dict, teams: Dict[str, str], filler_teams: Dict[str, str],
+                 server_addr: str = '127.0.0.1'):
     """Write tournament_server.env: game rules + connection info + TEAMS.
-    The port and server address come from cfg (read from config.env by main()).
+    server_addr is the public-facing address competitors should connect to.
     """
     all_teams = {**teams, **filler_teams}
     teams_str = ','.join(f'{n}:{p}' for n, p in all_teams.items())
     with open(path, 'w') as f:
-        # Connection info (port from config.env, address always local for competition_runner)
+        # Connection info
         f.write(f"TOURNAMENT_PORT={cfg['port']}\n")
         f.write(f"SERVER_PORT={cfg['port']}\n")
-        f.write(f"SERVER_ADDR=127.0.0.1\n")
+        f.write(f"SERVER_ADDR={server_addr}\n")
         # Competition orchestration (read back as defaults next run)
         f.write(f"REGISTRATION_WINDOW={cfg.get('registration_window', 60)}\n")
         f.write(f"INTERVAL={cfg['interval']}\n")
@@ -123,7 +124,7 @@ def write_config(path: str, cfg: dict, teams: Dict[str, str], filler_teams: Dict
         f.write(f"RESULTS_DIR={cfg['results_dir']}\n")
         f.write(f"LOG_DIR={cfg.get('log_dir', './log')}\n")
         f.write(f"AUTO_MOVE_AFTER_TIMEOUTS={cfg.get('auto_move_after_timeouts', 2)}\n")
-        f.write(f"FALLBACK_PLAYER_TAG=random_player\n")
+        f.write(f"FALLBACK_PLAYER_TAG={cfg.get('fallback_player_tag', 'random_player')}\n")
         # Populated at runtime
         f.write(f"TEAMS={teams_str}\n")
     print(f"Config written to {path}")
@@ -238,9 +239,11 @@ def run_registration_listener(host: str, port: int,
 
 def start_filler_clients(filler_teams: Dict[str, str], max_players: int,
                           available_modules: List[str], config_path: str,
-                          host: str, port: int) -> List[subprocess.Popen]:
-    """Start one process per filler player slot."""
+                          host: str, port: int, log_dir: str = './log') -> List[subprocess.Popen]:
+    """Start one process per filler player slot, logging each to its own file."""
     procs = []
+    log_path_base = Path(log_dir)
+    log_path_base.mkdir(parents=True, exist_ok=True)
     for team_name, password in filler_teams.items():
         # Each filler team: random selection of max_players modules (with replacement).
         # Different filler teams may get a different random selection.
@@ -253,13 +256,16 @@ def start_filler_clients(filler_teams: Dict[str, str], max_players: int,
                 f'--password={password}',
                 f'--player={module}',
                 f'--score={priority}',
+                '--host=127.0.0.1',  # fillers always run co-located with competition_runner
                 config_path
             ]
             env = {**os.environ, 'PYTHONPATH': os.getcwd()}
-            proc = subprocess.Popen(cmd, env=env)
+            log_file_path = log_path_base / f'{team_name}_{module}_{i}.log'
+            with open(log_file_path, 'a') as lf:
+                proc = subprocess.Popen(cmd, env=env, stdout=lf, stderr=lf)
             procs.append(proc)
             _child_procs.append(proc)
-            print(f"  Started filler client: {team_name}/{module} (score={priority})")
+            print(f"  Started filler client: {team_name}/{module} (score={priority}) → {log_file_path}")
     return procs
 
 
@@ -306,6 +312,8 @@ def configure_rules(non_interactive: bool = False,
             'results_dir':           d_str('RESULTS_DIR', './results'),
             'log_dir':               d_str('LOG_DIR', './log'),
             'auto_move_after_timeouts': d_int('AUTO_MOVE_AFTER_TIMEOUTS', 2),
+            # Preserve "none" literally to disable autofill (d_str would coerce it to default)
+            'fallback_player_tag':   d.get('FALLBACK_PLAYER_TAG', 'random_player'),
         }
 
     print('\n=== Competition Rules ===')
@@ -322,13 +330,16 @@ def configure_rules(non_interactive: bool = False,
         'results_dir':        prompt('Results directory',                d_str('RESULTS_DIR', './results')),
         'log_dir':            prompt('Log directory',                    d_str('LOG_DIR', './log')),
         'auto_move_after_timeouts': int(prompt('Auto-move after N timeouts (0=never)', d_int('AUTO_MOVE_AFTER_TIMEOUTS', 2))),
+        'fallback_player_tag': prompt("Autofill player tag ('none' to disable)",
+                                      d.get('FALLBACK_PLAYER_TAG', 'random_player')),
     }
 
 
 # ─── Main loop ────────────────────────────────────────────────────────────────
 
 def run_competition(cfg: dict, real_teams: Dict[str, str],
-                    config_path: str, available_modules: List[str]):
+                    config_path: str, available_modules: List[str],
+                    public_addr: str = '127.0.0.1'):
     interval      = cfg['interval']
     client_window = cfg.get('client_window', 30)
     host          = '127.0.0.1'
@@ -351,12 +362,13 @@ def run_competition(cfg: dict, real_teams: Dict[str, str],
     round_cfg = {**cfg, 'qualifying_games': q}
 
     # Write config before starting filler clients so they can read server address.
-    write_config(config_path, round_cfg, real_teams, filler_teams)
+    write_config(config_path, round_cfg, real_teams, filler_teams, server_addr=public_addr)
 
     # Start filler clients once — they loop automatically across all tournament
     # cycles using the same retry mechanism as real-team clients.
     filler_procs = start_filler_clients(
-        filler_teams, max_players, available_modules, config_path, host, port)
+        filler_teams, max_players, available_modules, config_path, host, port,
+        log_dir=cfg.get('log_dir', './log'))
 
     print(f'\n=== Starting competition loop ===')
     print(f'Teams: {list(real_teams.keys())}')
@@ -371,7 +383,7 @@ def run_competition(cfg: dict, real_teams: Dict[str, str],
         print(f'\n--- Tournament #{tournament_num} ---')
 
         # Re-write config each cycle (content is stable; ensures it's current on disk).
-        write_config(config_path, round_cfg, real_teams, filler_teams)
+        write_config(config_path, round_cfg, real_teams, filler_teams, server_addr=public_addr)
 
         # Start tournament server.
         start_at = int(time.time()) + client_window
@@ -496,17 +508,17 @@ def main():
     # competitors can pass tournament_server.env to register_team.py to pick up
     # the server address automatically. TEAMS will be added after registration.
 
-    write_config('tournament_server.env', cfg, {}, {})
+    host = '127.0.0.1'   # used for internal server connections and port-ready checks
+    port = cfg['port']
+    registration_window = cfg.get('registration_window')
+    # Public address competitors should connect to (from config.env SERVER_ADDR).
+    public_addr = client_env.get('SERVER_ADDR', host)
+
+    write_config('tournament_server.env', cfg, {}, {}, server_addr=public_addr)
 
     # ── One-time team registration ─────────────────────────────────────────
     # Teams register once here; their clients reconnect automatically for each
     # successive tournament cycle without re-registering.
-
-    host = '127.0.0.1'   # used for internal server connections and port-ready checks
-    port = cfg['port']
-    registration_window = cfg.get('registration_window')
-    # Show the public address competitors should connect to (from config.env).
-    public_addr = client_env.get('SERVER_ADDR', host)
 
     print(f'=== Team Registration ===')
     print(f'Address: {public_addr}:{port}')
@@ -527,7 +539,7 @@ def main():
     # ── Run competition loop ───────────────────────────────────────────────
 
     config_path = 'tournament_server.env'
-    run_competition(cfg, real_teams, config_path, available_modules)
+    run_competition(cfg, real_teams, config_path, available_modules, public_addr=public_addr)
 
 
 if __name__ == '__main__':
