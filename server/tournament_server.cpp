@@ -984,9 +984,12 @@ int main(int argc, char** argv)
             slotIdToPlayer[slot.slotId] = slot.source;
 
     auto finalistTags = selectFinalists(qualTotals, cfg.allowMultiTeamFinals);
-    LOG("Finalists: %s, %s, %s, %s",
-        finalistTags[0].c_str(), finalistTags[1].c_str(),
-        finalistTags[2].c_str(), finalistTags[3].c_str());
+    LOG("Finalists (qualifying scores):");
+    for (int i = 0; i < 4; i++)
+    {
+        int pts = qualTotals.count(finalistTags[i]) ? qualTotals.at(finalistTags[i]) : 0;
+        LOG("  %d. %s  (%d pts)", i + 1, finalistTags[i].c_str(), pts);
+    }
 
     std::map<std::string, std::vector<PlayerSlot>> finalsRosters;
     for (int i = 0; i < 4; i++)
