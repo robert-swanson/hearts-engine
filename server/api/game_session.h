@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <utility>
 
 #include "managed_connection.h"
@@ -10,8 +11,12 @@ namespace Common::Server
 class PlayerGameSession
 {
 public:
-    explicit PlayerGameSession(PlayerGameSessionID game_session_id, const PlayerTag& playerTag, Common::Server::ManagedConnection &connection)
-    : mPlayerTag(playerTag),  mGameSessionID(game_session_id), mPlayerTagSession(MakePlayerTagSession(playerTag, game_session_id)), mConnection(connection) {}
+    explicit PlayerGameSession(PlayerGameSessionID game_session_id, const PlayerTag& playerTag,
+                               Common::Server::ManagedConnection &connection,
+                               uint16_t starting_seq = 1)
+    : mPlayerTag(playerTag), mGameSessionID(game_session_id),
+      mPlayerTagSession(MakePlayerTagSession(playerTag, game_session_id)),
+      mConnection(connection), mSessionSeqNum(starting_seq) {}
 
     void Setup() {
         send({{
@@ -41,30 +46,30 @@ public:
             {
                 // Timeout or disconnect: consume the slot the client would have used
                 // so both counters remain aligned going forward.
-                ++mSessionSeqNum;
+                mSessionSeqNum.fetch_add(1, std::memory_order_relaxed);
                 return std::nullopt;
             }
 
             ASRT_EQ(raw->getSessionID(), mGameSessionID);
 
-            if (raw->getSeqNum() < mSessionSeqNum)
+            if (raw->getSeqNum() < mSessionSeqNum.load())
             {
                 // Stale late-arrival (e.g. a decided_move that arrived after a timeout).
                 // Drop it without advancing the counter, then wait for the right message.
                 LOG("Discarding stale message %lld.%u (expected .%u)",
-                    mGameSessionID, raw->getSeqNum(), mSessionSeqNum);
+                    mGameSessionID, raw->getSeqNum(), mSessionSeqNum.load());
                 continue;
             }
 
-            if (raw->getSeqNum() != mSessionSeqNum)
+            if (raw->getSeqNum() != mSessionSeqNum.load())
             {
                 LOG("Unexpected seq %u on session %lld (expected %u) — treating as timeout",
-                    raw->getSeqNum(), mGameSessionID, mSessionSeqNum);
-                ++mSessionSeqNum;
+                    raw->getSeqNum(), mGameSessionID, mSessionSeqNum.load());
+                mSessionSeqNum.fetch_add(1, std::memory_order_relaxed);
                 return std::nullopt;
             }
 
-            ++mSessionSeqNum;
+            mSessionSeqNum.fetch_add(1, std::memory_order_relaxed);
             return *raw;
         }
     }
@@ -86,16 +91,14 @@ public:
 private:
     uint16_t getSeqNumAndIncrement()
     {
-        auto oldSeqNum = mSessionSeqNum;
-        ++mSessionSeqNum;
-        return oldSeqNum;
+        return mSessionSeqNum.fetch_add(1, std::memory_order_relaxed);
     }
 
     PlayerTag mPlayerTag;
     PlayerGameSessionID mGameSessionID;
     Common::Server::PlayerTagSession mPlayerTagSession;
     ManagedConnection &mConnection;
-    uint16_t mSessionSeqNum = 1;
+    std::atomic<uint16_t> mSessionSeqNum;
 };
 
 using SessionRef = std::shared_ptr<PlayerGameSession>;

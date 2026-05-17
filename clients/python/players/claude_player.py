@@ -9,7 +9,11 @@ Strategy:
               dump most dangerous card when points are at stake
   - Moon blocking: block if one opponent has sole possession of points above threshold
 """
+import sys
+from pathlib import Path
 from typing import List, Dict, Optional
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from clients.python.api.Game import Game
 from clients.python.api.Trick import Trick
@@ -249,7 +253,7 @@ if __name__ == '__main__':
     games_won = 0
     start_time = time.time()
 
-    with ManagedConnection("claude_player") as connection:
+    with ManagedConnection() as connection:
         game_results = RunMultipleGames(connection, GameType.ANY, players, 10)
         for result in game_results:
             if "claude_player" in str(result.winner):

@@ -7,12 +7,14 @@
 
 namespace Common::Server
 {
-class RemotePlayer final: public Game::Player
+class RemotePlayer : public Game::Player
 {
 public:
     explicit RemotePlayer(PlayerTagSession tagSession, const std::shared_ptr<PlayerGameSession>& gameSession) :
             Player(std::move(tagSession)), mGameSession(gameSession), mPlayerTagSession(gameSession->getPlayerTagSession()),
             mLastMoveWasAuto(false) {}
+
+    ~RemotePlayer() override = default;
 
     void notifyStartGame(std::vector<PlayerTagSession> playerOrder) override
     {

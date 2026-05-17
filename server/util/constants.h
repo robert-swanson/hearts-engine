@@ -61,6 +61,27 @@ namespace Common::Server::ClientMsgTypes
     constexpr auto GAME_SESSION_REQUEST = "game_session_request";
     constexpr auto DONATED_CARDS = "donated_cards";
     constexpr auto DECIDED_MOVE = "decided_move";
+    constexpr auto TOURNAMENT_REGISTER = "tournament_register";
+}
+
+namespace Common::Server::ServerMsgTypes::Tournament
+{
+    constexpr auto QUEUED     = "tournament_queued";
+    constexpr auto GAME_ASSIGNMENT = "tournament_game_assignment";
+    constexpr auto STAGE_COMPLETE  = "tournament_stage_complete";
+    constexpr auto COMPLETE   = "tournament_complete";
+}
+
+namespace Common::Server::Tags::Tournament
+{
+    constexpr auto TEAM_NAME       = "team_name";
+    constexpr auto PASSWORD        = "password";
+    constexpr auto PRIORITY_SCORE  = "priority_score";
+    constexpr auto GAME_SESSION_ID = "game_session_id";
+    constexpr auto GAME_ID         = "game_id";
+    constexpr auto STAGE           = "stage";
+    constexpr auto START_AT        = "start_at";
+    constexpr auto RESULTS         = "results";
 }
 
 namespace Common::Server::MoveSource

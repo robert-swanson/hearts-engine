@@ -1,6 +1,10 @@
+import sys
 import threading
 import time
+from pathlib import Path
 from typing import List, Dict, Optional
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from clients.python.api import Game
 from clients.python.api.Trick import Trick
@@ -109,7 +113,7 @@ if __name__ == '__main__':
     games_won = 0
     start_time = time.time()
 
-    with ManagedConnection("rob_player") as connection:
+    with ManagedConnection() as connection:
         game_results = RunMultipleGames(connection, GameType.ANY, players, 10)
         for game_result in game_results:
             if "rob_player" in str(game_result.winner):

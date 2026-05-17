@@ -1,16 +1,25 @@
 # pragma once
 
+#include <memory>
+#include <mutex>
+#include <condition_variable>
+#include <unordered_map>
 #include <netinet/in.h>
 #include <vector>
 #include <algorithm>
 #include <arpa/inet.h>
 #include "connection.h"
-#include "server/util/types.h"
+#include "server/util/assertions.h"
 #include "server/util/constants.h"
+#include "server/util/logging.h"
+#include "server/util/types.h"
 
 using namespace boost::asio;
 
 namespace Common::Server {
+
+// SessionParts holds per-session state. It contains non-movable types (mutex,
+// condition_variable) so it is always heap-allocated and owned via unique_ptr.
 struct SessionParts
 {
     SessionParts(): unprocessedReceivedMessages(), waitCondition(), mutex(), disconnected(false)
@@ -21,6 +30,8 @@ struct SessionParts
     std::condition_variable waitCondition;
     std::mutex mutex;
     bool disconnected;
+    int consecutiveTimeouts = 0;
+    int autoMoveThreshold = 2;  // 0 = never auto-move
     std::optional<std::shared_ptr<Common::MessageLogger>> messageLogger;
 };
 
@@ -31,25 +42,52 @@ public:
             Connection::handleConnectionRequest();
         }
         catch (std::exception &e) {
-            LOG("Error with client at %s:%d: %s", this->mClientIP, this->mClientPort, e.what());
+            // Suppress "End of file" — it just means the client disconnected before
+            // sending anything (e.g. a port-readiness probe). Everything else is real.
+            if (std::string(e.what()).find("End of file") == std::string::npos)
+                LOG("Error with client at %s:%d: %s", this->mClientIP, this->mClientPort, e.what());
         }
     }
 
 
-    void ConnectionListener(const std::function<PlayerGameSessionID (ManagedConnection &, Message::Message)> &new_session_callback) {
+    // Register a server-initiated session so incoming messages for it are routed correctly.
+    void addSession(PlayerGameSessionID sessionId, int autoMoveThreshold = 2)
+    {
+        auto parts = std::make_unique<SessionParts>();
+        parts->autoMoveThreshold = autoMoveThreshold;
+        std::lock_guard<std::mutex> lock(mSessionsMtx);
+        playerGameSessions.emplace(sessionId, std::move(parts));
+    }
+
+    void ConnectionListener(
+        const std::function<PlayerGameSessionID (ManagedConnection &, Message::Message)> &new_session_callback,
+        const std::function<bool(const Message::Message &)> &is_new_session =
+            [](const Message::Message &m){ return m.getJson()[Tags::TYPE] == ClientMsgTypes::GAME_SESSION_REQUEST; })
+    {
         try {
             while (true) {
                 auto message = this->receive();
-                if (message.getJson()["type"] == ClientMsgTypes::GAME_SESSION_REQUEST) {
+                if (is_new_session(message)) {
                     PlayerGameSessionID sessionID = new_session_callback(*this, message);
-                    playerGameSessions[sessionID];
+                    {
+                        std::lock_guard<std::mutex> lock(mSessionsMtx);
+                        playerGameSessions.emplace(sessionID, std::make_unique<SessionParts>());
+                    }
                 } else {
                     auto sessionId = message.getJson()[Tags::SESSION_ID].get<PlayerGameSessionID>();
                     auto sessionMessage = Message::SessionMessage(message);
-                    auto sessionParts = playerGameSessions.find(sessionId);
-                    ASRT(sessionParts != playerGameSessions.end(), "Session ID %lld not found", sessionId);
-                    sessionParts->second.unprocessedReceivedMessages.push_back(sessionMessage);
-                    sessionParts->second.waitCondition.notify_all();
+                    SessionParts* parts;
+                    {
+                        std::lock_guard<std::mutex> mapLock(mSessionsMtx);
+                        auto it = playerGameSessions.find(sessionId);
+                        ASRT(it != playerGameSessions.end(), "Session ID %lld not found", sessionId);
+                        parts = it->second.get();
+                    }
+                    {
+                        std::lock_guard<std::mutex> sessLock(parts->mutex);
+                        parts->unprocessedReceivedMessages.push_back(sessionMessage);
+                        parts->waitCondition.notify_all();
+                    }
                 }
             }
         }
@@ -63,15 +101,23 @@ public:
             else if (std::string(e.what()).find("Broken pipe") != std::string::npos) {
                 LOG("Client at %s:%d broke the pipe", this->mClientIP, this->mClientPort);
             }
+            else if (std::string(e.what()).find("Bad file descriptor") != std::string::npos) {
+                // Normal: socket was closed by shutdownSocket() during server cleanup
+            }
             else {
                 LOG("Error with client at %s:%d: %s", this->mClientIP, this->mClientPort, e.what());
             }
-            // Wake all sessions waiting on this connection so they can handle the disconnect
-            for (auto& [id, parts] : playerGameSessions)
+            std::vector<SessionParts*> snapshot;
             {
-                std::lock_guard<std::mutex> lock(parts.mutex);
-                parts.disconnected = true;
-                parts.waitCondition.notify_all();
+                std::lock_guard<std::mutex> mapLock(mSessionsMtx);
+                for (auto& [id, p] : playerGameSessions)
+                    snapshot.push_back(p.get());
+            }
+            for (auto* p : snapshot)
+            {
+                std::lock_guard<std::mutex> lock(p->mutex);
+                p->disconnected = true;
+                p->waitCondition.notify_all();
             }
         }
     }
@@ -89,11 +135,15 @@ public:
     {
         send(message);
 
-        auto sessionParts = playerGameSessions.find(message.getSessionID());
-        if (sessionParts != playerGameSessions.end())
+        SessionParts* parts = nullptr;
         {
-            logMessage("Sent", message, sessionParts->second);
+            std::lock_guard<std::mutex> lock(mSessionsMtx);
+            auto it = playerGameSessions.find(message.getSessionID());
+            if (it != playerGameSessions.end())
+                parts = it->second.get();
         }
+        if (parts)
+            logMessage("Sent", message, *parts);
     }
 
     // Returns nullopt on timeout or client disconnect
@@ -101,32 +151,51 @@ public:
             PlayerGameSessionID sessionId,
             std::chrono::seconds timeout = std::chrono::seconds(15))
     {
-        auto sessionParts = playerGameSessions.find(sessionId);
-        ASRT(sessionParts != playerGameSessions.end(), "Session ID %lld not found", sessionId);
+        SessionParts* rawParts;
+        {
+            std::lock_guard<std::mutex> mapLock(mSessionsMtx);
+            auto it = playerGameSessions.find(sessionId);
+            ASRT(it != playerGameSessions.end(), "Session ID %lld not found", sessionId);
+            rawParts = it->second.get();
+        }
+        SessionParts& parts = *rawParts;
 
-        std::unique_lock<std::mutex> lock(sessionParts->second.mutex);
-        bool gotMessage = sessionParts->second.waitCondition.wait_for(lock, timeout, [&sessionParts] {
-            return !sessionParts->second.unprocessedReceivedMessages.empty()
-                   || sessionParts->second.disconnected;
+        std::unique_lock<std::mutex> lock(parts.mutex);
+        auto effectiveTimeout = (parts.autoMoveThreshold > 0 && parts.consecutiveTimeouts >= parts.autoMoveThreshold)
+            ? std::chrono::seconds(0) : timeout;
+        bool gotMessage = parts.waitCondition.wait_for(lock, effectiveTimeout, [&parts] {
+            return !parts.unprocessedReceivedMessages.empty()
+                   || parts.disconnected;
         });
 
-        if (!gotMessage || sessionParts->second.disconnected
-            || sessionParts->second.unprocessedReceivedMessages.empty())
+        if (!gotMessage || parts.disconnected
+            || parts.unprocessedReceivedMessages.empty())
         {
+            parts.consecutiveTimeouts++;
             return std::nullopt;
         }
 
-        auto message = sessionParts->second.unprocessedReceivedMessages[0];
-        sessionParts->second.unprocessedReceivedMessages.erase(
-                sessionParts->second.unprocessedReceivedMessages.begin());
+        parts.consecutiveTimeouts = 0;
+        auto message = parts.unprocessedReceivedMessages[0];
+        parts.unprocessedReceivedMessages.erase(parts.unprocessedReceivedMessages.begin());
 
-        logMessage("Received", message, sessionParts->second);
+        logMessage("Received", message, parts);
         return message;
+    }
+
+    // Closes the underlying socket, unblocking any ConnectionListener thread waiting
+    // for reads so it can exit cleanly before the object is destroyed.
+    void shutdownSocket()
+    {
+        closeConnection();
     }
 
     void setMessageLogger(PlayerGameSessionID sessionID, const std::shared_ptr<Common::MessageLogger>& messageLogger)
     {
-        playerGameSessions[sessionID].messageLogger = messageLogger;
+        std::lock_guard<std::mutex> lock(mSessionsMtx);
+        auto it = playerGameSessions.find(sessionID);
+        if (it != playerGameSessions.end())
+            it->second->messageLogger = messageLogger;
     }
 
     void logMessage(std::string &&prefix, const Server::Message::SessionMessage &message, SessionParts & sessionParts)
@@ -138,7 +207,8 @@ public:
     }
 
 private:
-    std::unordered_map<PlayerGameSessionID, SessionParts> playerGameSessions;
+    std::mutex mSessionsMtx;
+    std::unordered_map<PlayerGameSessionID, std::unique_ptr<SessionParts>> playerGameSessions;
 };
 
 }

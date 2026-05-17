@@ -1,6 +1,10 @@
+import sys
 import time
+from pathlib import Path
 from random import shuffle
 from typing import List, Dict
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from clients.python.api.Trick import Trick
 from clients.python.api.networking.ManagedConnection import ManagedConnection
@@ -133,7 +137,7 @@ if __name__ == '__main__':
     games_won = 0
     start_time = time.time()
 
-    with ManagedConnection("tim_player") as connection:
+    with ManagedConnection() as connection:
         games = RunMultipleGames(connection, GameType.ANY, players, 16)
         for game_result in games:
             if "tim_ai" in str(game_result.winner):

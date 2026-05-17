@@ -1,9 +1,12 @@
 # pragma once
 
+#include <mutex>
 #include <netinet/in.h>
 #include <vector>
 #include <algorithm>
 #include <arpa/inet.h>
+#include "server/util/assertions.h"
+#include "server/util/logging.h"
 #include "server/util/types.h"
 #include "message.h"
 
@@ -41,8 +44,6 @@ protected:
             {Tags::STATUS, ServerStatus::SUCCESS}
         });
         send(connectionResponse);
-
-        LOG("Connected to %s:%d", mClientIP, mClientPort);
     }
 
     std::string readBytes()
@@ -78,13 +79,13 @@ protected:
     void send(Message::Message message)
     {
         auto jsonStr = message.getJson().dump();
+        std::lock_guard<std::mutex> lock(mSendMutex);
         write(*mClientSocket, buffer(jsonStr));
     }
 
 
     void closeConnection()
     {
-        LOG("Closing mConnection to %s:%d", mClientIP, mClientPort);
         mStatus = ConnectionStatus::DISCONNECTED;
         try
         {
@@ -92,7 +93,7 @@ protected:
         }
         catch (std::exception &e)
         {
-            LOG("Error closing mConnection to %s:%d: %s", mClientIP, mClientPort, e.what());
+            LOG("Error closing connection to %s:%d: %s", mClientIP, mClientPort, e.what());
         }
     }
 
@@ -101,6 +102,9 @@ public:
     {
         return mStatus == ConnectionStatus::CONNECTED;
     }
+
+    const char* clientIP() const { return mClientIP; }
+    int clientPort() const { return mClientPort; }
 
 private:
     std::string getFirstMessage(std::string buffer)
@@ -123,6 +127,7 @@ protected:
     ConnectionStatus mStatus;
 
 private:
+    mutable std::mutex mSendMutex;
     std::string mUnprocessedData;
 
 };

@@ -12,6 +12,7 @@ class Player
 {
 public:
     explicit Player(Server::PlayerTagSession playerSession) : mTagSession(std::move(playerSession)), mHand(), mTrickPlayedCards(), mScore(0) {}
+    virtual ~Player() = default;
 
 
     // Notifying virtual functions

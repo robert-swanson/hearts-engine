@@ -54,6 +54,25 @@ class ClientMsgTypes:
     REQUEST_GAME_SESSION = "game_session_request"
     DONATED_CARDS = "donated_cards"
     DECIDED_MOVE = "decided_move"
+    TOURNAMENT_REGISTER = "tournament_register"
+
+
+class TournamentMsgTypes:
+    QUEUED          = "tournament_queued"
+    GAME_ASSIGNMENT = "tournament_game_assignment"
+    STAGE_COMPLETE  = "tournament_stage_complete"
+    COMPLETE        = "tournament_complete"
+
+
+class TournamentTags:
+    TEAM_NAME       = "team_name"
+    PASSWORD        = "password"
+    PRIORITY_SCORE  = "priority_score"
+    GAME_SESSION_ID = "game_session_id"
+    GAME_ID         = "game_id"
+    STAGE           = "stage"
+    START_AT        = "start_at"
+    RESULTS         = "results"
 
 
 class MoveSource:
