@@ -32,19 +32,21 @@ int main(int argc, char **argv)
             SocketPtr socket = std::make_shared<ip::tcp::socket>(ioContext);
             acceptor.accept(*socket);
             auto & connection = connections.emplace_back(std::make_unique<ManagedConnection>(socket));
-            std::thread(&ManagedConnection::ConnectionListener, connection.get(), Matcher::HandleSessionRequest).detach();
+            auto* conn_ptr = connection.get();
+            std::thread([conn_ptr]() {
+                conn_ptr->ConnectionListener(Matcher::HandleSessionRequest);
+            }).detach();
             ManagedConnection::CleanConnections(connections);
         }
         catch (boost::system::system_error &e)
         {
-            if (std::string(e.what()).find("Broken pipe") != std::string::npos)
-            {
+            auto code = e.code().value();
+            if (e.code() == boost::asio::error::connection_aborted || code == EINVAL)
+                LOG("Client aborted connection before accept completed");
+            else if (std::string(e.what()).find("Broken pipe") != std::string::npos)
                 LOG("Client broke the pipe while connecting");
-            }
             else
-            {
                 LOG("Error: %s", e.what());
-            }
         }
     }
 

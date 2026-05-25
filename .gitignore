@@ -45,7 +45,11 @@ CMakeFiles/
 externals/
 log/
 versions/
-config.env
+results/
+results_ci/
+
+# Local config override (optional; takes precedence over config.env when passed explicitly)
+local.config.env
 
 # Bazel (entries listed without trailing slash to also match symlinks Bazel creates)
 bazel-bin

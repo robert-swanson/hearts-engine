@@ -9,7 +9,11 @@ Strategy:
               dump most dangerous card when points are at stake
   - Moon blocking: block if one opponent has sole possession of points above threshold
 """
+import sys
+from pathlib import Path
 from typing import List, Dict, Optional
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from clients.python.api.Game import Game
 from clients.python.api.Trick import Trick
@@ -78,7 +82,8 @@ class ClaudePlayer(Player):
     def handle_finished_trick(self, trick: Trick, winning_player: PlayerTagSession) -> None:
         pass
 
-    def handle_move(self, player: PlayerTagSession, card: Card) -> None:
+    def handle_move(self, player: PlayerTagSession, card: Card,
+                    report_latency_ms=None, decided_move_latency_ms=None) -> None:
         if self.current_trick is None:
             return
         trick_suit = self.current_trick.get_suit()
@@ -87,7 +92,7 @@ class ClaudePlayer(Player):
 
     # ── Moves ───────────────────────────────────────────────────────────────
 
-    def get_move(self, trick: Trick, legal_moves: List[Card]) -> Card:
+    def get_move(self, trick: Trick, legal_moves: List[Card], move_request_latency_ms=None) -> Card:
         assert legal_moves, "Must have at least one legal move"
 
         if self._should_block_moon():
@@ -249,7 +254,7 @@ if __name__ == '__main__':
     games_won = 0
     start_time = time.time()
 
-    with ManagedConnection("claude_player") as connection:
+    with ManagedConnection() as connection:
         game_results = RunMultipleGames(connection, GameType.ANY, players, 10)
         for result in game_results:
             if "claude_player" in str(result.winner):

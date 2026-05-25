@@ -32,11 +32,14 @@ A `game_session_request` message may be sent by the client at anytime after the 
 {
     "type": "game_session_request",
     "player_tag": "<name of the player logic>",
-    "game_type": "<any|humans_only|bots_only>",
+    "game_type": "any",
+    "lobby_code": "<optional matching key>",
     "seq_num": 0
 }
 ```
 The seq_num for this message will always be 0 as it is the first message in the session.
+
+`lobby_code` controls who you get matched with: sessions sharing the same `lobby_code` are placed into the same FIFO queue (default `"main"`). `game_type` is currently accepted but ignored by the server — matching is purely FIFO within a lobby.
 
 The server will produce:
 ```json

@@ -98,22 +98,35 @@ class ManagedConnection(Connection):
     def _receive_loop(self):
         self.logger.log("Starting receiver thread")
         with self.receiver_thread_lock:
-            while len(self.waiting_sessions) > 0:
-                message = self.receive()
-                if message is None:
-                    if len(self.waiting_sessions) == 0:
-                        break
-                    elif self.connection_timeout_s is None or (datetime.now() - self.last_msg_time) < timedelta(seconds=self.connection_timeout_s):
+            try:
+                while True:
+                    message = self.receive()
+                    if message is None:
+                        # Only exit when nobody is waiting AND the connection has been
+                        # idle long enough to be considered dead.  Exiting while
+                        # waiting_sessions is merely temporarily empty (between game
+                        # batches) would leave the next session without a reader.
+                        if len(self.waiting_sessions) == 0:
+                            if self.connection_timeout_s is not None and \
+                                    (datetime.now() - self.last_msg_time) >= timedelta(seconds=self.connection_timeout_s):
+                                break
+                        elif self.connection_timeout_s is not None and \
+                                (datetime.now() - self.last_msg_time) >= timedelta(seconds=self.connection_timeout_s):
+                            raise ConnectionError(f"Connection timed out while waiting for message, waiting for {self.waiting_sessions}")
                         continue
                     else:
-                        raise ConnectionError(f"Connection timed out while waiting for message, waiting for {self.waiting_sessions}")
-                else:
-                    self.last_msg_time = datetime.now()
+                        self.last_msg_time = datetime.now()
 
-                self._handle_msg(message)
-
+                    self._handle_msg(message)
+            except ConnectionError:
+                # Server closed the connection — notify any waiting sessions so they
+                # see the disconnect promptly rather than waiting for their timeout.
+                with self.message_received_condition:
+                    self.message_received_condition.notify_all()
             self.receiver_thread = None
         self.logger.log("Ending receiver thread")
+        if len(self.waiting_sessions) > 0:
+            self._start_receiver_thread()
 
     def _handle_msg(self, message: json):
         session_id = message[Tags.SESSION_ID]

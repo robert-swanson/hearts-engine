@@ -7,6 +7,11 @@ build --macos_minimum_os=13.0
 build --cxxopt=-isystem/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1
 build --cxxopt=-isystem/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include
 
+# macOS 26 / Apple Clang 17: system Boost at /usr/local/include (Homebrew) is an older
+# version that lacks BOOST_CONTAINER_STATIC_ASSERT. Force-include the Bazel-managed
+# workaround.hpp before any source file can set the include guard from the system copy.
+build --per_file_copt=.*/boost[.]container[^/]*/src/.*[.]cpp@-include,external/boost.container+/include/boost/container/detail/workaround.hpp
+
 # add bazelboost registry
 common --registry=https://raw.githubusercontent.com/bazelboost/registry/main
 # by adding the bazelboost registry the BCR gets removed so you must add it here as well

@@ -12,6 +12,7 @@ class Player
 {
 public:
     explicit Player(Server::PlayerTagSession playerSession) : mTagSession(std::move(playerSession)), mHand(), mTrickPlayedCards(), mScore(0) {}
+    virtual ~Player() = default;
 
 
     // Notifying virtual functions
@@ -23,6 +24,10 @@ public:
     virtual Card getMove(const CardCollection& legalPlays) = 0;
     virtual void notifyMove(PlayerID playerID, Card card, bool autoMoved) = 0;
     virtual bool wasLastMoveAuto() const { return false; }
+    // Latency data from the most recent move exchange (-1 if unavailable or auto-moved).
+    virtual long lastS2CLatencyMs() const { return -1; }  // server→client (move_request delivery)
+    virtual long lastC2SLatencyMs() const { return -1; }  // client→server (decided_move delivery)
+    virtual long lastThinkTimeMs()  const { return -1; }  // client think time
     virtual void notifyEndTrick(PlayerID winningPlayer) = 0;
     virtual void notifyEndRound(std::map<PlayerID, int> & roundScores) = 0;
     virtual void notifyEndGame(std::map<PlayerID, int> & gameScores, PlayerID winner) = 0;

@@ -20,6 +20,7 @@ public:
         std::string line;
         while (std::getline(env_file, line))
         {
+            if (line.empty() || line[0] == '#') continue;
             auto delimiter = line.find('=');
             ASRT(delimiter != std::string::npos, "Invalid env file line: %s", line.c_str());
             auto key = line.substr(0, delimiter);
@@ -56,6 +57,11 @@ public:
         {
             DIE("Env variable '%s' is not a boolean", key.c_str());
         }
+    }
+
+    bool has(const std::string& key) const
+    {
+        return mVariables.find(key) != mVariables.end();
     }
 
     void assertAllUsed()

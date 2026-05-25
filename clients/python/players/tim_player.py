@@ -1,6 +1,10 @@
+import sys
 import time
+from pathlib import Path
 from random import shuffle
 from typing import List, Dict
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from clients.python.api.Trick import Trick
 from clients.python.api.networking.ManagedConnection import ManagedConnection
@@ -60,10 +64,11 @@ class TimPlayer(Player):
         pass
 
     # Moves
-    def handle_move(self, player: PlayerTagSession, card: Card) -> None:
+    def handle_move(self, player: PlayerTagSession, card: Card,
+                    report_latency_ms=None, decided_move_latency_ms=None) -> None:
         pass
 
-    def get_move(self, trick: Trick, legal_moves: List[Card]) -> Card:
+    def get_move(self, trick: Trick, legal_moves: List[Card], move_request_latency_ms=None) -> Card:
         if trick.get_suit() == None: 
             return self.play_first_card_in_trick(trick,legal_moves)
         elif self.has_trick_suite(trick):
@@ -133,7 +138,7 @@ if __name__ == '__main__':
     games_won = 0
     start_time = time.time()
 
-    with ManagedConnection("tim_player") as connection:
+    with ManagedConnection() as connection:
         games = RunMultipleGames(connection, GameType.ANY, players, 16)
         for game_result in games:
             if "tim_ai" in str(game_result.winner):

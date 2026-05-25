@@ -1,7 +1,7 @@
 import json
 import threading
 from enum import Enum
-from socket import socket, AF_INET, SOCK_STREAM, timeout
+from socket import socket, AF_INET, SOCK_STREAM, IPPROTO_TCP, TCP_NODELAY, timeout
 from typing import List
 
 from clients.python.util.Constants import Tags, ClientMsgTypes, ServerMsgTypes, \
@@ -20,10 +20,11 @@ class Connection:
         self.host = ip
         self.port = port
         self.client_socket = socket(AF_INET, SOCK_STREAM)
+        self.client_socket.setsockopt(IPPROTO_TCP, TCP_NODELAY, 1)
         try:
-            self.client_socket.connect((SERVER_IP, SERVER_PORT))
+            self.client_socket.connect((self.host, self.port))
         except ConnectionRefusedError as e:
-            print(f"Failed to connect to {SERVER_IP}:{SERVER_PORT}, is the server running?")
+            print(f"Failed to connect to {self.host}:{self.port}, is the server running?")
             raise e
 
         self.client_socket.settimeout(connection_micro_timeout_s)
@@ -34,7 +35,7 @@ class Connection:
         self.logger = ConnectionLogger() if LOG_CONNECTIONS else None
 
         self.setup()
-        print(f"Connected to {SERVER_IP}:{SERVER_PORT}")
+        print(f"Connected to {self.host}:{self.port}")
 
     def receive(self) -> json:
         if len(self.pending_messages) == 0:
@@ -78,9 +79,11 @@ class Connection:
         return json_objects
 
     def receive_status(self, expected_status: str, expected_msg_type: str) -> json:
-        response = self.receive()
-        if response is None:
-            raise ConnectionError("Server closed connection while waiting for status")
+        # recv() returns None on MICRO_TIMEOUT socket timeout (not a connection close).
+        # Retry until we get data, so high-latency connections (e.g. via port forward) work.
+        response = None
+        while response is None:
+            response = self.receive()
         assert response[Tags.TYPE] == expected_msg_type, \
             f"Expected message type {expected_msg_type}, got {response[Tags.TYPE]}"
         assert response[Tags.STATUS] == expected_status, \

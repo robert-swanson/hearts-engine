@@ -2,7 +2,7 @@ load("@rules_cc//cc:defs.bzl", "cc_library")
 
 cc_library(
     name = "game",
-    srcs = ["game.h", "round.h", "trick.h", "remote_player.h"],
+    srcs = ["game.h", "round.h", "trick.h", "remote_player.h", "game_observer.h"],
     deps = ["//server/game/objects"],
     visibility = [
         "//server:__pkg__",

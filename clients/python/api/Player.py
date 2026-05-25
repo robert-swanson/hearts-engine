@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 from clients.python.api.Game import Game
 from clients.python.api.Round import Round
@@ -86,11 +86,15 @@ class Player(ABC):
         pass
 
     # Moves
-    def handle_move(self, player: PlayerTagSession, card: Card) -> None:
+    def handle_move(self, player: PlayerTagSession, card: Card,
+                    report_latency_ms: Optional[int] = None,
+                    decided_move_latency_ms: Optional[int] = None) -> None:
         """
-        Signals that a move was made by a player (including self)
+        Signals that a move was made by a player (including self).
         :param player: The player who made the move
         :param card: The card that was played
+        :param report_latency_ms: s2c latency of this move_report in ms (None if unavailable)
+        :param decided_move_latency_ms: c2s latency of the decided_move that triggered this report (None if unavailable)
         """
         pass
 
@@ -109,9 +113,12 @@ class Player(ABC):
         print(f"WARNING: {self.player_tag_session} was auto-passed by the server (response was slow or invalid): {cards}")
 
     @abstractmethod
-    def get_move(self, trick: Trick, legal_moves: List[Card]) -> Card:
+    def get_move(self, trick: Trick, legal_moves: List[Card],
+                 move_request_latency_ms: Optional[int] = None) -> Card:
         """
-        Signals that it is the player's turn and requests the player to select a card to play
+        Signals that it is the player's turn and requests the player to select a card to play.
+        :param move_request_latency_ms: s2c latency of the move_request in ms (None if unavailable).
+            Use this to budget think time: if latency is high, spend less time thinking.
         :param trick: A reference object that contains the player order as well as pointers to moves as they are made
         :param legal_moves: A list of the cards that the player is allowed to play
         :return: The card to play

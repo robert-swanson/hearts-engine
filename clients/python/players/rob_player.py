@@ -1,6 +1,10 @@
+import sys
 import threading
 import time
+from pathlib import Path
 from typing import List, Dict, Optional
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from clients.python.api import Game
 from clients.python.api.Trick import Trick
@@ -53,10 +57,11 @@ class RobPlayer(Player):
         pass
 
     # Moves
-    def handle_move(self, player: PlayerTagSession, card: Card) -> None:
+    def handle_move(self, player: PlayerTagSession, card: Card,
+                    report_latency_ms=None, decided_move_latency_ms=None) -> None:
         pass
 
-    def get_move(self, trick: Trick, legal_moves: List[Card]) -> Card:
+    def get_move(self, trick: Trick, legal_moves: List[Card], move_request_latency_ms=None) -> Card:
         assert len(legal_moves) > 0, "Must have at least one legal move"
         if self.is_worried_about_shooting_the_moon():
             return self.get_move_likely_to_win_trick(trick, legal_moves)
@@ -109,7 +114,7 @@ if __name__ == '__main__':
     games_won = 0
     start_time = time.time()
 
-    with ManagedConnection("rob_player") as connection:
+    with ManagedConnection() as connection:
         game_results = RunMultipleGames(connection, GameType.ANY, players, 10)
         for game_result in game_results:
             if "rob_player" in str(game_result.winner):
