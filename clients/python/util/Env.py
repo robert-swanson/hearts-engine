@@ -26,4 +26,5 @@ ENV = EnvReader(ENV_FILEPATH)
 
 SERVER_IP = ENV.get("SERVER_ADDR")
 SERVER_PORT = int(ENV.get("SERVER_PORT"))
-LOG_DIR = Path(ENV.get("LOG_DIR"))
+TOURNAMENT_PORT = int(ENV.env_dict.get("TOURNAMENT_PORT", ENV.get("SERVER_PORT")))
+LOG_DIR = Path(ENV.env_dict.get("LOG_DIR", "./log"))

@@ -36,10 +36,11 @@ class RobPlayer(Player):
         pass
 
     # Moves
-    def handle_move(self, player: PlayerTagSession, card: Card) -> None:
+    def handle_move(self, player: PlayerTagSession, card: Card,
+                    report_latency_ms=None, decided_move_latency_ms=None) -> None:
         pass
 
-    def get_move(self, trick: Trick, legal_moves: List[Card]) -> Card:
+    def get_move(self, trick: Trick, legal_moves: List[Card], move_request_latency_ms=None) -> Card:
         if self.is_worried_about_shooting_the_moon():
             return self.get_move_likely_to_win_trick(trick, legal_moves)
         else:
@@ -92,7 +93,7 @@ if __name__ == '__main__':
     games_won = 0
     start_time = time.time()
 
-    with ManagedConnection("rob_player") as connection:
+    with ManagedConnection() as connection:
         games = RunMultipleGames(connection, GameType.ANY, players, 100)
         for game_result in games:
             if "rob_player" in str(game_result[0].winner):

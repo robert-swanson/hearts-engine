@@ -1,5 +1,9 @@
+import sys
 import time
+from pathlib import Path
 from typing import List, Dict, Optional
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from clients.python.api.Trick import Trick
 from clients.python.api.networking.ManagedConnection import ManagedConnection
@@ -51,10 +55,11 @@ class MadisonPlayer(Player):
         pass
 
     # Moves
-    def handle_move(self, player: PlayerTagSession, card: Card) -> None:
+    def handle_move(self, player: PlayerTagSession, card: Card,
+                    report_latency_ms=None, decided_move_latency_ms=None) -> None:
         pass
 
-    def get_move(self, trick: Trick, legal_moves: List[Card]) -> Card:
+    def get_move(self, trick: Trick, legal_moves: List[Card], move_request_latency_ms=None) -> Card:
         highest_card = SortCardsByRank(legal_moves, reverse=True)[0]
         lowest_card = legal_moves[0]
 

@@ -1,18 +1,24 @@
 #pragma once
 
+#include <atomic>
 #include <random>
 #include <utility>
 
 #include "../game/objects/player.h"
 
+inline std::atomic<int> gAutoMoveLogCount{0};
+static constexpr int kAutoMoveLogLimit = 100;
+
 namespace Common::Server
 {
-class RemotePlayer final: public Game::Player
+class RemotePlayer : public Game::Player
 {
 public:
     explicit RemotePlayer(PlayerTagSession tagSession, const std::shared_ptr<PlayerGameSession>& gameSession) :
             Player(std::move(tagSession)), mGameSession(gameSession), mPlayerTagSession(gameSession->getPlayerTagSession()),
             mLastMoveWasAuto(false) {}
+
+    ~RemotePlayer() override = default;
 
     void notifyStartGame(std::vector<PlayerTagSession> playerOrder) override
     {
@@ -85,25 +91,53 @@ public:
         }});
     }
 
+    // Returns wall-clock milliseconds since epoch.
+    static long nowMs()
+    {
+        return static_cast<long>(std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count());
+    }
+
     Game::Card getMove(const Game::CardCollection& legalPlays) override
     {
+        long sentAt = nowMs();
         mGameSession->send({{
-            {Tags::TYPE, ServerMsgTypes::MOVE_REQUEST},
-            {Tags::LEGAL_MOVES, legalPlays.getCardsAsStrings()}
+            {Tags::TYPE,          ServerMsgTypes::MOVE_REQUEST},
+            {Tags::LEGAL_MOVES,   legalPlays.getCardsAsStrings()},
+            {Tags::SENT_AT_MS,    sentAt},
+            {Tags::PREV_LATENCY_MS, mLastC2SLatencyMs}  // c2s latency of the previous decided_move
         }});
 
-        mLastMoveWasAuto = false;
+        mLastMoveWasAuto    = false;
+        mLastS2CLatencyMs   = -1;
+        mLastC2SLatencyMs   = -1;
+        mLastThinkTimeMs    = -1;
+
         auto msg = mGameSession->receive();
+        long receivedAt = nowMs();
         if (msg)
         {
-            auto json = msg->getJson();
-            if (json.contains(Tags::CARD))
+            auto j = msg->getJson();
+            if (j.contains(Tags::CARD))
             {
                 try
                 {
-                    Game::Card card(json[Tags::CARD].get<std::string>());
+                    Game::Card card(j[Tags::CARD].get<std::string>());
                     if (legalPlays.contains(card))
+                    {
+                        // Extract latency metadata from the decided_move
+                        if (j.contains(Tags::SENT_AT_MS))
+                        {
+                            long clientSentAt = j[Tags::SENT_AT_MS].get<long>();
+                            mLastC2SLatencyMs  = receivedAt - clientSentAt;
+                            if (j.contains(Tags::PREV_LATENCY_MS))
+                            {
+                                mLastS2CLatencyMs = j[Tags::PREV_LATENCY_MS].get<long>();
+                                mLastThinkTimeMs  = clientSentAt - sentAt - mLastS2CLatencyMs;
+                            }
+                        }
                         return card;
+                    }
                     LOG("Client %s played illegal card %s",
                         mPlayerTagSession.c_str(), card.getAbbreviation().c_str());
                 }
@@ -119,13 +153,20 @@ public:
 
     void notifyMove(PlayerTagSession playerID, Game::Card card, bool autoMoved) override
     {
+        long sentAt = nowMs();
         mGameSession->send({{
-            {Tags::TYPE, ServerMsgTypes::MOVE_REPORT},
-            {Tags::PLAYER_TAG, playerID},
-            {Tags::CARD, card.getAbbreviation()},
-            {Tags::MOVE_SOURCE, autoMoved ? MoveSource::SERVER : MoveSource::PLAYER}
+            {Tags::TYPE,          ServerMsgTypes::MOVE_REPORT},
+            {Tags::PLAYER_TAG,    playerID},
+            {Tags::CARD,          card.getAbbreviation()},
+            {Tags::MOVE_SOURCE,   autoMoved ? MoveSource::SERVER : MoveSource::PLAYER},
+            {Tags::SENT_AT_MS,    sentAt},
+            {Tags::PREV_LATENCY_MS, mLastC2SLatencyMs}  // c2s latency of the decided_move that just arrived
         }});
     }
+
+    long lastS2CLatencyMs() const override { return mLastS2CLatencyMs; }
+    long lastC2SLatencyMs() const override { return mLastC2SLatencyMs; }
+    long lastThinkTimeMs()  const override { return mLastThinkTimeMs;  }
 
     bool wasLastMoveAuto() const override { return mLastMoveWasAuto; }
 
@@ -158,7 +199,10 @@ private:
     Game::Card autoMoveCard(const Game::CardCollection& legalPlays)
     {
         Game::Card chosen = randomCard(legalPlays);
-        LOG("Auto-moved %s for client %s", chosen.getAbbreviation().c_str(), mPlayerTagSession.c_str());
+        int n = ++gAutoMoveLogCount;
+        if (n <= kAutoMoveLogLimit)
+            LOG("Auto-moved %s for client %s%s", chosen.getAbbreviation().c_str(), mPlayerTagSession.c_str(),
+                n == kAutoMoveLogLimit ? " (auto-move logging limit reached)" : "");
         return chosen;
     }
 
@@ -172,7 +216,10 @@ private:
         std::shuffle(indices.begin(), indices.end(), rng);
         for (int i = 0; i < 3; ++i)
             chosen.push_back(hand[indices[i]]);
-        LOG("Auto-passed for client %s", mPlayerTagSession.c_str());
+        int n = ++gAutoMoveLogCount;
+        if (n <= kAutoMoveLogLimit)
+            LOG("Auto-passed for client %s%s", mPlayerTagSession.c_str(),
+                n == kAutoMoveLogLimit ? " (auto-move logging limit reached)" : "");
         return Game::CardCollection(chosen.begin(), chosen.end());
     }
 
@@ -186,5 +233,8 @@ private:
     std::shared_ptr<PlayerGameSession> mGameSession;
     PlayerTagSession mPlayerTagSession;
     bool mLastMoveWasAuto;
+    long mLastS2CLatencyMs = -1;  // server→client latency of last move_request
+    long mLastC2SLatencyMs = -1;  // client→server latency of last decided_move
+    long mLastThinkTimeMs  = -1;  // client think time for last move
 };
 }

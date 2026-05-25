@@ -1,3 +1,4 @@
+import time
 from typing import List
 
 from clients.python.api.Game import Game
@@ -9,6 +10,10 @@ from clients.python.api.types.Card import StrListToCards, Card
 from clients.python.api.types.PassDirection import PassDirection
 from clients.python.api.types.PlayerTagSession import MakePlayerTagSessions, MakePlayerTagSession, PlayerTagSession
 from clients.python.util.Constants import ServerMsgTypes, Tags, ClientMsgTypes, MoveSource
+
+
+def _now_ms() -> int:
+    return int(time.time() * 1000)
 
 
 class ActiveGame(PassingMessenger, Game):
@@ -104,24 +109,49 @@ class ActiveTrick(PassingMessenger, Trick):
         player.handle_new_trick(self)
 
         for current_player in self.player_order:
+            move_request_latency_ms = None
+
             if current_player == self.player.player_tag_session:
                 move_request_msg = self.receive_type(ServerMsgTypes.MOVE_REQUEST)
+                received_at = _now_ms()
+
+                sent_at = move_request_msg.get(Tags.SENT_AT_MS)
+                move_request_latency_ms = (received_at - sent_at) if sent_at is not None else None
+
                 legal_moves = StrListToCards(move_request_msg[Tags.LEGAL_MOVES])
-                move = self.player.get_move(self, legal_moves)
-                assert move in legal_moves, f"Player {self.player.player_tag_session} tried to play {move} but it was not legal"
-                self.send({Tags.TYPE: ClientMsgTypes.DECIDED_MOVE, Tags.CARD: move})
+                move = player.get_move(self, legal_moves, move_request_latency_ms=move_request_latency_ms)
+
+                assert move in legal_moves, \
+                    f"Player {self.player.player_tag_session} tried to play {move} but it was not legal"
+                decided_at = _now_ms()
+                self.send({
+                    Tags.TYPE:            ClientMsgTypes.DECIDED_MOVE,
+                    Tags.CARD:            move,
+                    Tags.SENT_AT_MS:      decided_at,
+                    Tags.PREV_LATENCY_MS: move_request_latency_ms,
+                })
 
             move_report_msg = self.receive_type(ServerMsgTypes.MOVE_REPORT)
+            report_received_at = _now_ms()
             reported_player = MakePlayerTagSession(move_report_msg[Tags.PLAYER_TAG])
             reported_card = Card(move_report_msg[Tags.CARD])
             auto_moved = move_report_msg.get(Tags.MOVE_SOURCE) == MoveSource.SERVER
+
+            # Latency of this move_report (s2c)
+            report_sent_at = move_report_msg.get(Tags.SENT_AT_MS)
+            report_latency_ms = (report_received_at - report_sent_at) if report_sent_at is not None else None
+
+            # c2s latency of the decided_move that triggered this report
+            decided_move_c2s_ms = move_report_msg.get(Tags.PREV_LATENCY_MS)
 
             # Notify the affected player that the server acted on their behalf.
             if auto_moved and current_player == self.player.player_tag_session:
                 player.handle_auto_move()
 
             self.moves.append(Move(reported_player, reported_card))
-            player.handle_move(reported_player, reported_card)
+            player.handle_move(reported_player, reported_card,
+                               report_latency_ms=report_latency_ms,
+                               decided_move_latency_ms=decided_move_c2s_ms)
 
         end_trick_msg = self.receive_type(ServerMsgTypes.END_TRICK)
         self.winner = MakePlayerTagSession(end_trick_msg[Tags.WINNING_PLAYER])
