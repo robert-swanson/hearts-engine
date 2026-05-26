@@ -58,3 +58,6 @@ class ObjectiveGame(Game):
         print("Game Results:")
         for i, player in enumerate(rankings):
             print(f"{i + 1}. {player} with {self.players_to_points[player]} points")
+
+
+PrivilegedGame = Game

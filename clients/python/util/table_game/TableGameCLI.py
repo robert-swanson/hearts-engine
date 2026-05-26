@@ -1,6 +1,10 @@
 import re
 from typing import Dict, List, TypeVar, Type, Optional
 
+
+class UndoMove(Exception):
+    pass
+
 from clients.python.api.Game import Game
 from clients.python.api.types.Card import Card, CondensedDeckRepr
 from clients.python.api.types.PassDirection import PassDirection
@@ -133,11 +137,13 @@ class TableGameCLI:
             return type_cls(input_str)
 
     def ask_for_card(self, prompt: str, validators: List[CardsValidator],
-                     validate_with: Optional[List[Card]] = None) -> Card:
+                     validate_with: Optional[List[Card]] = None, allow_undo: bool = False) -> Card:
         if validate_with is None:
             validate_with = []
         while True:
             card_str = self.input(prompt + " ").upper()
+            if allow_undo and card_str.strip() == "UNDO":
+                raise UndoMove()
             if not _is_valid_card_str(card_str, validators, validate_with):
                 continue
             return Card(card_str)
