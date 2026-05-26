@@ -167,10 +167,13 @@ class TableRound(Round):
         if last_winner is not None:
             first = last_winner
         else:
-            # Check if any AI holds 2C; otherwise ask the CLI
-            first = next(
-                (pts for pts, hand in self.ai_hands.items() if Card("2C") in hand),
-                self.cli.ask_for_player("Who has the 2 of clubs?", self.player_order)
+            # Check if any AI holds 2C; otherwise ask the CLI.
+            # Use `or` so ask_for_player is only called when next() returns None
+            # (Python evaluates all arguments before calling next(), so passing
+            # ask_for_player() directly as the default would always invoke it).
+            first = (
+                next((pts for pts, hand in self.ai_hands.items() if Card("2C") in hand), None)
+                or self.cli.ask_for_player("Who has the 2 of clubs?", self.player_order)
             )
         start_idx = self.player_order.index(first)
         return self.player_order[start_idx:] + self.player_order[:start_idx]

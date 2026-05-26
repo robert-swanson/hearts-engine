@@ -1,4 +1,5 @@
 import re
+import sys
 from typing import Dict, List, TypeVar, Type, Optional
 
 
@@ -130,6 +131,8 @@ class TableGameCLI:
             self.last_unexpected_input = None
         else:
             input_str = input(prompt)
+            if not sys.stdin.isatty():
+                print(input_str)  # echo when reading from a file
 
         if self._check_card_cmds(input_str):
             return self.input(prompt, type_cls)
