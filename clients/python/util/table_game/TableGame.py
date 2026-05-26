@@ -65,11 +65,7 @@ def _setup_players(strategies: Dict[str, Type[Player]]):
 
             cls: Optional[Type[Player]] = strategies.get(entry) or strategies.get(entry.lower())
             if cls is not None:
-                tag = cls.player_tag
-                if tag in used_tags:
-                    # Disambiguate duplicate strategy by appending seat number
-                    tag = f"{tag}_{seat}"
-                used_tags.add(tag)
+                tag = cls.player_tag  # must match the class's hardcoded player_tag
                 player_configs.append((tag, cls))
                 print(f"  → AI: {cls.__name__} (tag: {tag})")
             else:
