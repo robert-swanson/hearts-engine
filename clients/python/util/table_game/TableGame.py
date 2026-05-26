@@ -1,3 +1,4 @@
+import argparse
 import importlib
 import sys
 from pathlib import Path
@@ -81,6 +82,14 @@ def _setup_players(strategies: Dict[str, Type[Player]]):
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description="Hearts table game with AI assistance")
+    parser.add_argument('--input-file', metavar='FILE',
+                        help='Newline-delimited file of CLI inputs (for scripted/test runs)')
+    args = parser.parse_args()
+
+    if args.input_file:
+        sys.stdin = open(args.input_file)
+
     strategies = _discover_strategies()
     player_configs = _setup_players(strategies)
     print()
