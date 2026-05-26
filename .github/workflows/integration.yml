@@ -7,6 +7,25 @@ on:
     branches: [ "main" ]
 
 jobs:
+  table-game:
+    runs-on: macos-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Run table game test
+      run: |
+        export PYTHONPATH="$(pwd):${PYTHONPATH}"
+        python3 tests/table_game_test.py
+
   competition:
     runs-on: macos-latest
 
