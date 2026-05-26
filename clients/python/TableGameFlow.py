@@ -147,11 +147,13 @@ class TableRound(Round):
         self.ai_configs = ai_configs
         self.cli = cli
 
-        # Ask for each AI's starting hand; human hands are untracked
+        # Ask for each AI's starting hand; cross-validate against already-entered AI hands
         self.ai_hands: Dict[PlayerTagSession, List[Card]] = {}
         for pts in player_order:
             if pts in ai_players:
-                cards = cli.ask_for_cards(f"Starting hand for {pts.player_tag}", [UNIQUE_CARDS_VALIDATOR], 13)
+                already_dealt = [c for hand in self.ai_hands.values() for c in hand]
+                validators = [UNIQUE_CARDS_VALIDATOR, BlacklistedCardsValidator(already_dealt)]
+                cards = cli.ask_for_cards(f"Starting hand for {pts.player_tag}", validators, 13)
                 self.ai_hands[pts] = cards
 
         first_hand = next(iter(self.ai_hands.values()), [])
@@ -176,6 +178,8 @@ class TableRound(Round):
     def get_round_points(self) -> Dict[PlayerTagSession, int]:
         player_to_points: Dict[PlayerTagSession, int] = {p: 0 for p in self.player_order}
         for trick in self.tricks:
+            if trick.winner is None:
+                continue
             hearts = sum(1 for m in trick.moves if m.card.suit == Suit.HEARTS)
             had_qs = any(m.card == Card("QS") for m in trick.moves)
             player_to_points[trick.winner] += hearts + (13 if had_qs else 0)
@@ -192,19 +196,30 @@ class TableRound(Round):
             self.cards_in_hand = next(iter(self.ai_hands.values()))
 
         if self.pass_direction != PassDirection.KEEPER:
+            # Phase 1: get every AI's chosen pass cards and show instructions to the go-between
             for pts, p in self.ai_players.items():
                 receiving = self.pass_direction.get_receiving_player(self.player_order, pts)
-                donating = self.pass_direction.get_donating_player(self.player_order, pts)
                 donating_cards = p.get_cards_to_pass(self.pass_direction, receiving)
                 self.ai_donating_cards[pts] = donating_cards
                 self.cli.instruct(f"{pts.player_tag}: pass {donating_cards} to {receiving.player_tag}")
 
-                validators = [UNIQUE_CARDS_VALIDATOR, BlacklistedCardsValidator(self.ai_hands[pts])]
-                received = self.cli.ask_for_cards(
-                    f"What did {donating.player_tag} pass to {pts.player_tag}?", validators, 3)
-                self.ai_received_cards[pts] = received
+            # Phase 2: resolve what each AI receives
+            for pts, p in self.ai_players.items():
+                donating = self.pass_direction.get_donating_player(self.player_order, pts)
 
-                new_hand = [c for c in self.ai_hands[pts] + received if c not in donating_cards]
+                if donating in self.ai_players:
+                    # Donor is an AI — we already know exactly what they're passing
+                    received = list(self.ai_donating_cards[donating])
+                    print(f"[auto] {donating.player_tag} passes {received} to {pts.player_tag}")
+                else:
+                    # Donor is human — ask the go-between; blacklist all cards held by any AI
+                    all_ai_cards = [c for hand in self.ai_hands.values() for c in hand]
+                    validators = [UNIQUE_CARDS_VALIDATOR, BlacklistedCardsValidator(all_ai_cards)]
+                    received = self.cli.ask_for_cards(
+                        f"What did {donating.player_tag} pass to {pts.player_tag}?", validators, 3)
+
+                self.ai_received_cards[pts] = received
+                new_hand = [c for c in self.ai_hands[pts] + received if c not in self.ai_donating_cards[pts]]
                 self.ai_hands[pts].clear()
                 self.ai_hands[pts].extend(new_hand)
                 p.receive_passed_cards(received, self.pass_direction, donating)
