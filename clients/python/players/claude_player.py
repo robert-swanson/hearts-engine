@@ -28,8 +28,8 @@ from clients.python.players.random_player import RandomPlayer
 from clients.python.util.Constants import GameType
 
 
-class ClaudePlayer(Player):
-    player_tag = "claude_player"
+class RobClaudePlayer(Player):
+    player_tag = "rob_claude_player"
 
     def __init__(self, player_tag_session: PlayerTagSession):
         super().__init__(player_tag_session)

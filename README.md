@@ -88,33 +88,51 @@ See [`server/tournament_server.cpp`](server/tournament_server.cpp) for the full 
 
 
 ## Use a Player AI in a physical game of hearts
-Any client implemented using the python API can automatically be used in a physical game of hearts provided a person can act as the go-between between the physical cards and the textual interface.
-1. Look at the [TableGame.py](clients/python/util/table_game/TableGame.py) and set `player_cls` to the client you want to use.
-2. Run it: `python3 clients/python/util/table_game/TableGame.py`
-3. Populate the player names (you are treated as player 1) starting with the person to your left
-4. Follow the prompts to input cards dealt to the player and take actions when instructed
 
-Cards are expressed as two case-insensitive characters, the rank and suit, e.g.:
-- `2C` is the 2 of clubs
-- `QH` is the queen of hearts
-- `AS` is the ace of spades
-- `TD` is the ten of diamonds
+Any AI player can advise one or more seats at a real table. A human acts as the go-between — entering cards as they are dealt and played.
 
-A list of cards can be expressed as a space (or comma) seperated list of cards, e.g.: `2C QS 8D`
-
-Or it can be expressed as a suit followed by ranks of that suit:
-```txt
-...
-Starting hand, card 1/13: C: 2 5 8 J A
-Starting hand, card 6/13: D: 3 A
-Starting hand, card 8/13: QS
-Starting hand, card 9/13: H: 5 7 8 9
-Starting hand, card 13/13: 9H
-Duplicate card(s): {9H}
-Starting hand, card 13/13: TH
-Pass [AD, AC, QS] Left to Ted(2) (press enter to continue)
-...
+```bash
+python3 clients/python/util/table_game/TableGame.py
 ```
+
+On startup it shows the available AI strategies and prompts you to configure all four seats:
+
+```
+Available AI strategies:
+  rob                  (RobPlayer)
+  rob_claude           (RobClaudePlayer)
+  random               (RandomPlayer)
+  madison              (MadisonPlayer)
+  ...
+
+Seat 1: Alice          → Human: Alice
+Seat 2: rob            → AI: RobPlayer (tag: rob_player)
+Seat 3: Bob            → Human: Bob
+Seat 4: rob_claude     → AI: RobClaudePlayer (tag: rob_claude_player)
+```
+
+Enter a player name for human seats, or a strategy keyword for AI seats. Any number of seats (0–4) can be AI-controlled.
+
+### During the game
+
+Follow the prompts to enter each player's hand and the cards played each trick. When it is an AI seat's turn the AI picks a card and instructs you to play it; for all other seats you type the card that was played.
+
+**Typing `undo`** when prompted for a card reverses the last human-entered card:
+- If the mistake happened after the AI's last decision it is undone instantly (no rebuild needed).
+- If it happened before an AI decision the AI is torn down and replayed from the corrected history.
+
+### Card notation
+
+Cards are two case-insensitive characters — rank then suit:
+
+| Example | Meaning |
+|---------|---------|
+| `2C` | 2 of clubs |
+| `QS` | queen of spades |
+| `TD` | ten of diamonds |
+| `AH` | ace of hearts |
+
+Multiple cards can be entered space- or comma-separated (`2C QS 8D`), or grouped by suit (`C: 2 5 8 J A`).
 
 ## Contributing
 Please feel free to add player clients or contribute to the project in seperate branches. Please open PRs for those branches and contact me to review and merge them to `main`

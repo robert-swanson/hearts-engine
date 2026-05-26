@@ -41,7 +41,7 @@ from clients.python.api.Round import Round
 from clients.python.api.types.Card import Card, Suit, SortCardsByRank, GroupCardsBySuit
 from clients.python.api.types.PassDirection import PassDirection
 from clients.python.api.types.PlayerTagSession import PlayerTagSession
-from clients.python.players.claude_player import ClaudePlayer
+from clients.python.players.claude_player import RobClaudePlayer as ClaudePlayer
 from clients.python.players.random_player import RandomPlayer
 from clients.python.util.Constants import GameType
 
