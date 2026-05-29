@@ -73,6 +73,8 @@ export interface LiveStats {
   num_teams: number
   planned_qualifying_games: number
   planned_finals_games: number
+  qualifying_executed: number
+  finals_executed: number
   games_executed: number
   games_waiting: number
   standings: Record<string, number>

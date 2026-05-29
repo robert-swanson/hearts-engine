@@ -22,6 +22,7 @@
 #include <condition_variable>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <future>
 #include <map>
 #include <mutex>
@@ -677,7 +678,10 @@ static std::vector<GameResult> runGames(
     const std::shared_ptr<Common::GameLogger>& nullLogger,
     int autoMoveAfterTimeouts,
     std::chrono::milliseconds moveTimeout,
-    int maxConcurrentPerTeam)
+    int maxConcurrentPerTeam,
+    // Optional: invoked after each game completes with the partial results vector
+    // (incomplete entries have an empty gameId). Used to write live progress.
+    const std::function<void(const std::vector<GameResult>&)>& onProgress = {})
 {
     std::vector<GameResult> results(assignments.size());
 
@@ -711,17 +715,23 @@ static std::vector<GameResult> runGames(
     if (maxConcurrentPerTeam <= 0)
     {
         // No limit: start everything at once.
+        std::mutex resultMtx; // serializes results[] writes + onProgress reads
         std::vector<std::future<GameResult>> futures;
         futures.reserve(assignments.size());
         for (size_t i = 0; i < assignments.size(); i++)
             futures.push_back(std::async(std::launch::async, [&, i]() -> GameResult {
                 auto r = runOneGame(assignments[i], resultsDir, sessionCounter,
                                     nullLogger, autoMoveAfterTimeouts, moveTimeout);
-                completedCount++;
+                {
+                    std::lock_guard<std::mutex> g(resultMtx);
+                    results[i] = r;
+                    completedCount++;
+                    if (onProgress) onProgress(results);
+                }
                 return r;
             }));
-        for (size_t i = 0; i < futures.size(); i++)
-            results[i] = futures[i].get();
+        // Wait for all to finish; results[] is already populated under resultMtx.
+        for (auto& f : futures) f.get();
         stopProgress();
         return results;
     }
@@ -753,13 +763,15 @@ static std::vector<GameResult> runGames(
             lock.unlock();
 
             threads.emplace_back([&, i]() {
-                results[i] = runOneGame(assignments[i], resultsDir, sessionCounter,
-                                        nullLogger, autoMoveAfterTimeouts, moveTimeout);
+                auto r = runOneGame(assignments[i], resultsDir, sessionCounter,
+                                    nullLogger, autoMoveAfterTimeouts, moveTimeout);
                 {
                     std::lock_guard<std::mutex> g(mtx);
+                    results[i] = r;
                     for (auto* slot : assignments[i].players) teamCount[teamOf(slot)]--;
                     completed++;
                     completedCount++;
+                    if (onProgress) onProgress(results);
                 }
                 cv.notify_all();
             });
@@ -786,7 +798,11 @@ static void writeResults(
     const std::vector<GameResult>& qualifying,
     const std::vector<GameResult>& finals,
     const std::map<std::string, int>& qualTotals,
-    const std::map<std::string, int>& finalTotals)
+    const std::map<std::string, int>& finalTotals,
+    // false for incremental mid-tournament progress writes, true for the final
+    // authoritative write. Consumers (web UI, integration tests) use this to tell
+    // an in-progress tournament from a finished one.
+    bool complete = true)
 {
     namespace fs = std::filesystem;
     fs::path tDir = fs::path(resultsDir) / tournamentId;
@@ -811,25 +827,30 @@ static void writeResults(
     summary["finals"]           = fn;
     summary["qualifying_totals"] = qualTotals;
     summary["finals_totals"]    = finalTotals;
+    summary["complete"]         = complete;
 
     std::ofstream sf(tDir / "summary.json");
     sf << summary.dump(2);
 
-    // Append to competition index
+    // Append to competition index (idempotent: this is also called incrementally
+    // while a tournament is running, so only add the entry once).
     fs::path idxPath = fs::path(resultsDir) / "competition.json";
     json idx = json::array();
     if (fs::exists(idxPath)) {
         std::ifstream f(idxPath);
         try { f >> idx; } catch(...) {}
     }
-    json entry;
-    entry["tournament_id"] = tournamentId;
-    entry["summary"]       = tournamentId + "/summary.json";
-    idx.push_back(entry);
-    std::ofstream idxOut(idxPath);
-    idxOut << idx.dump(2);
-
-    LOG("Results written to %s/%s", resultsDir.c_str(), tournamentId.c_str());
+    bool present = false;
+    for (const auto& e : idx)
+        if (e.value("tournament_id", std::string{}) == tournamentId) { present = true; break; }
+    if (!present) {
+        json entry;
+        entry["tournament_id"] = tournamentId;
+        entry["summary"]       = tournamentId + "/summary.json";
+        idx.push_back(entry);
+        std::ofstream idxOut(idxPath);
+        idxOut << idx.dump(2);
+    }
 }
 
 // ─── Running one game ─────────────────────────────────────────────────────────
@@ -1124,13 +1145,38 @@ int main(int argc, char** argv)
     std::filesystem::create_directories(cfg.resultsDir);
     auto nullLogger = std::make_shared<GameLogger>(stdout);
 
+    // Live progress: write a partial summary.json (+ completed game files, + the
+    // competition index entry) as games finish, so the web UI's live page can show
+    // standings and counts mid-tournament. Throttled so frequent completions don't
+    // rewrite the files on every single game. The final writeResults() below always
+    // produces the authoritative, complete output.
+    auto completedOnly = [](const std::vector<GameResult>& v) {
+        std::vector<GameResult> out;
+        for (const auto& g : v) if (!g.gameId.empty()) out.push_back(g);
+        return out;
+    };
+    auto lastProgressWrite = std::make_shared<std::chrono::steady_clock::time_point>();
+    auto writeProgress = [&, completedOnly, lastProgressWrite](
+                             const std::vector<GameResult>& qual,
+                             const std::vector<GameResult>& fin) {
+        auto now = std::chrono::steady_clock::now();
+        if (now - *lastProgressWrite < std::chrono::seconds(2)) return;
+        *lastProgressWrite = now;
+        auto q = completedOnly(qual);
+        auto f = completedOnly(fin);
+        auto qt = tabulateQualifyingPoints(q, cfg.qualifyingPoints);
+        auto ft = tabulateQualifyingPoints(f, cfg.qualifyingPoints);
+        writeResults(cfg.resultsDir, tournamentId, q, f, qt, ft, /*complete=*/false);
+    };
+
     // ── Stage 1: Qualifying ─────────────────────────────────────────────────
 
     auto qAssignments = scheduleGames(teamRosters, cfg.qualifyingGames, "qualifying");
     auto qualifyingResults = runGames(qAssignments, cfg.resultsDir, gameSessionCounter,
         nullLogger, cfg.autoMoveAfterTimeouts,
         std::chrono::milliseconds(cfg.moveTimeoutMs),
-        cfg.maxConcurrentGamesPerTeam);
+        cfg.maxConcurrentGamesPerTeam,
+        [&](const std::vector<GameResult>& partial) { writeProgress(partial, {}); });
 
     LOG("Qualifying complete. Tabulating scores...");
 
@@ -1259,7 +1305,8 @@ int main(int argc, char** argv)
     auto finalsResults = runGames(fAssignments, cfg.resultsDir, gameSessionCounter,
         nullLogger, cfg.autoMoveAfterTimeouts,
         std::chrono::milliseconds(cfg.moveTimeoutMs),
-        cfg.maxConcurrentGamesPerTeam);
+        cfg.maxConcurrentGamesPerTeam,
+        [&](const std::vector<GameResult>& partial) { writeProgress(qualifyingResults, partial); });
 
     // ── Notify clients and write results ────────────────────────────────────
 
@@ -1288,6 +1335,7 @@ int main(int argc, char** argv)
     }
 
     writeResults(cfg.resultsDir, tournamentId, qualifyingResults, finalsResults, qualTotals, finalTotals);
+    LOG("Results written to %s/%s", cfg.resultsDir.c_str(), tournamentId.c_str());
 
     LOG("Tournament %s complete.", tournamentId.c_str());
 

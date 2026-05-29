@@ -67,7 +67,8 @@ def list_tournaments() -> list[dict]:
                 "winner": _tournament_winner(summary),
                 "num_qualifying": len((summary or {}).get("qualifying", [])),
                 "num_finals": len((summary or {}).get("finals", [])),
-                "complete": summary is not None,
+                # Older summaries predate the explicit flag; treat them as complete.
+                "complete": summary is not None and summary.get("complete", True),
             }
         )
     out.sort(key=lambda t: t["began_at"] or "", reverse=True)
@@ -147,7 +148,8 @@ def get_live_stats() -> dict:
     tournaments = list_tournaments()
     current = tournaments[0] if tournaments else None
 
-    executed = 0
+    qualifying_executed = 0
+    finals_executed = 0
     standings: dict[str, int] = {}
     began_at = None
     tournament_id = None
@@ -155,10 +157,12 @@ def get_live_stats() -> dict:
         tournament_id = current["tournament_id"]
         began_at = current["began_at"]
         summary = get_summary(tournament_id) or {}
-        executed = len(summary.get("qualifying", [])) + len(summary.get("finals", []))
+        qualifying_executed = len(summary.get("qualifying", []))
+        finals_executed = len(summary.get("finals", []))
         # Standings: prefer finals totals once finals start, else qualifying.
         standings = summary.get("finals_totals") or summary.get("qualifying_totals") or {}
 
+    executed = qualifying_executed + finals_executed
     planned_total = planned_qualifying + planned_finals
     waiting = max(planned_total - executed, 0)
 
@@ -169,6 +173,8 @@ def get_live_stats() -> dict:
         "num_teams": len(teams),
         "planned_qualifying_games": planned_qualifying,
         "planned_finals_games": planned_finals,
+        "qualifying_executed": qualifying_executed,
+        "finals_executed": finals_executed,
         "games_executed": executed,
         "games_waiting": waiting,
         "standings": standings,
