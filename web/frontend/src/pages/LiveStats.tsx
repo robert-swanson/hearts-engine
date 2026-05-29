@@ -1,8 +1,10 @@
 import { Link } from 'react-router-dom'
 import { api } from '../api/client'
-import { useFetch } from '../lib/useFetch'
+import { usePoll } from '../lib/useFetch'
 import { nameResolver } from '../lib/playerId'
 import { PlayerName } from '../components/PlayerName'
+
+const REFRESH_MS = 5000
 
 function elapsedSince(iso: string | null): string {
   if (!iso) return '—'
@@ -16,10 +18,12 @@ function elapsedSince(iso: string | null): string {
 }
 
 export function LiveStats() {
-  const { data, loading, error } = useFetch(() => api.live(), [])
+  const { data, loading, error } = usePoll(() => api.live(), REFRESH_MS, [])
 
-  if (loading) return <p className="muted">Loading…</p>
-  if (error) return <p className="muted">Error: {error}</p>
+  // Only show the full-page loading/error states before the first successful load;
+  // once we have data, background poll failures keep the last-known data on screen.
+  if (loading && !data) return <p className="muted">Loading…</p>
+  if (error && !data) return <p className="muted">Error: {error}</p>
   if (!data || !data.tournament_id) return <p className="muted">No tournament data available.</p>
 
   const standings = Object.entries(data.standings).sort((a, b) => b[1] - a[1])
@@ -31,6 +35,9 @@ export function LiveStats() {
       <p className="muted" style={{ marginTop: -8 }}>
         Current tournament:{' '}
         <Link to={`/t/${encodeURIComponent(data.tournament_id)}`}>{data.tournament_id}</Link>
+        <span style={{ marginLeft: 8, fontSize: 12 }}>
+          · auto-refreshing every {REFRESH_MS / 1000}s{error ? ' (reconnecting…)' : ''}
+        </span>
       </p>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
