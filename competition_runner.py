@@ -288,7 +288,8 @@ def configure_rules(non_interactive: bool = False,
                     interval: Optional[int] = None,
                     qualifying_games: Optional[int] = None,
                     port: int = 40406,
-                    defaults: Optional[dict] = None) -> dict:
+                    defaults: Optional[dict] = None,
+                    available_modules: Optional[List[str]] = None) -> dict:
     """Build competition config.  Defaults come from tournament_server.env."""
     d = defaults or {}
 
@@ -336,10 +337,18 @@ def configure_rules(non_interactive: bool = False,
     existing_ais = [a.strip() for a in d.get('FILLER_TEAM_AIS', 'random_player').split(',') if a.strip()]
     if not existing_ais:
         existing_ais = ['random_player']
+    modules = available_modules or []
+    if modules:
+        print(f'  Available AIs: {", ".join(modules)}')
     filler_ais = []
     for i in range(num_filler):
         default_ai = existing_ais[i] if i < len(existing_ais) else existing_ais[-1]
-        filler_ais.append(prompt(f'  AI for filler team {i + 1}', default_ai))
+        while True:
+            choice = prompt(f'  AI for filler team {i + 1}', default_ai)
+            if not modules or choice in modules:
+                filler_ais.append(choice)
+                break
+            print(f'    Invalid AI "{choice}". Choose from: {", ".join(modules)}')
     return {
         'port':               port,
         'qualifying_games':   int(prompt('Qualifying games',             d_int('QUALIFYING_GAMES', 20))),
@@ -512,6 +521,7 @@ def main():
         qualifying_games=args.qualifying_games,
         port=port,
         defaults=server_env,
+        available_modules=available_modules,
     )
 
     # ── Validate max_players ───────────────────────────────────────────────
