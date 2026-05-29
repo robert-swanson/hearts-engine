@@ -1,0 +1,92 @@
+name: Web UI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  frontend-build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+        cache: 'npm'
+        cache-dependency-path: web/frontend/package-lock.json
+
+    - name: Install frontend deps
+      run: npm --prefix web/frontend ci
+
+    - name: Build frontend (typecheck + bundle)
+      run: npm --prefix web/frontend run build
+
+  server-bringup:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+        cache: 'npm'
+        cache-dependency-path: web/frontend/package-lock.json
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Bring up web server
+      run: |
+        mkdir -p /tmp/results
+        PORT=8000 RESULTS_DIR=/tmp/results web/run_web.sh &
+        echo "WEB_PID=$!" >> "$GITHUB_ENV"
+        echo "Waiting for web server on port 8000..."
+        for i in $(seq 1 60); do
+          if curl -fsS http://localhost:8000/api/tournaments >/dev/null 2>&1; then
+            echo "Server ready (${i}s)"
+            break
+          fi
+          sleep 1
+          if [ "$i" = "60" ]; then
+            echo "ERROR: web server did not start within 60 seconds"
+            exit 1
+          fi
+        done
+
+    - name: Smoke-test endpoints
+      run: |
+        set -e
+        echo "GET /api/tournaments (JSON)"
+        curl -fsS http://localhost:8000/api/tournaments | head -c 200; echo
+        echo "GET /api/live (JSON)"
+        curl -fsS http://localhost:8000/api/live | head -c 200; echo
+        check() {
+          local path="$1" want="$2"
+          local code
+          code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:8000${path}")
+          if [ "$code" != "$want" ]; then
+            echo "FAIL ${path}: expected ${want}, got ${code}"
+            exit 1
+          fi
+          echo "OK ${path} -> ${code}"
+        }
+        check "/" 200                      # SPA shell
+        check "/t/x/g/y/r/0" 200           # client-side deep link -> SPA fallback
+        check "/api/tournaments" 200
+        check "/api/bogus" 404             # unknown API path is a real 404
+
+    - name: Stop web server
+      if: always()
+      run: |
+        if [ -n "$WEB_PID" ]; then kill "$WEB_PID" || true; fi
