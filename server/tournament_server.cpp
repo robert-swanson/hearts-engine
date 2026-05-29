@@ -365,6 +365,7 @@ struct TrickRecord {
 struct RoundRecord {
     int roundIdx;
     std::string passDir;
+    std::map<std::string, std::vector<std::string>> cardsPassed;   // playerTagSession → 3 cards passed
     std::map<std::string, std::vector<std::string>> handsAfterPass;
     std::vector<TrickRecord> tricks;
     std::map<std::string, int> roundScores;
@@ -420,6 +421,12 @@ public:
     {
         if (!result.rounds.empty())
             result.rounds.back().handsAfterPass = hands;
+    }
+
+    void onCardsPassed(const std::map<std::string, std::vector<std::string>>& passed) override
+    {
+        if (!result.rounds.empty())
+            result.rounds.back().cardsPassed = passed;
     }
 
     void onTrickComplete(const std::vector<std::string>& playerOrder,
@@ -577,6 +584,8 @@ static json gameResultToDetailJson(const GameResult& gr)
         json rj;
         rj["round_idx"]           = r.roundIdx;
         rj["pass_direction"]      = r.passDir;
+        if (!r.cardsPassed.empty())
+            rj["cards_passed"]    = remapKeys(r.cardsPassed, gr.playerTagToSlotId);
         rj["hands_after_passing"] = remapKeys(r.handsAfterPass, gr.playerTagToSlotId);
 
         json tricks = json::array();

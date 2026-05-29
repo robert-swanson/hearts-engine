@@ -24,7 +24,7 @@ public:
     {
         dealCards();
         notifyStartRound();
-        passCards();
+        auto passedFrom = passCards();
 
         if (mObserver)
         {
@@ -35,8 +35,10 @@ public:
                 for (int i = 0; i < (int)p->getHand().size(); ++i)
                     h.push_back(p->getHand()[i].getAbbreviation());
             }
-            mObserver->onHandsAfterPass(hands);
             mObserver->onStartRound(mRoundIndex, PassDirectionToString(mPassDirection));
+            mObserver->onHandsAfterPass(hands);
+            if (!passedFrom.empty())
+                mObserver->onCardsPassed(passedFrom);
         }
 
         size_t startingPlayer = getStartingPlayer();
@@ -84,10 +86,12 @@ private:
         }
     }
 
-    void passCards()
+    // Returns map from playerTagSession → cards passed (empty on Keeper rounds).
+    std::map<std::string, std::vector<std::string>> passCards()
     {
+        std::map<std::string, std::vector<std::string>> passedFrom;
         if (mPassDirection == Keeper)
-            return;
+            return passedFrom;
 
         std::vector<CardCollection> passedCards;
         for (const auto& player: mPlayers)
@@ -104,6 +108,16 @@ private:
             mPlayers[passTo]->receiveCards(passedCards[passFrom]);
             mPlayers[passTo]->notifyReceivedCards(passedCards[passFrom], passedCards[passTo]);
         }
+
+        for (int i = 0; i < Constants::NUM_PLAYERS; i++)
+        {
+            std::vector<std::string> cardStrs;
+            for (int j = 0; j < (int)passedCards[i].size(); j++)
+                cardStrs.push_back(passedCards[i][j].getAbbreviation());
+            passedFrom[mPlayers[i]->getTagSession()] = std::move(cardStrs);
+        }
+
+        return passedFrom;
     }
 
     int playerToPassTo(int fromPlayer)
