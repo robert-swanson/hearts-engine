@@ -4,8 +4,8 @@ import { api } from '../api/client'
 import { useFetch } from '../lib/useFetch'
 import { nameResolver, displayString } from '../lib/playerId'
 import { PlayerName } from '../components/PlayerName'
-import { columnSeats, NUM_COLS, CENTER, passRecipient } from '../lib/seating'
-import { handBeforePlay } from '../lib/reconstruct'
+import { columnSeats, NUM_COLS, CENTER, passRecipient, passSource } from '../lib/seating'
+import { handBeforePlay, handBeforePassing } from '../lib/reconstruct'
 import { TrickRow } from '../components/TrickRow'
 import { HandOverlay, type HandOverlayData } from '../components/HandOverlay'
 import { Card } from '../components/Card'
@@ -34,8 +34,78 @@ export function RoundDetail() {
 
   const handleCardClick = (player: string, _card: string, trickIndex: number) => {
     const { hand, playedCard } = handBeforePlay(round, data.player_order, player, trickIndex)
-    setOverlay({ player, trickIndex, hand, playedCard })
+    setOverlay({
+      player,
+      subtitle: `hand before trick #${trickIndex + 1}`,
+      hand,
+      highlight: playedCard ? [playedCard] : [],
+      footer: `Highlighted card was the one played. (${hand.length} card${hand.length === 1 ? '' : 's'} in hand)`,
+    })
   }
+
+  // Passing details for the currently selected player.
+  const dir = round.pass_direction
+  const isKeeper = dir === 'Keeper'
+  const isAcross = dir === 'Across'
+  // Left passes flow leftward, Right passes flow rightward.
+  const arrowGlyph = dir === 'Right' ? '⟶' : '⟵'
+  const passed = round.cards_passed?.[selected] ?? []
+  const sourcePlayer = passSource(selected, data.player_order, dir)
+  const received = round.cards_passed?.[sourcePlayer] ?? []
+  const recipient = passRecipient(selected, data.player_order, dir)
+  const canShowPrePass = passed.length > 0 && received.length > 0
+
+  const showPrePassHand = () => {
+    const { hand, passed: highlight } = handBeforePassing(round, selected, passed, received)
+    setOverlay({
+      player: selected,
+      subtitle: 'hand before passing',
+      hand,
+      highlight,
+      footer: `Highlighted cards were passed to ${displayString(nameOf(recipient))}.`,
+    })
+  }
+
+  // Card groups reused by both the horizontal (Left/Right) and Across layouts.
+  const passedCards =
+    passed.length > 0 ? (
+      passed.map((c) => (
+        <Card
+          key={c}
+          code={c}
+          size="sm"
+          onClick={canShowPrePass ? showPrePassHand : undefined}
+          title={canShowPrePass ? 'Click to see hand before passing' : undefined}
+        />
+      ))
+    ) : (
+      <span className="muted" style={{ fontSize: 12 }}>hidden</span>
+    )
+  const receivedCards =
+    received.length > 0 ? (
+      received.map((c) => <Card key={c} code={c} size="sm" />)
+    ) : (
+      <span className="muted" style={{ fontSize: 12 }}>hidden</span>
+    )
+
+  // Horizontal (Left/Right) flow elements. Left reads passed → player → received;
+  // Right is the mirror image so passed cards / recipient sit on the right.
+  const horizontalEls = [
+    <div className="passing-flow__cards" key="passed">{passedCards}</div>,
+    <div className="passing-flow__arrow" key="to">
+      <span className="passing-flow__arrow-label">to {displayString(nameOf(recipient))}</span>
+      <span className="passing-flow__arrow-line" aria-hidden="true">{arrowGlyph}</span>
+    </div>,
+    <div className="passing-flow__player" key="player">
+      <PlayerName d={nameOf(selected)} />
+    </div>,
+    <div className="passing-flow__arrow" key="from">
+      <span className="passing-flow__arrow-label">from {displayString(nameOf(sourcePlayer))}</span>
+      <span className="passing-flow__arrow-line" aria-hidden="true">{arrowGlyph}</span>
+    </div>,
+    <div className="passing-flow__cards" key="received">{receivedCards}</div>,
+  ]
+  if (dir === 'Right') horizontalEls.reverse()
 
   return (
     <div>
@@ -47,43 +117,6 @@ export function RoundDetail() {
       <h1>
         Round {Number(roundIdx) + 1} <span className="muted" style={{ fontSize: 15 }}>· pass {round.pass_direction}</span>
       </h1>
-
-      {round.pass_direction !== 'Keeper' && (
-        <div className="card-surface passing-section">
-          <h3 style={{ margin: '0 0 8px' }}>Cards passed ({round.pass_direction})</h3>
-          <div className="passing-rows">
-            {data.player_order.map((p) => {
-              const cards = round.cards_passed?.[p] ?? []
-              const recipient = passRecipient(p, data.player_order, round.pass_direction)
-              return (
-                <div key={p} className="passing-row">
-                  <div className="passing-row__from">
-                    <PlayerName d={nameOf(p)} />
-                  </div>
-                  <div className="passing-row__cards">
-                    {cards.length > 0 ? (
-                      cards.map((c) => <Card key={c} code={c} size="sm" />)
-                    ) : (
-                      <span className="muted" style={{ fontSize: 12 }}>hidden</span>
-                    )}
-                  </div>
-                  <div className="passing-row__arrow">→</div>
-                  <div className="passing-row__to">
-                    <PlayerName d={nameOf(recipient)} />
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-          {!auth.isAdmin && (
-            <p className="muted" style={{ fontSize: 12, margin: '8px 0 0' }}>
-              {auth.team
-                ? 'Only your own team’s passed cards are shown. Sign in as admin to see all.'
-                : 'Passed cards are private. Sign in as a team to see your own, or as admin to see all.'}
-            </p>
-          )}
-        </div>
-      )}
 
       <div className="row-actions">
         <label className="muted" style={{ fontSize: 13 }}>
@@ -99,6 +132,49 @@ export function RoundDetail() {
         <span className="muted" style={{ fontSize: 12 }}>
           Click any card to see that player's hand just before the play.
         </span>
+      </div>
+
+      <div className="card-surface passing-section">
+        {isKeeper ? (
+          <p className="muted" style={{ margin: 0, fontSize: 13 }}>No passing this round (Keeper).</p>
+        ) : (
+          <>
+            {isAcross ? (
+              <div className="passing-flow passing-flow--across">
+                <div className="passing-across__player">
+                  <PlayerName d={nameOf(recipient)} />
+                </div>
+                <div className="passing-across__cols">
+                  <div className="passing-across__col">
+                    <div className="passing-flow__cards">{passedCards}</div>
+                    <span className="passing-flow__arrow-line" aria-hidden="true">↑</span>
+                  </div>
+                  <div className="passing-across__col">
+                    <div className="passing-flow__cards">{receivedCards}</div>
+                    <span className="passing-flow__arrow-line" aria-hidden="true">↓</span>
+                  </div>
+                </div>
+                <div className="passing-across__player">
+                  <PlayerName d={nameOf(selected)} />
+                </div>
+              </div>
+            ) : (
+              <div className="passing-flow">{horizontalEls}</div>
+            )}
+            {canShowPrePass && (
+              <p className="muted" style={{ fontSize: 12, margin: '12px 0 0' }}>
+                Click a passed card to see this player's hand before passing.
+              </p>
+            )}
+            {!auth.isAdmin && passed.length === 0 && received.length === 0 && (
+              <p className="muted" style={{ fontSize: 12, margin: '12px 0 0' }}>
+                {auth.team
+                  ? 'Passing is private to each player — select one of your team’s players to view theirs.'
+                  : 'Passing is private. Sign in as a team to see your own players, or as admin to see all.'}
+              </p>
+            )}
+          </>
+        )}
       </div>
 
       <div className="card-surface">

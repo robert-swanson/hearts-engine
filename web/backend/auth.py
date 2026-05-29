@@ -122,23 +122,52 @@ def principal_from_header(authorization: Optional[str]) -> Optional[dict]:
     return verify_token(token.strip())
 
 
-def can_see_passed_cards(principal: Optional[dict], player_id: str) -> bool:
-    """A player's passed cards are visible to admins, and to that player's own team."""
-    if not principal:
-        return False
-    if principal.get("is_admin"):
-        return True
-    team = principal.get("team")
-    return bool(team) and player_id.startswith(f"{team}/")
+def _recipient_index(idx: int, n: int, pass_dir: str) -> Optional[int]:
+    """Seat that the player at ``idx`` passes to, or None for Keeper/unknown."""
+    if pass_dir == "Left":
+        return (idx + 1) % n
+    if pass_dir == "Right":
+        return (idx - 1) % n
+    if pass_dir == "Across":
+        return (idx + 2) % n
+    return None
 
 
 def redact_game(detail: dict, principal: Optional[dict]) -> dict:
-    """Strip ``cards_passed`` entries the principal may not see (in place)."""
+    """Strip ``cards_passed`` entries the principal may not see (in place).
+
+    A passing transaction (the passer's 3 cards) is private to both the passer
+    and the recipient — the recipient legitimately knows what they received. So
+    a team sees entries where it owns the passer OR the recipient; an admin sees
+    all; everyone else sees none.
+    """
+    if principal and principal.get("is_admin"):
+        return detail
+
+    team = principal.get("team") if principal else None
+    player_order = detail.get("player_order", []) or []
+    n = len(player_order)
+
     for rnd in detail.get("rounds", []):
         passed = rnd.get("cards_passed")
         if not isinstance(passed, dict):
             continue
-        rnd["cards_passed"] = {
-            pid: cards for pid, cards in passed.items() if can_see_passed_cards(principal, pid)
-        } or None
+        if not team:
+            rnd["cards_passed"] = None
+            continue
+
+        prefix = f"{team}/"
+        pass_dir = rnd.get("pass_direction", "")
+        visible: dict[str, list] = {}
+        for pid, cards in passed.items():
+            # Viewer owns the passer.
+            if pid.startswith(prefix):
+                visible[pid] = cards
+                continue
+            # Viewer owns the recipient -> these are cards the viewer received.
+            if pid in player_order:
+                ri = _recipient_index(player_order.index(pid), n, pass_dir)
+                if ri is not None and player_order[ri].startswith(prefix):
+                    visible[pid] = cards
+        rnd["cards_passed"] = visible or None
     return detail
