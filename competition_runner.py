@@ -127,6 +127,8 @@ def write_config(path: str, cfg: dict, teams: Dict[str, str], filler_teams: Dict
         f.write(f"MOVE_TIMEOUT_MS={cfg.get('move_timeout_ms', 15000)}\n")
         f.write(f"MAX_CONCURRENT_GAMES_PER_TEAM={cfg.get('max_concurrent_games_per_team', 0)}\n")
         f.write(f"FALLBACK_PLAYER_TAG={cfg.get('fallback_player_tag', 'random_player')}\n")
+        f.write(f"NUM_FILLER_TEAMS={cfg.get('num_filler_teams', 4)}\n")
+        f.write(f"FILLER_TEAM_AIS={','.join(cfg.get('filler_team_ais', ['random_player']))}\n")
         # Populated at runtime
         f.write(f"TEAMS={teams_str}\n")
     print(f"Config written to {path}")
@@ -241,18 +243,19 @@ def run_registration_listener(host: str, port: int,
 
 def start_filler_clients(filler_teams: Dict[str, str], max_players: int,
                           available_modules: List[str], config_path: str,
-                          host: str, port: int, log_dir: str = './log') -> List[subprocess.Popen]:
-    """Start one client per filler team, each using a distinct player module."""
+                          host: str, port: int, filler_ais: List[str],
+                          log_dir: str = './log') -> List[subprocess.Popen]:
+    """Start one client per filler team using the specified AI modules."""
     procs = []
     log_path_base = Path(log_dir)
     log_path_base.mkdir(parents=True, exist_ok=True)
 
-    # Shuffle available modules and assign one unique module per filler team.
-    # If there are more filler teams than modules, cycle through the shuffled list.
-    shuffled = random.sample(available_modules, len(available_modules))
     team_list = list(filler_teams.items())
     for i, (team_name, password) in enumerate(team_list):
-        module = shuffled[i % len(shuffled)]
+        module = filler_ais[i] if i < len(filler_ais) else filler_ais[-1]
+        if module not in available_modules:
+            print(f"  WARN: AI '{module}' not found; using '{available_modules[0]}'")
+            module = available_modules[0]
         cmd = [
             sys.executable, 'clients/python/tournament_client.py',
             f'--team={team_name}',
@@ -285,7 +288,8 @@ def configure_rules(non_interactive: bool = False,
                     interval: Optional[int] = None,
                     qualifying_games: Optional[int] = None,
                     port: int = 40406,
-                    defaults: Optional[dict] = None) -> dict:
+                    defaults: Optional[dict] = None,
+                    available_modules: Optional[List[str]] = None) -> dict:
     """Build competition config.  Defaults come from tournament_server.env."""
     d = defaults or {}
 
@@ -300,6 +304,11 @@ def configure_rules(non_interactive: bool = False,
         return d.get(key, '1' if fallback else '0') == '1'
 
     if non_interactive:
+        num_filler = d_int('NUM_FILLER_TEAMS', 4)
+        ais_raw = [a.strip() for a in d.get('FILLER_TEAM_AIS', 'random_player').split(',') if a.strip()]
+        if not ais_raw:
+            ais_raw = ['random_player']
+        filler_ais = [ais_raw[i] if i < len(ais_raw) else ais_raw[-1] for i in range(num_filler)]
         return {
             'port':                  port,
             'qualifying_games':      qualifying_games if qualifying_games is not None else d_int('QUALIFYING_GAMES', 20),
@@ -319,9 +328,27 @@ def configure_rules(non_interactive: bool = False,
             'max_concurrent_games_per_team': d_int('MAX_CONCURRENT_GAMES_PER_TEAM', 0),
             # Preserve "none" literally to disable autofill (d_str would coerce it to default)
             'fallback_player_tag':   d.get('FALLBACK_PLAYER_TAG', 'random_player'),
+            'num_filler_teams':      num_filler,
+            'filler_team_ais':       filler_ais,
         }
 
     print('\n=== Competition Rules ===')
+    num_filler = int(prompt('Number of filler teams', d_int('NUM_FILLER_TEAMS', 4)))
+    existing_ais = [a.strip() for a in d.get('FILLER_TEAM_AIS', 'random_player').split(',') if a.strip()]
+    if not existing_ais:
+        existing_ais = ['random_player']
+    modules = available_modules or []
+    if modules:
+        print(f'  Available AIs: {", ".join(modules)}')
+    filler_ais = []
+    for i in range(num_filler):
+        default_ai = existing_ais[i] if i < len(existing_ais) else existing_ais[-1]
+        while True:
+            choice = prompt(f'  AI for filler team {i + 1}', default_ai)
+            if not modules or choice in modules:
+                filler_ais.append(choice)
+                break
+            print(f'    Invalid AI "{choice}". Choose from: {", ".join(modules)}')
     return {
         'port':               port,
         'qualifying_games':   int(prompt('Qualifying games',             d_int('QUALIFYING_GAMES', 20))),
@@ -340,6 +367,8 @@ def configure_rules(non_interactive: bool = False,
                                                      d_int('MAX_CONCURRENT_GAMES_PER_TEAM', 0))),
         'fallback_player_tag': prompt("Autofill player tag ('none' to disable)",
                                       d.get('FALLBACK_PLAYER_TAG', 'random_player')),
+        'num_filler_teams':   num_filler,
+        'filler_team_ais':    filler_ais,
     }
 
 
@@ -357,7 +386,7 @@ def run_competition(cfg: dict, real_teams: Dict[str, str],
     # Filler teams are computed once with stable passwords so their clients
     # can be started once and loop across all tournament cycles, just like
     # real-team clients.
-    filler_count = 4  # always 4 fillers so games run even if real teams submit no players
+    filler_count = cfg.get('num_filler_teams', 4)
     filler_teams = build_filler_teams(filler_count, max_players, real_teams)
 
     all_teams     = {**real_teams, **filler_teams}
@@ -376,6 +405,7 @@ def run_competition(cfg: dict, real_teams: Dict[str, str],
     # cycles using the same retry mechanism as real-team clients.
     filler_procs = start_filler_clients(
         filler_teams, max_players, available_modules, config_path, host, port,
+        filler_ais=cfg.get('filler_team_ais', ['random_player'] * filler_count),
         log_dir=cfg.get('log_dir', './log'))
 
     print(f'\n=== Starting competition loop ===')
@@ -491,6 +521,7 @@ def main():
         qualifying_games=args.qualifying_games,
         port=port,
         defaults=server_env,
+        available_modules=available_modules,
     )
 
     # ── Validate max_players ───────────────────────────────────────────────

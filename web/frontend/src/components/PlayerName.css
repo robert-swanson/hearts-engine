@@ -1,0 +1,24 @@
+.player-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.player-name__tag {
+  font-weight: 600;
+}
+
+.player-name__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  color: #fff;
+  opacity: 0.5;
+}

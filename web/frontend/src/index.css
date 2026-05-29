@@ -1,0 +1,130 @@
+:root {
+  font-family: 'Helvetica Neue', system-ui, Arial, sans-serif;
+  color: #1f2d3d;
+  background: #f4f6f8;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+a {
+  color: #2a5bd7;
+}
+
+h1 {
+  font-size: 22px;
+  margin: 0 0 16px;
+}
+
+h2 {
+  font-size: 17px;
+  margin: 24px 0 10px;
+}
+
+.card-surface {
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  padding: 16px;
+}
+
+table.data {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+table.data th,
+table.data td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid #eee;
+}
+
+table.data th {
+  color: #888;
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+table.data tbody tr:hover {
+  background: #fafbfc;
+}
+
+.muted {
+  color: #888;
+}
+
+.pill {
+  display: inline-block;
+  background: #eef2f7;
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-size: 12px;
+  color: #4a5a6a;
+}
+
+.row-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+button.btn,
+select.btn {
+  font-size: 13px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid #ccd5de;
+  background: #fff;
+  cursor: pointer;
+}
+
+button.btn:hover {
+  background: #f0f3f6;
+}
+
+.crumbs {
+  font-size: 13px;
+  margin-bottom: 12px;
+  color: #888;
+}
+
+.crumbs a {
+  text-decoration: none;
+}
+
+@media (max-width: 600px) {
+  h1 {
+    font-size: 19px;
+  }
+
+  h2 {
+    font-size: 16px;
+    margin: 18px 0 8px;
+  }
+
+  .card-surface {
+    padding: 12px;
+    /* Let wide tables scroll sideways instead of breaking the layout. */
+    overflow-x: auto;
+  }
+
+  table.data {
+    font-size: 13px;
+  }
+
+  table.data th,
+  table.data td {
+    padding: 6px 7px;
+  }
+}
