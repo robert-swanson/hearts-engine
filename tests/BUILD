@@ -25,3 +25,10 @@ cc_test(
         "//tests/mocks",
     ],
 )
+
+cc_test(
+    name = "round_test",
+    srcs = ["round_gtest.cpp"],
+    copts = ["-std=c++17"],
+    deps = [":test"],
+)
