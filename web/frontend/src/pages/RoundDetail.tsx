@@ -4,10 +4,11 @@ import { api } from '../api/client'
 import { useFetch } from '../lib/useFetch'
 import { nameResolver, displayString } from '../lib/playerId'
 import { PlayerName } from '../components/PlayerName'
-import { columnSeats, NUM_COLS, CENTER } from '../lib/seating'
+import { columnSeats, NUM_COLS, CENTER, passRecipient } from '../lib/seating'
 import { handBeforePlay } from '../lib/reconstruct'
 import { TrickRow } from '../components/TrickRow'
 import { HandOverlay, type HandOverlayData } from '../components/HandOverlay'
+import { Card } from '../components/Card'
 
 export function RoundDetail() {
   const { id = '', gameId = '', roundIdx = '0' } = useParams()
@@ -45,6 +46,32 @@ export function RoundDetail() {
       <h1>
         Round {Number(roundIdx) + 1} <span className="muted" style={{ fontSize: 15 }}>· pass {round.pass_direction}</span>
       </h1>
+
+      {round.cards_passed && (
+        <div className="card-surface passing-section">
+          <h3 style={{ margin: '0 0 8px' }}>Cards passed ({round.pass_direction})</h3>
+          <div className="passing-rows">
+            {data.player_order.map((p) => {
+              const cards = round.cards_passed![p] ?? []
+              const recipient = passRecipient(p, data.player_order, round.pass_direction)
+              return (
+                <div key={p} className="passing-row">
+                  <div className="passing-row__from">
+                    <PlayerName d={nameOf(p)} />
+                  </div>
+                  <div className="passing-row__cards">
+                    {cards.map((c) => <Card key={c} code={c} size="sm" />)}
+                  </div>
+                  <div className="passing-row__arrow">→</div>
+                  <div className="passing-row__to">
+                    <PlayerName d={nameOf(recipient)} />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="row-actions">
         <label className="muted" style={{ fontSize: 13 }}>

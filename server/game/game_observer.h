@@ -13,6 +13,8 @@ public:
 
     virtual void onStartRound(int roundIdx, const std::string& passDir) {}
     virtual void onHandsAfterPass(const std::map<std::string, std::vector<std::string>>& hands) {}
+    // passedByPlayer: playerTagSession → 3 cards they passed (empty map on Keeper rounds)
+    virtual void onCardsPassed(const std::map<std::string, std::vector<std::string>>& passedByPlayer) {}
     virtual void onTrickComplete(const std::vector<std::string>& playerOrder, // play order
                                   const std::vector<std::string>& cards,       // play order
                                   const std::string& winner, int points) {}

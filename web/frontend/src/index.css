@@ -71,6 +71,38 @@ table.data tbody tr:hover {
   color: #4a5a6a;
 }
 
+.passing-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.passing-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.passing-row__from,
+.passing-row__to {
+  min-width: 90px;
+}
+
+.passing-row__from {
+  text-align: right;
+}
+
+.passing-row__cards {
+  display: flex;
+  gap: 4px;
+}
+
+.passing-row__arrow {
+  color: #888;
+  font-size: 18px;
+}
+
 .row-actions {
   display: flex;
   gap: 8px;

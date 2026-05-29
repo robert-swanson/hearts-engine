@@ -52,6 +52,7 @@ export interface TrickRecord {
 export interface RoundRecord {
   round_idx: number
   pass_direction: string
+  cards_passed?: Record<string, string[]>   // player fullId → 3 cards passed (absent on Keeper rounds)
   hands_after_passing: Record<string, string[]>
   tricks: TrickRecord[]
   round_scores: Record<string, number>
