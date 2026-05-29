@@ -43,8 +43,22 @@ export function LiveStats() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
         <Stat label="Began" value={elapsedSince(data.began_at)} />
         <Stat label="Teams" value={String(data.num_teams)} />
-        <Stat label="Games executed" value={String(data.games_executed)} />
-        <Stat label="Games waiting" value={String(data.games_waiting)} />
+      </div>
+
+      <h2>Games progress</h2>
+      <div className="card-surface">
+        <StageProgress
+          label="Qualifying"
+          done={data.qualifying_executed}
+          total={data.planned_qualifying_games}
+          color="#2a5bd7"
+        />
+        <StageProgress
+          label="Finals"
+          done={data.finals_executed}
+          total={data.planned_finals_games}
+          color="#1c9c7c"
+        />
       </div>
 
       <h2>Teams registered</h2>
@@ -81,6 +95,35 @@ export function LiveStats() {
       <p className="muted" style={{ marginTop: 16, fontSize: 12 }}>
         {data.note}
       </p>
+    </div>
+  )
+}
+
+function StageProgress({
+  label,
+  done,
+  total,
+  color,
+}: {
+  label: string
+  done: number
+  total: number
+  color: string
+}) {
+  const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0
+  const complete = total > 0 && done >= total
+  return (
+    <div className="progress">
+      <div className="progress__head">
+        <span className="progress__label">{label}</span>
+        <span className="progress__count">
+          {done} / {total || '—'}
+          {complete ? ' · done' : total > 0 ? ` · ${pct}%` : ''}
+        </span>
+      </div>
+      <div className="progress__track">
+        <div className="progress__fill" style={{ width: `${pct}%`, background: color }} />
+      </div>
     </div>
   )
 }
