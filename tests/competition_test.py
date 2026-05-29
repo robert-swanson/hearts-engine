@@ -76,6 +76,11 @@ def find_result(after_time: float, timeout_s: float) -> Tuple[Optional[dict], Op
                 break
             try:
                 data = json.loads(summary_path.read_text())
+                # summary.json is now written incrementally during a tournament;
+                # only accept the final, complete write (older summaries lack the
+                # flag and are always complete).
+                if not data.get('complete', True):
+                    continue
                 qtotals = data.get('qualifying_totals', {})
                 if all(any(k.startswith(f'{t}/') for k in qtotals) for t in TEAMS):
                     return data, summary_path.parent

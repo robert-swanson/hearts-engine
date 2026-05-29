@@ -798,7 +798,11 @@ static void writeResults(
     const std::vector<GameResult>& qualifying,
     const std::vector<GameResult>& finals,
     const std::map<std::string, int>& qualTotals,
-    const std::map<std::string, int>& finalTotals)
+    const std::map<std::string, int>& finalTotals,
+    // false for incremental mid-tournament progress writes, true for the final
+    // authoritative write. Consumers (web UI, integration tests) use this to tell
+    // an in-progress tournament from a finished one.
+    bool complete = true)
 {
     namespace fs = std::filesystem;
     fs::path tDir = fs::path(resultsDir) / tournamentId;
@@ -823,6 +827,7 @@ static void writeResults(
     summary["finals"]           = fn;
     summary["qualifying_totals"] = qualTotals;
     summary["finals_totals"]    = finalTotals;
+    summary["complete"]         = complete;
 
     std::ofstream sf(tDir / "summary.json");
     sf << summary.dump(2);
@@ -1161,7 +1166,7 @@ int main(int argc, char** argv)
         auto f = completedOnly(fin);
         auto qt = tabulateQualifyingPoints(q, cfg.qualifyingPoints);
         auto ft = tabulateQualifyingPoints(f, cfg.qualifyingPoints);
-        writeResults(cfg.resultsDir, tournamentId, q, f, qt, ft);
+        writeResults(cfg.resultsDir, tournamentId, q, f, qt, ft, /*complete=*/false);
     };
 
     // ── Stage 1: Qualifying ─────────────────────────────────────────────────

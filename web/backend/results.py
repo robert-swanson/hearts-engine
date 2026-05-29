@@ -67,7 +67,8 @@ def list_tournaments() -> list[dict]:
                 "winner": _tournament_winner(summary),
                 "num_qualifying": len((summary or {}).get("qualifying", [])),
                 "num_finals": len((summary or {}).get("finals", [])),
-                "complete": summary is not None,
+                # Older summaries predate the explicit flag; treat them as complete.
+                "complete": summary is not None and summary.get("complete", True),
             }
         )
     out.sort(key=lambda t: t["began_at"] or "", reverse=True)
