@@ -6,9 +6,10 @@ interface CardProps {
   highlight?: boolean // winning card
   onClick?: () => void
   size?: 'sm' | 'md'
+  title?: string // tooltip override for clickable cards
 }
 
-export function Card({ code, highlight, onClick, size = 'md' }: CardProps) {
+export function Card({ code, highlight, onClick, size = 'md', title }: CardProps) {
   const { rank, suit } = parseCard(code)
   const red = isRedSuit(suit)
   const pts = cardPoints(code)
@@ -23,7 +24,11 @@ export function Card({ code, highlight, onClick, size = 'md' }: CardProps) {
     .join(' ')
 
   return (
-    <div className={className} onClick={onClick} title={onClick ? 'Click to see hand before this play' : undefined}>
+    <div
+      className={className}
+      onClick={onClick}
+      title={title ?? (onClick ? 'Click to see hand before this play' : undefined)}
+    >
       <span className="card__corner card__corner--tl">
         <span className="card__rank">{rankLabel(rank)}</span>
         <span className="card__suit">{SUIT_SYMBOL[suit]}</span>

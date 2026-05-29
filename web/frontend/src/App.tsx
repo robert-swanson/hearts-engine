@@ -1,4 +1,5 @@
 import { Link, Outlet } from 'react-router-dom'
+import { AuthControl } from './components/AuthControl'
 import './App.css'
 
 export function App() {
@@ -12,6 +13,7 @@ export function App() {
           <Link to="/">Tournaments</Link>
           <Link to="/live">Live</Link>
         </nav>
+        <AuthControl />
       </header>
       <main className="app-main">
         <Outlet />

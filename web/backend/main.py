@@ -1,10 +1,13 @@
 from pathlib import Path
+from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
+import auth
 import results
 
 app = FastAPI(title="Hearts Web UI")
@@ -13,9 +16,23 @@ app = FastAPI(title="Hearts Web UI")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+
+
+class LoginRequest(BaseModel):
+    team: Optional[str] = None
+    password: str
+
+
+@app.post("/api/login")
+def login(req: LoginRequest):
+    token = auth.authenticate(req.team, req.password)
+    if token is None:
+        raise HTTPException(status_code=401, detail="invalid credentials")
+    principal = auth.verify_token(token) or {}
+    return {"token": token, "team": principal.get("team"), "is_admin": principal.get("is_admin", False)}
 
 
 @app.get("/api/tournaments")
@@ -32,11 +49,11 @@ def tournament(tournament_id: str):
 
 
 @app.get("/api/tournaments/{tournament_id}/games/{game_id}")
-def game(tournament_id: str, game_id: str):
+def game(tournament_id: str, game_id: str, authorization: Optional[str] = Header(default=None)):
     detail = results.get_game(tournament_id, game_id)
     if detail is None:
         raise HTTPException(status_code=404, detail="game not found")
-    return detail
+    return auth.redact_game(detail, auth.principal_from_header(authorization))
 
 
 @app.get("/api/live")

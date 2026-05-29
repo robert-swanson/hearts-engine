@@ -42,3 +42,22 @@ export function handBeforePlay(
   const playedCard = cardPlayedBy(round.tricks[trickIndex], playerOrder, player) ?? ''
   return { hand: sortBySuitThenRank(remaining), playedCard }
 }
+
+/**
+ * Reconstruct a player's hand right before they passed, plus the cards they passed.
+ *
+ * The post-pass hand (`hands_after_passing[player]`, == the cards they play this
+ * round) is the dealt hand minus the 3 passed cards plus the 3 received cards. So
+ * the pre-pass hand = post-pass − received + passed (13 cards).
+ */
+export function handBeforePassing(
+  round: RoundRecord,
+  player: string,
+  passed: string[],
+  received: string[],
+): { hand: string[]; passed: string[] } {
+  const post = round.hands_after_passing[player] ?? []
+  const receivedSet = new Set(received)
+  const pre = post.filter((c) => !receivedSet.has(c)).concat(passed)
+  return { hand: sortBySuitThenRank(pre), passed }
+}

@@ -5,9 +5,10 @@ import './HandOverlay.css'
 
 export interface HandOverlayData {
   player: string
-  trickIndex: number
+  subtitle: string // e.g. "hand before trick #3" or "hand before passing"
   hand: string[]
-  playedCard: string
+  highlight: string[] // cards to ring
+  footer: string
 }
 
 interface HandOverlayProps {
@@ -17,12 +18,13 @@ interface HandOverlayProps {
 }
 
 export function HandOverlay({ data, name, onClose }: HandOverlayProps) {
+  const highlight = new Set(data.highlight)
   return (
     <div className="overlay-backdrop" onClick={onClose}>
       <div className="overlay-panel" onClick={(e) => e.stopPropagation()}>
         <div className="overlay-header">
           <span>
-            <strong><PlayerName d={name} /></strong> · hand before trick #{data.trickIndex + 1}
+            <strong><PlayerName d={name} /></strong> · {data.subtitle}
           </span>
           <button className="overlay-close" onClick={onClose} aria-label="Close">
             ×
@@ -30,12 +32,10 @@ export function HandOverlay({ data, name, onClose }: HandOverlayProps) {
         </div>
         <div className="overlay-hand">
           {data.hand.map((c) => (
-            <Card key={c} code={c} highlight={c === data.playedCard} />
+            <Card key={c} code={c} highlight={highlight.has(c)} />
           ))}
         </div>
-        <div className="overlay-footer">
-          Highlighted card was the one played. ({data.hand.length} card{data.hand.length === 1 ? '' : 's'} in hand)
-        </div>
+        <div className="overlay-footer">{data.footer}</div>
       </div>
     </div>
   )

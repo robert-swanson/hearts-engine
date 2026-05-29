@@ -1,3 +1,5 @@
+import { authToken } from '../lib/auth'
+
 export interface TournamentListEntry {
   tournament_id: string
   began_at: string | null
@@ -78,9 +80,17 @@ export interface LiveStats {
 }
 
 async function getJSON<T>(url: string): Promise<T> {
-  const res = await fetch(url)
+  const token = authToken()
+  const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {}
+  const res = await fetch(url, { headers })
   if (!res.ok) throw new Error(`${res.status} ${res.statusText} for ${url}`)
   return res.json() as Promise<T>
+}
+
+export interface LoginResult {
+  token: string
+  team: string | null
+  is_admin: boolean
 }
 
 export const api = {
@@ -89,4 +99,14 @@ export const api = {
   game: (id: string, gameId: string) =>
     getJSON<GameDetail>(`/api/tournaments/${encodeURIComponent(id)}/games/${encodeURIComponent(gameId)}`),
   live: () => getJSON<LiveStats>('/api/live'),
+  login: async (team: string | null, password: string): Promise<LoginResult> => {
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ team: team || null, password }),
+    })
+    if (res.status === 401) throw new Error('Invalid credentials')
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+    return res.json() as Promise<LoginResult>
+  },
 }

@@ -13,6 +13,19 @@ export function passRecipient(player: string, playerOrder: string[], passDir: st
   }
 }
 
+/** The player who passes TO `player` (the source of their received cards). */
+export function passSource(player: string, playerOrder: string[], passDir: string): string {
+  const n = playerOrder.length
+  const idx = playerOrder.indexOf(player)
+  if (idx < 0) return player
+  switch (passDir) {
+    case 'Left':   return playerOrder[(idx - 1 + n) % n]
+    case 'Right':  return playerOrder[(idx + 1) % n]
+    case 'Across': return playerOrder[(idx + 2) % n]
+    default:       return player
+  }
+}
+
 export const NUM_COLS = 7
 export const CENTER = 3
 
