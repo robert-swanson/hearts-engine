@@ -11,10 +11,16 @@
 #   SKIP_BUILD=1 web/run_web.sh    # serve existing dist without rebuilding
 #
 # Env vars:
-#   HOST         bind address     (default 0.0.0.0)
-#   PORT         bind port        (default 8000)
-#   RESULTS_DIR  results location (default <repo>/results)
-#   SKIP_BUILD   set to 1 to skip the npm build step
+#   HOST               bind address     (default 0.0.0.0)
+#   PORT               bind port        (default 8000)
+#   RESULTS_DIR        results location (default <repo>/results)
+#   SKIP_BUILD         set to 1 to skip the npm build step
+#
+# Auth (optional; controls who can see each round's private "cards passed"):
+#   WEB_ADMIN_PASSWORD admin login password — sign in with a blank team to see
+#                      every team's passed cards. If unset, admin login is off.
+#   Team login uses the TEAMS=name:password entries in tournament_server.env;
+#   a signed-in team sees only its own players' passed cards.
 
 set -e
 

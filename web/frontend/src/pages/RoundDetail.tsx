@@ -9,12 +9,13 @@ import { handBeforePlay } from '../lib/reconstruct'
 import { TrickRow } from '../components/TrickRow'
 import { HandOverlay, type HandOverlayData } from '../components/HandOverlay'
 import { Card } from '../components/Card'
+import { useAuth } from '../lib/auth'
 
 export function RoundDetail() {
   const { id = '', gameId = '', roundIdx = '0' } = useParams()
-  const { data, loading, error } = useFetch(() => api.game(id, gameId), [id, gameId])
+  const auth = useAuth()
+  const { data, loading, error } = useFetch(() => api.game(id, gameId), [id, gameId, auth.token])
   const round = data?.rounds[Number(roundIdx)]
-
   const [selected, setSelected] = useState<string>('')
   const [overlay, setOverlay] = useState<HandOverlayData | null>(null)
 
@@ -47,12 +48,12 @@ export function RoundDetail() {
         Round {Number(roundIdx) + 1} <span className="muted" style={{ fontSize: 15 }}>· pass {round.pass_direction}</span>
       </h1>
 
-      {round.cards_passed && (
+      {round.pass_direction !== 'Keeper' && (
         <div className="card-surface passing-section">
           <h3 style={{ margin: '0 0 8px' }}>Cards passed ({round.pass_direction})</h3>
           <div className="passing-rows">
             {data.player_order.map((p) => {
-              const cards = round.cards_passed![p] ?? []
+              const cards = round.cards_passed?.[p] ?? []
               const recipient = passRecipient(p, data.player_order, round.pass_direction)
               return (
                 <div key={p} className="passing-row">
@@ -60,7 +61,11 @@ export function RoundDetail() {
                     <PlayerName d={nameOf(p)} />
                   </div>
                   <div className="passing-row__cards">
-                    {cards.map((c) => <Card key={c} code={c} size="sm" />)}
+                    {cards.length > 0 ? (
+                      cards.map((c) => <Card key={c} code={c} size="sm" />)
+                    ) : (
+                      <span className="muted" style={{ fontSize: 12 }}>hidden</span>
+                    )}
                   </div>
                   <div className="passing-row__arrow">→</div>
                   <div className="passing-row__to">
@@ -70,6 +75,13 @@ export function RoundDetail() {
               )
             })}
           </div>
+          {!auth.isAdmin && (
+            <p className="muted" style={{ fontSize: 12, margin: '8px 0 0' }}>
+              {auth.team
+                ? 'Only your own team’s passed cards are shown. Sign in as admin to see all.'
+                : 'Passed cards are private. Sign in as a team to see your own, or as admin to see all.'}
+            </p>
+          )}
         </div>
       )}
 

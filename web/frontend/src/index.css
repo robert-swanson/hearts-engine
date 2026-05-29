@@ -78,15 +78,10 @@ table.data tbody tr:hover {
 }
 
 .passing-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 90px 1fr 24px 90px;
   align-items: center;
   gap: 10px;
-  flex-wrap: wrap;
-}
-
-.passing-row__from,
-.passing-row__to {
-  min-width: 90px;
 }
 
 .passing-row__from {
@@ -96,6 +91,8 @@ table.data tbody tr:hover {
 .passing-row__cards {
   display: flex;
   gap: 4px;
+  align-items: center;
+  min-height: 34px;
 }
 
 .passing-row__arrow {
