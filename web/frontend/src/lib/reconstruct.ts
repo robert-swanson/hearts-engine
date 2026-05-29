@@ -1,5 +1,8 @@
 import type { RoundRecord } from '../api/client'
-import { sortBySuitThenRank } from './cards'
+import { sortBySuitThenRank, parseCard, type Suit } from './cards'
+
+/** The card every round must be led with on the first trick (2 of clubs). */
+const STARTING_CARD = '2C'
 
 /** The card a given player played in a specific trick (or undefined). */
 export function cardPlayedBy(
@@ -41,6 +44,53 @@ export function handBeforePlay(
   }
   const playedCard = cardPlayedBy(round.tricks[trickIndex], playerOrder, player) ?? ''
   return { hand: sortBySuitThenRank(remaining), playedCard }
+}
+
+/** Whether any heart had been played before `trickIndex` (so hearts are "broken"). */
+export function heartsBrokenBefore(round: RoundRecord, trickIndex: number): boolean {
+  for (let t = 0; t < trickIndex; t++) {
+    for (const c of round.tricks[t].moves) {
+      if (parseCard(c).suit === 'H') return true
+    }
+  }
+  return false
+}
+
+/**
+ * Which cards in `hand` were legal to play, mirroring the engine's
+ * `Trick::legalMovesForPlayer` (server/game/trick.h):
+ *  - Following a led suit: must play that suit if holding any.
+ *  - Leading before hearts are broken: cannot lead a heart unless hearts-only.
+ *  - First trick: leader must play the 2♣; followers cannot play the Q♠.
+ * `ledSuit` is null when this player is leading the trick.
+ */
+export function legalMovesForHand(
+  hand: string[],
+  trickIndex: number,
+  ledSuit: Suit | null,
+  heartsBroken: boolean,
+): string[] {
+  let legal = [...hand]
+  const leadingPlay = ledSuit === null
+
+  if (!leadingPlay) {
+    const matching = legal.filter((c) => parseCard(c).suit === ledSuit)
+    if (matching.length > 0) legal = matching
+  }
+
+  if (leadingPlay && !heartsBroken) {
+    const nonHearts = legal.filter((c) => parseCard(c).suit !== 'H')
+    if (nonHearts.length > 0) legal = nonHearts
+  }
+
+  if (trickIndex === 0) {
+    if (leadingPlay) {
+      return hand.includes(STARTING_CARD) ? [STARTING_CARD] : legal
+    }
+    legal = legal.filter((c) => c !== 'QS')
+  }
+
+  return legal
 }
 
 /**

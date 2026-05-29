@@ -42,7 +42,13 @@
 .overlay-hand {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
+}
+
+/* Visual break between suit groups (hand is sorted by suit then rank). */
+.overlay-hand__gap {
+  width: 14px;
 }
 
 .overlay-footer {
