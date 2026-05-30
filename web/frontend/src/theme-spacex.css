@@ -66,6 +66,27 @@
   opacity: 1;
 }
 
+/* ---- Mobile side drawer + hamburger (match dark theme) ---------------- */
+.theme-spacex .app-menu-btn {
+  border-color: var(--sx-hairline);
+  color: var(--sx-on-primary);
+}
+.theme-spacex .app-drawer__panel {
+  background: var(--sx-canvas-night-soft);
+  border-left-color: var(--sx-hairline);
+}
+.theme-spacex .app-drawer__panel a {
+  color: var(--sx-on-primary-mute);
+  text-transform: uppercase;
+  letter-spacing: 1.17px;
+  font-weight: 700;
+  opacity: 0.85;
+  transition: opacity 0.15s ease;
+}
+.theme-spacex .app-drawer__panel a:hover {
+  opacity: 1;
+}
+
 /* ---- Display typography ------------------------------------------------ */
 .theme-spacex h1 {
   font-family: var(--sx-display);

@@ -141,6 +141,12 @@ export interface LiveMove {
   card: string
 }
 
+// A completed trick this round — same shape as TrickRecord, so the tournament
+// TrickRow component renders it unchanged.
+export interface LiveTrick extends TrickRecord {
+  trick_idx: number
+}
+
 export interface LivePublic {
   status: LiveStatus
   player_order: string[]
@@ -151,6 +157,7 @@ export interface LivePublic {
   round_points: Record<string, number>
   current_trick: { trick_idx: number | null; leader: string | null; moves: LiveMove[] }
   completed_trick_count: number
+  completed_tricks: LiveTrick[]
   turn: string | null
   winner: string | null
   final_points: Record<string, number>
@@ -171,6 +178,8 @@ export interface LiveMySeat {
   pid: string
   name: string
   pending: LivePending | null
+  passed?: string[]    // cards I passed this round
+  received?: string[]  // cards passed to me this round
 }
 
 export interface LiveSnapshot {

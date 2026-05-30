@@ -4,7 +4,16 @@ import { api } from '../api/client'
 import type { LiveSeat, LiveMySeat, LivePublic } from '../api/client'
 import { useLiveTable, type SendAction } from '../lib/liveSocket'
 import { Card } from '../components/Card'
+import { TrickRow } from '../components/TrickRow'
+import { SUIT_ORDER, sortBySuitThenRank, type Suit } from '../lib/cards'
+import { columnSeats, CENTER, passRecipient, passSource } from '../lib/seating'
 import './LivePlay.css'
+
+/** Split a hand into suit groups (suit-then-rank sorted) for gapped rendering. */
+function suitGroups(hand: string[]): string[][] {
+  const sorted = sortBySuitThenRank(hand)
+  return SUIT_ORDER.map((s) => sorted.filter((c) => (c[1] as Suit) === s)).filter((g) => g.length > 0)
+}
 
 const AI_OPTIONS = [
   { value: 'random', label: 'Random' },
@@ -233,6 +242,9 @@ function PlayView({
         </div>
       </div>
 
+      {/* This round so far: passing + completed tricks, same UI as tournaments. */}
+      <RoundHistory pub={pub} mySeats={mySeats} />
+
       {/* Table: players with the card they've played this trick. */}
       <div className="live-seats">
         {pub.player_order.map((pid) => {
@@ -275,6 +287,74 @@ function PlayView({
   )
 }
 
+// --- Round history: passing + completed tricks (tournament-style) ------------
+
+function RoundHistory({ pub, mySeats }: { pub: LivePublic; mySeats: LiveMySeat[] }) {
+  const tricks = pub.completed_tricks ?? []
+  // Center the trick rows on my seat if I'm in this game, else the first seat.
+  const me = mySeats.find((s) => pub.player_order.includes(s.pid))
+  const selected = me?.pid ?? pub.player_order[0]
+  const nameOf = (pid: string) => pub.players[pid]?.name ?? pid
+  const dir = pub.pass_direction
+
+  const passed = me?.passed ?? []
+  const received = me?.received ?? []
+  const showPass = !!me && !!dir && dir !== 'Keeper' && (passed.length > 0 || received.length > 0)
+
+  if (!selected || (tricks.length === 0 && !showPass)) return null
+
+  const seats = columnSeats(pub.player_order, selected)
+  const recipient = me && dir ? passRecipient(selected, pub.player_order, dir) : selected
+  const source = me && dir ? passSource(selected, pub.player_order, dir) : selected
+
+  return (
+    <div className="card-surface live-history">
+      <div className="live-history__title">This round so far</div>
+
+      {showPass && (
+        <div className="live-pass-summary">
+          <div className="live-pass-summary__leg">
+            <span className="muted">You passed</span>
+            <div className="hand-suit-group">{passed.map((c) => <Card key={c} code={c} size="sm" />)}</div>
+            <span className="muted">to {nameOf(recipient)}</span>
+          </div>
+          <div className="live-pass-summary__leg">
+            <span className="muted">Received</span>
+            <div className="hand-suit-group">{received.map((c) => <Card key={c} code={c} size="sm" />)}</div>
+            <span className="muted">from {nameOf(source)}</span>
+          </div>
+        </div>
+      )}
+
+      {tricks.length > 0 && (
+        <div className="live-tricks">
+          {/* Column header aligned with the trick rows below (selected centered). */}
+          <div className="trick-row">
+            <div className="trick-row__label" />
+            <div className="trick-row__grid">
+              {seats.map((pid, col) => (
+                <div key={col} className={`trick-col ${col === CENTER ? 'trick-col--center' : ''}`}>
+                  <div className="trick-col__seat">{nameOf(pid)}</div>
+                </div>
+              ))}
+            </div>
+            <div className="trick-row__pts" />
+          </div>
+          {tricks.map((t) => (
+            <TrickRow
+              key={t.trick_idx}
+              trick={t}
+              trickIndex={t.trick_idx}
+              playerOrder={pub.player_order}
+              selected={selected}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function MySeatPanel({ seat, send }: { seat: LiveMySeat; send: (a: SendAction) => void }) {
   const [picked, setPicked] = useState<string[]>([])
   const pending = seat.pending
@@ -290,6 +370,18 @@ function MySeatPanel({ seat, send }: { seat: LiveMySeat; send: (a: SendAction) =
       prev.includes(card) ? prev.filter((c) => c !== card) : prev.length < 3 ? [...prev, card] : prev,
     )
   }
+
+  // Render the hand grouped by suit (suit-then-rank sorted) with a gap between
+  // suits, matching the tournament hand layout.
+  const groupedHand = (renderCard: (c: string) => React.ReactNode) => (
+    <div className="hand-row">
+      {suitGroups(hand).map((g, i) => (
+        <div className="hand-suit-group" key={i}>
+          {g.map(renderCard)}
+        </div>
+      ))}
+    </div>
+  )
 
   return (
     <div className="card-surface my-seat" key={promptKey}>
@@ -308,18 +400,16 @@ function MySeatPanel({ seat, send }: { seat: LiveMySeat; send: (a: SendAction) =
         <p className="muted" style={{ fontSize: 13 }}>Waiting…</p>
       ) : pending?.kind === 'pass' ? (
         <>
-          <div className="hand-row">
-            {hand.map((c) => (
-              <Card
-                key={c}
-                code={c}
-                size="md"
-                legal={picked.includes(c)}
-                onClick={() => togglePass(c)}
-                title="Click to select for passing"
-              />
-            ))}
-          </div>
+          {groupedHand((c) => (
+            <Card
+              key={c}
+              code={c}
+              size="md"
+              legal={picked.includes(c)}
+              onClick={() => togglePass(c)}
+              title="Click to select for passing"
+            />
+          ))}
           <button
             className="btn"
             style={{ marginTop: 12 }}
@@ -330,26 +420,22 @@ function MySeatPanel({ seat, send }: { seat: LiveMySeat; send: (a: SendAction) =
           </button>
         </>
       ) : pending?.kind === 'move' ? (
-        <div className="hand-row">
-          {hand.map((c) => {
-            const ok = legal.has(c)
-            return (
-              <Card
-                key={c}
-                code={c}
-                size="md"
-                legal={ok}
-                dim={!ok}
-                onClick={ok ? () => send({ action: 'decide', seat_id: seat.seat_id, value: c }) : undefined}
-                title={ok ? 'Click to play' : 'Not legal to play now'}
-              />
-            )
-          })}
-        </div>
+        groupedHand((c) => {
+          const ok = legal.has(c)
+          return (
+            <Card
+              key={c}
+              code={c}
+              size="md"
+              legal={ok}
+              dim={!ok}
+              onClick={ok ? () => send({ action: 'decide', seat_id: seat.seat_id, value: c }) : undefined}
+              title={ok ? 'Click to play' : 'Not legal to play now'}
+            />
+          )
+        })
       ) : (
-        <div className="hand-row">
-          {hand.map((c) => <Card key={c} code={c} size="md" />)}
-        </div>
+        groupedHand((c) => <Card key={c} code={c} size="md" />)
       )}
     </div>
   )

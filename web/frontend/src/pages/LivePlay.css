@@ -115,5 +115,60 @@
 .hand-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 18px; /* gap between suit groups */
+  align-items: flex-start;
+}
+.hand-suit-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px; /* gap between cards within a suit */
+}
+
+/* --- Round history (passing + completed tricks) --- */
+.live-history {
+  margin-bottom: 18px;
+}
+.live-history__title {
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  opacity: 0.65;
+  margin-bottom: 12px;
+}
+.live-pass-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 28px;
+  margin-bottom: 14px;
+}
+.live-pass-summary__leg {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.live-tricks {
+  overflow-x: auto;
+}
+
+@media (max-width: 600px) {
+  .live-table-info {
+    gap: 20px;
+    padding: 12px 14px;
+  }
+  .live-stat {
+    font-size: 17px;
+  }
+  .live-home {
+    gap: 18px;
+  }
+  .live-home__divider {
+    display: none;
+  }
+  .live-pass-summary {
+    gap: 16px;
+  }
+  .hand-row {
+    gap: 12px;
+  }
 }
