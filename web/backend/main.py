@@ -73,6 +73,19 @@ def game(competition_id: str, index: str, game_id: str,
     return auth.redact_game(detail, auth.principal_from_header(authorization))
 
 
+@app.get("/api/lobby/games")
+def lobby_games():
+    return results.list_lobby_games()
+
+
+@app.get("/api/lobby/games/{game_id}")
+def lobby_game(game_id: str):
+    detail = results.get_lobby_game(game_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="lobby game not found")
+    return detail
+
+
 @app.get("/api/live")
 def live():
     return results.get_live_stats()

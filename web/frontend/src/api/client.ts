@@ -114,6 +114,15 @@ export interface GameDetail {
   rounds: RoundRecord[]
 }
 
+export interface LobbyGameListEntry {
+  game_id: string
+  played_at: string | null
+  player_order: string[]
+  winner: string
+  final_scores: Record<string, number>
+  rounds_played: number | null
+}
+
 export interface LiveStats {
   competition_id: string | null
   tournament_index: string | null
@@ -154,6 +163,8 @@ export const api = {
   rules: (cid: string, index: string) => getJSON<TournamentRules>(`${tBase(cid, index)}/rules`),
   game: (cid: string, index: string, gameId: string) =>
     getJSON<GameDetail>(`${tBase(cid, index)}/games/${encodeURIComponent(gameId)}`),
+  lobbyGames: () => getJSON<LobbyGameListEntry[]>('/api/lobby/games'),
+  lobbyGame: (gameId: string) => getJSON<GameDetail>(`/api/lobby/games/${encodeURIComponent(gameId)}`),
   live: () => getJSON<LiveStats>('/api/live'),
   login: async (team: string | null, password: string): Promise<LoginResult> => {
     const res = await fetch('/api/login', {

@@ -11,10 +11,13 @@ import { HandOverlay, type HandOverlayData } from '../components/HandOverlay'
 import { Card } from '../components/Card'
 import { useAuth } from '../lib/auth'
 
-export function RoundDetail() {
+export function RoundDetail({ lobby = false }: { lobby?: boolean }) {
   const { cid = '', index = '', gameId = '', roundIdx = '0' } = useParams()
   const auth = useAuth()
-  const { data, loading, error } = useFetch(() => api.game(cid, index, gameId), [cid, index, gameId, auth.token])
+  const { data, loading, error } = useFetch(
+    () => (lobby ? api.lobbyGame(gameId) : api.game(cid, index, gameId)),
+    [cid, index, gameId, lobby, auth.token],
+  )
   const round = data?.rounds[Number(roundIdx)]
   const [selected, setSelected] = useState<string>('')
   const [overlay, setOverlay] = useState<HandOverlayData | null>(null)
@@ -112,12 +115,21 @@ export function RoundDetail() {
   return (
     <div>
       <div className="crumbs">
-        <Link to="/">Competitions</Link> / <Link to={`/c/${encodeURIComponent(cid)}`}>{cid}</Link> /{' '}
-        <Link to={`/c/${encodeURIComponent(cid)}/t/${encodeURIComponent(index)}`}>#{index}</Link> /{' '}
-        <Link to={`/c/${encodeURIComponent(cid)}/t/${encodeURIComponent(index)}/g/${encodeURIComponent(gameId)}`}>
-          {gameId}
-        </Link>{' '}
-        / round {Number(roundIdx) + 1}
+        {lobby ? (
+          <>
+            <Link to="/lobby">Lobby games</Link> /{' '}
+            <Link to={`/lobby/g/${encodeURIComponent(gameId)}`}>{gameId}</Link> / round {Number(roundIdx) + 1}
+          </>
+        ) : (
+          <>
+            <Link to="/">Competitions</Link> / <Link to={`/c/${encodeURIComponent(cid)}`}>{cid}</Link> /{' '}
+            <Link to={`/c/${encodeURIComponent(cid)}/t/${encodeURIComponent(index)}`}>#{index}</Link> /{' '}
+            <Link to={`/c/${encodeURIComponent(cid)}/t/${encodeURIComponent(index)}/g/${encodeURIComponent(gameId)}`}>
+              {gameId}
+            </Link>{' '}
+            / round {Number(roundIdx) + 1}
+          </>
+        )}
       </div>
       <h1>
         Round {Number(roundIdx) + 1} <span className="muted" style={{ fontSize: 15 }}>· pass {round.pass_direction}</span>
@@ -171,7 +183,7 @@ export function RoundDetail() {
                 Click a passed card to see this player's hand before passing.
               </p>
             )}
-            {!auth.isAdmin && passed.length === 0 && received.length === 0 && (
+            {!lobby && !auth.isAdmin && passed.length === 0 && received.length === 0 && (
               <p className="muted" style={{ fontSize: 12, margin: '12px 0 0' }}>
                 {auth.team
                   ? 'Passing is private to each player — select one of your team’s players to view theirs.'

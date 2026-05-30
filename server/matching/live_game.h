@@ -1,7 +1,10 @@
 #pragma once
 
+#include <array>
+#include <thread>
 #include <utility>
 
+#include "server/game/game_recorder.h"
 #include "lobby.h"
 
 namespace Common::Server {
@@ -28,8 +31,43 @@ public:
 
     void startGame()
     {
-        Common::Game::Game game({mGamePlayers[0], mGamePlayers[1], mGamePlayers[2], mGamePlayers[3]}, mGameLogger);
-        std::thread(&Game::Game::runGame, game).detach();
+        // The LiveGame object is destroyed as soon as startGame() returns (its
+        // caller holds it on the stack), so everything the game thread needs is
+        // captured by value: the four players, the logger, and the recorder
+        // identity. The RecordingObserver lives inside the thread for the whole
+        // game and is used to write the browsable lobby JSON when it finishes.
+        std::array<Game::PlayerRef, 4> players =
+            {mGamePlayers[0], mGamePlayers[1], mGamePlayers[2], mGamePlayers[3]};
+        auto logger = mGameLogger;
+
+        // Shared YYYY-M-D_HH-MM-SS.mmm timestamp — same shape the web backend
+        // already parses for tournament directories.
+        std::string ts = Dates::GetStrDate('-') + "_" + Dates::GetStrTime('-');
+        std::string gameId   = ts + "_" + mGameID;
+        std::string playedAt = ts;
+        std::filesystem::path resultsDir =
+            EnvLoader->has("RESULTS_DIR") ? std::filesystem::path(ENV_STRING("RESULTS_DIR"))
+                                          : std::filesystem::path("results");
+
+        std::thread([players, logger, gameId, playedAt, resultsDir]() {
+            Common::Game::RecordingObserver recorder(gameId);
+            // Seating order = the order players were dealt into the game.
+            for (const auto& p : players)
+                recorder.result.playerOrder.push_back(p->getTagSession());
+
+            Common::Game::Game game(
+                {players[0], players[1], players[2], players[3]}, logger, &recorder);
+            game.runGame();
+
+            try
+            {
+                Common::Game::writeLobbyGameResult(resultsDir, recorder.result, playedAt);
+            }
+            catch (const std::exception& e)
+            {
+                logger->Log("Failed to write lobby game result: %s", e.what());
+            }
+        }).detach();
     }
 
 private:

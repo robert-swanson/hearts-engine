@@ -12,6 +12,7 @@ export function App() {
         </Link>
         <nav className="app-nav">
           <Link to="/">Competitions</Link>
+          <Link to="/lobby">Lobby games</Link>
         </nav>
         <AuthControl />
       </header>
