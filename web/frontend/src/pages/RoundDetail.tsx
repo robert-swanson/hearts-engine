@@ -12,9 +12,9 @@ import { Card } from '../components/Card'
 import { useAuth } from '../lib/auth'
 
 export function RoundDetail() {
-  const { id = '', gameId = '', roundIdx = '0' } = useParams()
+  const { cid = '', index = '', gameId = '', roundIdx = '0' } = useParams()
   const auth = useAuth()
-  const { data, loading, error } = useFetch(() => api.game(id, gameId), [id, gameId, auth.token])
+  const { data, loading, error } = useFetch(() => api.game(cid, index, gameId), [cid, index, gameId, auth.token])
   const round = data?.rounds[Number(roundIdx)]
   const [selected, setSelected] = useState<string>('')
   const [overlay, setOverlay] = useState<HandOverlayData | null>(null)
@@ -110,9 +110,12 @@ export function RoundDetail() {
   return (
     <div>
       <div className="crumbs">
-        <Link to="/">Tournaments</Link> / <Link to={`/t/${encodeURIComponent(id)}`}>{id}</Link> /{' '}
-        <Link to={`/t/${encodeURIComponent(id)}/g/${encodeURIComponent(gameId)}`}>{gameId}</Link> / round{' '}
-        {Number(roundIdx) + 1}
+        <Link to="/">Competitions</Link> / <Link to={`/c/${encodeURIComponent(cid)}`}>{cid}</Link> /{' '}
+        <Link to={`/c/${encodeURIComponent(cid)}/t/${encodeURIComponent(index)}`}>#{index}</Link> /{' '}
+        <Link to={`/c/${encodeURIComponent(cid)}/t/${encodeURIComponent(index)}/g/${encodeURIComponent(gameId)}`}>
+          {gameId}
+        </Link>{' '}
+        / round {Number(roundIdx) + 1}
       </div>
       <h1>
         Round {Number(roundIdx) + 1} <span className="muted" style={{ fontSize: 15 }}>· pass {round.pass_direction}</span>

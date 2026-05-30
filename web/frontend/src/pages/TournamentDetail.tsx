@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useMemo } from 'react'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api, gamePlayers, type GameSummary } from '../api/client'
 import { useFetch } from '../lib/useFetch'
 import { nameResolver, playerSortKey } from '../lib/playerId'
@@ -11,14 +11,31 @@ const PAGE_SIZE = 50
 type SortKey = 'player' | 'game' | 'tournament' | 'moon'
 
 export function TournamentDetail() {
-  const { id = '' } = useParams()
-  const { data, loading, error } = useFetch(() => api.tournament(id), [id])
-  const [stage, setStage] = useState<'qualifying' | 'finals'>('qualifying')
-  const [selectedPlayers, setSelectedPlayers] = useState<string[]>([])
-  const [minMoon, setMinMoon] = useState(0)
-  const [page, setPage] = useState(0)
-  const [sortKey, setSortKey] = useState<SortKey>('player')
-  const [sortAsc, setSortAsc] = useState(true)
+  const { cid = '', index = '' } = useParams()
+  const { data, loading, error } = useFetch(() => api.tournament(cid, index), [cid, index])
+  const navigate = useNavigate()
+
+  // Filter / stage / sort / page selections all live in the URL so the view is
+  // shareable and survives back/forward navigation.
+  const [params, setParams] = useSearchParams()
+  const stage: 'qualifying' | 'finals' = params.get('stage') === 'finals' ? 'finals' : 'qualifying'
+  const selectedPlayers = params.getAll('player')
+  const minMoon = Number(params.get('minMoon')) || 0
+  const page = Math.max(0, Number(params.get('page')) || 0)
+  const sortKey = (params.get('sort') as SortKey) || 'player'
+  const sortAsc = params.get('dir') ? params.get('dir') === 'asc' : sortKey === 'player'
+
+  // Merge a set of changes into the URL search params (preserving the rest).
+  const patch = (changes: Record<string, string | string[] | null>) => {
+    const next = new URLSearchParams(params)
+    for (const [k, v] of Object.entries(changes)) {
+      next.delete(k)
+      if (v == null) continue
+      if (Array.isArray(v)) v.forEach((item) => next.append(k, item))
+      else next.set(k, v)
+    }
+    setParams(next, { replace: false })
+  }
 
   const games: GameSummary[] = useMemo(() => {
     if (!data) return []
@@ -45,8 +62,10 @@ export function TournamentDetail() {
   if (!data) return <p className="muted">Not found.</p>
 
   const togglePlayer = (p: string) => {
-    setPage(0)
-    setSelectedPlayers((cur) => (cur.includes(p) ? cur.filter((x) => x !== p) : [...cur, p]))
+    const next = selectedPlayers.includes(p)
+      ? selectedPlayers.filter((x) => x !== p)
+      : [...selectedPlayers, p]
+    patch({ player: next, page: null })
   }
 
   const pageGames = filtered.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE)
@@ -54,11 +73,10 @@ export function TournamentDetail() {
 
   const toggleSort = (key: SortKey) => {
     if (key === sortKey) {
-      setSortAsc((a) => !a)
+      patch({ dir: sortAsc ? 'desc' : 'asc' })
     } else {
-      setSortKey(key)
       // Player defaults to A→Z; numeric columns default to highest first.
-      setSortAsc(key === 'player')
+      patch({ sort: key, dir: key === 'player' ? 'asc' : 'desc' })
     }
   }
 
@@ -76,31 +94,28 @@ export function TournamentDetail() {
       return sortAsc ? cmp : -cmp
     })
 
+  const gameHref = (gameId: string) =>
+    `/c/${encodeURIComponent(cid)}/t/${encodeURIComponent(index)}/g/${encodeURIComponent(gameId)}`
+
   return (
     <div>
       <div className="crumbs">
-        <Link to="/">Tournaments</Link> / {id}
+        <Link to="/">Competitions</Link> / <Link to={`/c/${encodeURIComponent(cid)}`}>{cid}</Link> / #{index}
       </div>
-      <h1>Tournament {id}</h1>
+      <h1>Tournament #{index}</h1>
 
       <div className="row-actions">
         <button
           className="btn"
           style={stage === 'qualifying' ? { background: '#2a5bd7', color: '#fff' } : undefined}
-          onClick={() => {
-            setStage('qualifying')
-            setPage(0)
-          }}
+          onClick={() => patch({ stage: 'qualifying', page: null })}
         >
           Qualifying ({data.qualifying.length})
         </button>
         <button
           className="btn"
           style={stage === 'finals' ? { background: '#2a5bd7', color: '#fff' } : undefined}
-          onClick={() => {
-            setStage('finals')
-            setPage(0)
-          }}
+          onClick={() => patch({ stage: 'finals', page: null })}
         >
           Finals ({data.finals.length})
         </button>
@@ -115,10 +130,7 @@ export function TournamentDetail() {
               type="number"
               min={0}
               value={minMoon}
-              onChange={(e) => {
-                setMinMoon(Number(e.target.value) || 0)
-                setPage(0)
-              }}
+              onChange={(e) => patch({ minMoon: String(Number(e.target.value) || 0), page: null })}
               style={{ width: 60 }}
             />
           </label>
@@ -181,14 +193,13 @@ export function TournamentDetail() {
               <th>Players (finish order)</th>
               <th>Winner</th>
               <th>Rounds</th>
-              <th></th>
             </tr>
           </thead>
           <tbody>
             {pageGames.map((g) => (
-              <tr key={g.game_id}>
+              <tr key={g.game_id} className="row-link" onClick={() => navigate(gameHref(g.game_id))}>
                 <td>
-                  <Link to={`/t/${encodeURIComponent(id)}/g/${encodeURIComponent(g.game_id)}`}>{g.game_id}</Link>
+                  <Link to={gameHref(g.game_id)}>{g.game_id}</Link>
                 </td>
                 <td style={{ fontSize: 12 }}>
                   {gamePlayers(g).map((p, i) => (
@@ -200,22 +211,23 @@ export function TournamentDetail() {
                 </td>
                 <td><PlayerName d={nameOf(g.winner)} /></td>
                 <td className="muted">{g.rounds_played}</td>
-                <td>
-                  <Link to={`/t/${encodeURIComponent(id)}/g/${encodeURIComponent(g.game_id)}`}>View →</Link>
-                </td>
               </tr>
             ))}
           </tbody>
         </table>
         {numPages > 1 && (
           <div className="row-actions" style={{ marginTop: 12, marginBottom: 0 }}>
-            <button className="btn" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
+            <button className="btn" disabled={page === 0} onClick={() => patch({ page: String(page - 1) })}>
               ← Prev
             </button>
             <span className="muted" style={{ fontSize: 13 }}>
               Page {page + 1} / {numPages}
             </span>
-            <button className="btn" disabled={page >= numPages - 1} onClick={() => setPage((p) => p + 1)}>
+            <button
+              className="btn"
+              disabled={page >= numPages - 1}
+              onClick={() => patch({ page: String(page + 1) })}
+            >
               Next →
             </button>
           </div>

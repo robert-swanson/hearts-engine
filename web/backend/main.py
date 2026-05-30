@@ -35,22 +35,39 @@ def login(req: LoginRequest):
     return {"token": token, "team": principal.get("team"), "is_admin": principal.get("is_admin", False)}
 
 
-@app.get("/api/tournaments")
-def tournaments():
-    return results.list_tournaments()
+@app.get("/api/competitions")
+def competitions():
+    return results.list_competitions()
 
 
-@app.get("/api/tournaments/{tournament_id}")
-def tournament(tournament_id: str):
-    summary = results.get_summary(tournament_id)
+@app.get("/api/competitions/{competition_id}")
+def competition(competition_id: str):
+    detail = results.get_competition(competition_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="competition not found")
+    return detail
+
+
+@app.get("/api/competitions/{competition_id}/tournaments/{index}")
+def tournament(competition_id: str, index: str):
+    summary = results.get_summary(competition_id, index)
     if summary is None:
         raise HTTPException(status_code=404, detail="tournament not found")
     return summary
 
 
-@app.get("/api/tournaments/{tournament_id}/games/{game_id}")
-def game(tournament_id: str, game_id: str, authorization: Optional[str] = Header(default=None)):
-    detail = results.get_game(tournament_id, game_id)
+@app.get("/api/competitions/{competition_id}/tournaments/{index}/rules")
+def rules(competition_id: str, index: str):
+    data = results.get_rules(competition_id, index)
+    if data is None:
+        raise HTTPException(status_code=404, detail="rules not found")
+    return data
+
+
+@app.get("/api/competitions/{competition_id}/tournaments/{index}/games/{game_id}")
+def game(competition_id: str, index: str, game_id: str,
+         authorization: Optional[str] = Header(default=None)):
+    detail = results.get_game(competition_id, index, game_id)
     if detail is None:
         raise HTTPException(status_code=404, detail="game not found")
     return auth.redact_game(detail, auth.principal_from_header(authorization))

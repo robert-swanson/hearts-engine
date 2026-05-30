@@ -24,7 +24,8 @@ export function LiveStats() {
   // once we have data, background poll failures keep the last-known data on screen.
   if (loading && !data) return <p className="muted">Loading…</p>
   if (error && !data) return <p className="muted">Error: {error}</p>
-  if (!data || !data.tournament_id) return <p className="muted">No tournament data available.</p>
+  if (!data || !data.competition_id || !data.tournament_index)
+    return <p className="muted">No tournament data available.</p>
 
   const standings = Object.entries(data.standings).sort((a, b) => b[1] - a[1])
   const nameOf = nameResolver(standings.map(([p]) => p))
@@ -34,7 +35,11 @@ export function LiveStats() {
       <h1>Live tournament stats</h1>
       <p className="muted" style={{ marginTop: -8 }}>
         Current tournament:{' '}
-        <Link to={`/t/${encodeURIComponent(data.tournament_id)}`}>{data.tournament_id}</Link>
+        <Link
+          to={`/c/${encodeURIComponent(data.competition_id)}/t/${encodeURIComponent(data.tournament_index)}`}
+        >
+          {data.competition_id} · #{data.tournament_index}
+        </Link>
         <span style={{ marginLeft: 8, fontSize: 12 }}>
           · auto-refreshing every {REFRESH_MS / 1000}s{error ? ' (reconnecting…)' : ''}
         </span>
