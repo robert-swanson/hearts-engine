@@ -41,7 +41,7 @@ export function RoundDetail() {
       hand,
       highlight: playedCard ? [playedCard] : [],
       legal,
-      footer: `Gold ring = card played. Green = legal to play here; faded = not legal. (${hand.length} card${hand.length === 1 ? '' : 's'} in hand)`,
+      footer: `Gold ring = card played. Greyed-out cards weren't legal to play here. (${hand.length} card${hand.length === 1 ? '' : 's'} in hand)`,
     })
   }
 

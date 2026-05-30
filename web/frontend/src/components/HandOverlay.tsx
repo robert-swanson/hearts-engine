@@ -59,10 +59,7 @@ export function HandOverlay({ data, name, onClose }: HandOverlayProps) {
         {legal && (
           <div className="overlay-legend">
             <span className="overlay-legend__item">
-              <span className="overlay-legend__swatch overlay-legend__swatch--legal" /> legal to play
-            </span>
-            <span className="overlay-legend__item">
-              <span className="overlay-legend__swatch overlay-legend__swatch--dim" /> not legal
+              <span className="overlay-legend__swatch overlay-legend__swatch--dim" /> greyed out = not legal to play
             </span>
           </div>
         )}

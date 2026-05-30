@@ -76,15 +76,11 @@
   border: 1px solid #c7c7c7;
 }
 
-.overlay-legend__swatch--legal {
-  border-color: #2bb673;
-  box-shadow: 0 0 0 1px #2bb673;
-}
-
 .overlay-legend__swatch--dim {
-  opacity: 0.32;
-  filter: grayscale(0.5);
-  background: #ddd;
+  border-color: transparent;
+  opacity: 0.45;
+  filter: grayscale(1);
+  background: #999;
 }
 
 .overlay-footer {
