@@ -62,28 +62,39 @@ def stream_output(proc: subprocess.Popen, prefix: str):
         print(f'  [{prefix}] {line}', end='', flush=True)
 
 
-def find_result(after_time: float, timeout_s: float) -> Tuple[Optional[dict], Optional[Path]]:
-    """Return (summary_data, tournament_dir) for the first result written after
-    after_time that contains every team in TEAMS, or (None, None) on timeout."""
+def find_result(after_time: float, timeout_s: float,
+                exclude_dirs: Optional[set] = None) -> Tuple[Optional[dict], Optional[Path]]:
+    """Return (summary_data, tournament_dir) for the first complete result written
+    after after_time that contains every team in TEAMS, or (None, None) on timeout.
+
+    Tournaments are now nested as <results>/<competition>/<index>/, so consecutive
+    cycles live under the same competition dir and differ only by index. We identify
+    a tournament by its directory and skip any in exclude_dirs, rather than relying
+    on directory mtime ordering (which no longer distinguishes cycles)."""
+    exclude = {p.resolve() for p in (exclude_dirs or set())}
     deadline = time.time() + timeout_s
     while time.time() < deadline:
+        # Nested layout first, then legacy flat layout for older runs.
         for summary_path in sorted(
-            Path(RESULTS_DIR).glob('*/summary.json'),
+            list(Path(RESULTS_DIR).glob('*/*/summary.json'))
+            + list(Path(RESULTS_DIR).glob('*/summary.json')),
             key=lambda f: f.stat().st_mtime,
             reverse=True,
         ):
+            tdir = summary_path.parent
+            if tdir.resolve() in exclude:
+                continue
             if summary_path.stat().st_mtime < after_time:
-                break
+                continue
             try:
                 data = json.loads(summary_path.read_text())
-                # summary.json is now written incrementally during a tournament;
-                # only accept the final, complete write (older summaries lack the
-                # flag and are always complete).
+                # summary.json is written incrementally during a tournament; only
+                # accept the final, complete write (older summaries lack the flag).
                 if not data.get('complete', True):
                     continue
                 qtotals = data.get('qualifying_totals', {})
                 if all(any(k.startswith(f'{t}/') for k in qtotals) for t in TEAMS):
-                    return data, summary_path.parent
+                    return data, tdir
             except Exception:
                 pass
         time.sleep(2)
@@ -239,7 +250,6 @@ def main():
     # ── 6. Wait for tournament 1 result ───────────────────────────────────────
     print(f"Waiting for tournament 1 result (up to {TIMEOUT_PER_TOURNAMENT}s)...")
     result_1, dir_1 = find_result(test_start, TIMEOUT_PER_TOURNAMENT)
-    t1_mtime = dir_1.stat().st_mtime if dir_1 else 0
 
     if not result_1:
         print(f"FAIL: tournament 1 result not found within {TIMEOUT_PER_TOURNAMENT}s")
@@ -263,7 +273,8 @@ def main():
 
     # ── 9. Wait for tournament 2 result ───────────────────────────────────────
     print(f"Waiting for tournament 2 result (up to {TIMEOUT_PER_TOURNAMENT}s)...")
-    result_2, dir_2 = find_result(t1_mtime + 1, TIMEOUT_PER_TOURNAMENT)
+    # Tournament 2 is a distinct tournament dir (next index, same competition) — exclude T1's.
+    result_2, dir_2 = find_result(test_start, TIMEOUT_PER_TOURNAMENT, exclude_dirs={dir_1})
 
     if not result_2:
         print(f"FAIL: tournament 2 result not found within {TIMEOUT_PER_TOURNAMENT}s")

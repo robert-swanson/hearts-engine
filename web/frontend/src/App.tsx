@@ -10,7 +10,7 @@ export function App() {
           ♥ Hearts
         </Link>
         <nav className="app-nav">
-          <Link to="/">Tournaments</Link>
+          <Link to="/">Competitions</Link>
           <Link to="/live">Live</Link>
         </nav>
         <AuthControl />

@@ -3,7 +3,8 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import './index.css'
 import { App } from './App'
-import { TournamentsList } from './pages/TournamentsList'
+import { CompetitionsList } from './pages/CompetitionsList'
+import { CompetitionDetail } from './pages/CompetitionDetail'
 import { LiveStats } from './pages/LiveStats'
 import { TournamentDetail } from './pages/TournamentDetail'
 import { GameDetail } from './pages/GameDetail'
@@ -14,11 +15,12 @@ createRoot(document.getElementById('root')!).render(
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<App />}>
-          <Route index element={<TournamentsList />} />
+          <Route index element={<CompetitionsList />} />
           <Route path="live" element={<LiveStats />} />
-          <Route path="t/:id" element={<TournamentDetail />} />
-          <Route path="t/:id/g/:gameId" element={<GameDetail />} />
-          <Route path="t/:id/g/:gameId/r/:roundIdx" element={<RoundDetail />} />
+          <Route path="c/:cid" element={<CompetitionDetail />} />
+          <Route path="c/:cid/t/:index" element={<TournamentDetail />} />
+          <Route path="c/:cid/t/:index/g/:gameId" element={<GameDetail />} />
+          <Route path="c/:cid/t/:index/g/:gameId/r/:roundIdx" element={<RoundDetail />} />
         </Route>
       </Routes>
     </BrowserRouter>

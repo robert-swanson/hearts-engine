@@ -58,6 +58,19 @@ table.data tbody tr:hover {
   background: #fafbfc;
 }
 
+/* Whole-row navigation: the entire row is clickable (no explicit "view" link). */
+table.data tbody tr.row-link {
+  cursor: pointer;
+}
+table.data tbody tr.row-link:hover {
+  background: #eef3ff;
+}
+/* Links inside a clickable row keep their own click target without double-navigating. */
+table.data tbody tr.row-link a {
+  position: relative;
+  z-index: 1;
+}
+
 .muted {
   color: #888;
 }

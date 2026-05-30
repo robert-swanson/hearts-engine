@@ -1,12 +1,57 @@
 import { authToken } from '../lib/auth'
 
-export interface TournamentListEntry {
-  tournament_id: string
+export interface CompetitionListEntry {
+  competition_id: string
+  started_at: string | null
+  teams: string[]
+  num_teams: number
+  num_tournaments: number
+  qualifying_games: number | null
+  finals_games: number | null
+  is_legacy: boolean
+}
+
+export interface Placement {
+  id: string
+  points: number
+}
+
+export interface TournamentRow {
+  competition_id: string
+  index: string
   began_at: string | null
-  winner: string | null
+  ended_at: string | null
+  length_seconds: number | null
+  placements: Placement[]
   num_qualifying: number
   num_finals: number
   complete: boolean
+}
+
+export interface CompetitionDetail {
+  competition_id: string
+  started_at: string | null
+  teams: string[]
+  qualifying_games: number | null
+  finals_games: number | null
+  is_legacy: boolean
+  tournaments: TournamentRow[]
+}
+
+export interface TournamentRules {
+  competition_id: string
+  tournament_index: string
+  began_at: string
+  qualifying_games: number
+  finals_games: number
+  max_players_per_team: number
+  qualifying_points: number[]
+  allow_multi_team_finals: boolean
+  auto_move_after_timeouts: number
+  move_timeout_ms: number
+  max_concurrent_games_per_team: number
+  fallback_player_tag: string
+  teams: string[]
 }
 
 export interface PlayerScore {
@@ -38,6 +83,9 @@ export function gamePlayers(g: GameSummary): { id: string; game_score: number; t
 
 export interface TournamentSummary {
   tournament_id: string
+  competition_id?: string
+  began_at?: string
+  ended_at?: string
   qualifying: GameSummary[]
   finals: GameSummary[]
   qualifying_totals: Record<string, number>
@@ -67,7 +115,8 @@ export interface GameDetail {
 }
 
 export interface LiveStats {
-  tournament_id: string | null
+  competition_id: string | null
+  tournament_index: string | null
   began_at: string | null
   teams: { name: string }[]
   num_teams: number
@@ -95,11 +144,16 @@ export interface LoginResult {
   is_admin: boolean
 }
 
+const tBase = (cid: string, index: string) =>
+  `/api/competitions/${encodeURIComponent(cid)}/tournaments/${encodeURIComponent(index)}`
+
 export const api = {
-  tournaments: () => getJSON<TournamentListEntry[]>('/api/tournaments'),
-  tournament: (id: string) => getJSON<TournamentSummary>(`/api/tournaments/${encodeURIComponent(id)}`),
-  game: (id: string, gameId: string) =>
-    getJSON<GameDetail>(`/api/tournaments/${encodeURIComponent(id)}/games/${encodeURIComponent(gameId)}`),
+  competitions: () => getJSON<CompetitionListEntry[]>('/api/competitions'),
+  competition: (cid: string) => getJSON<CompetitionDetail>(`/api/competitions/${encodeURIComponent(cid)}`),
+  tournament: (cid: string, index: string) => getJSON<TournamentSummary>(tBase(cid, index)),
+  rules: (cid: string, index: string) => getJSON<TournamentRules>(`${tBase(cid, index)}/rules`),
+  game: (cid: string, index: string, gameId: string) =>
+    getJSON<GameDetail>(`${tBase(cid, index)}/games/${encodeURIComponent(gameId)}`),
   live: () => getJSON<LiveStats>('/api/live'),
   login: async (team: string | null, password: string): Promise<LoginResult> => {
     const res = await fetch('/api/login', {

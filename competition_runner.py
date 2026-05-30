@@ -383,6 +383,16 @@ def run_competition(cfg: dict, real_teams: Dict[str, str],
     port          = cfg['port']
     max_players   = cfg['max_players']
 
+    # All tournaments in this runner invocation belong to one "competition",
+    # nested under a directory named by the competition's start time. The
+    # tournament_server writes each tournament under <results>/<competition_id>/<index>/.
+    # Format mirrors the server's own timestamp dir names (web backend parses it).
+    now = time.localtime()
+    ms = int((time.time() % 1) * 1000)
+    competition_id = (f"{now.tm_year}-{now.tm_mon}-{now.tm_mday}_"
+                      f"{now.tm_hour:02d}-{now.tm_min:02d}-{now.tm_sec:02d}.{ms:03d}")
+    print(f"Competition id: {competition_id} (results under {cfg['results_dir']}/{competition_id}/)")
+
     # Filler teams are computed once with stable passwords so their clients
     # can be started once and loop across all tournament cycles, just like
     # real-team clients.
@@ -426,7 +436,10 @@ def run_competition(cfg: dict, real_teams: Dict[str, str],
         # Start tournament server.
         start_at = int(time.time()) + client_window
         server_proc = subprocess.Popen(
-            ['./bazel-bin/server/tournament_server', config_path, f'--start-at={start_at}'],
+            ['./bazel-bin/server/tournament_server', config_path,
+             f'--start-at={start_at}',
+             f'--competition-id={competition_id}',
+             f'--tournament-index={tournament_num}'],
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         _child_procs.append(server_proc)
 

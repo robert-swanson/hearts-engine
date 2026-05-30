@@ -799,9 +799,49 @@ static std::vector<GameResult> runGames(
     return results;
 }
 
+// All the rules applying to a tournament, recorded alongside its results so a
+// viewer can show exactly how a given tournament was configured. Team passwords
+// are intentionally excluded — only team names are emitted.
+static json buildRulesJson(const TournamentConfig& cfg,
+                           const std::string& competitionId,
+                           const std::string& tournamentIndex,
+                           const std::string& beganAt)
+{
+    json rules;
+    rules["competition_id"]               = competitionId;
+    rules["tournament_index"]             = tournamentIndex;
+    rules["began_at"]                     = beganAt;
+    rules["qualifying_games"]             = cfg.qualifyingGames;
+    rules["finals_games"]                 = cfg.finalsGames;
+    rules["max_players_per_team"]         = cfg.maxPlayersPerTeam;
+    rules["qualifying_points"]            = cfg.qualifyingPoints;
+    rules["allow_multi_team_finals"]      = cfg.allowMultiTeamFinals;
+    rules["auto_move_after_timeouts"]     = cfg.autoMoveAfterTimeouts;
+    rules["move_timeout_ms"]              = cfg.moveTimeoutMs;
+    rules["max_concurrent_games_per_team"]= cfg.maxConcurrentGamesPerTeam;
+    rules["fallback_player_tag"]          = cfg.fallbackPlayerTag;
+    json teamNames = json::array();
+    for (const auto& [name, _pw] : cfg.teams) teamNames.push_back(name);
+    rules["teams"] = teamNames;
+    return rules;
+}
+
+// Writes a tournament's results.
+//
+// Layout (nested under a competition, when competitionId is non-empty):
+//   <resultsDir>/<competitionId>/competition.json   (competition metadata + tournament list)
+//   <resultsDir>/<competitionId>/<index>/summary.json
+//   <resultsDir>/<competitionId>/<index>/rules.json
+//   <resultsDir>/<competitionId>/<index>/games/<game_id>.json
+//
+// Legacy fallback (competitionId empty — e.g. running the server standalone):
+//   <resultsDir>/<tournamentDirName>/summary.json (+ rules.json, games/)
+//   <resultsDir>/competition.json   (flat array of {tournament_id, summary})
 static void writeResults(
-    const std::string& resultsDir,
-    const std::string& tournamentId,
+    const TournamentConfig& cfg,
+    const std::string& competitionId,    // "" => legacy flat layout
+    const std::string& tournamentDirName,// index ("1", "2", ...) nested, or timestamp legacy
+    const std::string& beganAt,          // wall-clock when this tournament's games started
     const std::vector<GameResult>& qualifying,
     const std::vector<GameResult>& finals,
     const std::map<std::string, int>& qualTotals,
@@ -812,9 +852,17 @@ static void writeResults(
     bool complete = true)
 {
     namespace fs = std::filesystem;
-    fs::path tDir = fs::path(resultsDir) / tournamentId;
+    const std::string& resultsDir = cfg.resultsDir;
+    bool nested = !competitionId.empty();
+    fs::path competitionDir = nested ? fs::path(resultsDir) / competitionId
+                                     : fs::path(resultsDir);
+    fs::path tDir = competitionDir / tournamentDirName;
     fs::path gDir = tDir / "games";
     fs::create_directories(gDir);
+
+    std::string endedAt = complete
+        ? Common::Dates::GetStrDate('-') + "_" + Common::Dates::GetStrTime('-')
+        : std::string{};
 
     // Per-game detail files
     auto writeGame = [&](const GameResult& gr) {
@@ -826,7 +874,12 @@ static void writeResults(
 
     // Summary
     json summary;
-    summary["tournament_id"] = tournamentId;
+    // tournament_id keeps the human-readable identity; in nested layout it is the
+    // competition-relative index, in legacy layout the timestamp dir name.
+    summary["tournament_id"]    = tournamentDirName;
+    summary["competition_id"]   = competitionId;
+    summary["began_at"]         = beganAt;
+    if (!endedAt.empty()) summary["ended_at"] = endedAt;
     json q = json::array(), fn = json::array();
     for (const auto& g : qualifying) q.push_back(gameResultToSummaryJson(g));
     for (const auto& g : finals)     fn.push_back(gameResultToSummaryJson(g));
@@ -839,24 +892,63 @@ static void writeResults(
     std::ofstream sf(tDir / "summary.json");
     sf << summary.dump(2);
 
-    // Append to competition index (idempotent: this is also called incrementally
-    // while a tournament is running, so only add the entry once).
-    fs::path idxPath = fs::path(resultsDir) / "competition.json";
-    json idx = json::array();
-    if (fs::exists(idxPath)) {
-        std::ifstream f(idxPath);
-        try { f >> idx; } catch(...) {}
+    // Rules snapshot for this tournament.
+    {
+        std::ofstream rf(tDir / "rules.json");
+        rf << buildRulesJson(cfg, competitionId, tournamentDirName, beganAt).dump(2);
     }
-    bool present = false;
-    for (const auto& e : idx)
-        if (e.value("tournament_id", std::string{}) == tournamentId) { present = true; break; }
-    if (!present) {
+
+    if (nested) {
+        // Per-competition index (object). Idempotent per tournament index: this is
+        // also called incrementally while a tournament runs, so update-or-insert.
+        fs::path idxPath = competitionDir / "competition.json";
+        json comp = json::object();
+        if (fs::exists(idxPath)) {
+            std::ifstream f(idxPath);
+            try { f >> comp; } catch(...) { comp = json::object(); }
+        }
+        comp["competition_id"]    = competitionId;
+        comp["started_at"]        = competitionId; // competition dir name is its start timestamp
+        comp["qualifying_games"]  = cfg.qualifyingGames;
+        comp["finals_games"]      = cfg.finalsGames;
+        json teamNames = json::array();
+        for (const auto& [name, _pw] : cfg.teams) teamNames.push_back(name);
+        comp["teams"] = teamNames;
+
+        if (!comp.contains("tournaments") || !comp["tournaments"].is_array())
+            comp["tournaments"] = json::array();
         json entry;
-        entry["tournament_id"] = tournamentId;
-        entry["summary"]       = tournamentId + "/summary.json";
-        idx.push_back(entry);
+        entry["index"]    = tournamentDirName;
+        entry["began_at"] = beganAt;
+        entry["complete"] = complete;
+        entry["summary"]  = tournamentDirName + "/summary.json";
+        if (!endedAt.empty()) entry["ended_at"] = endedAt;
+        bool replaced = false;
+        for (auto& e : comp["tournaments"]) {
+            if (e.value("index", std::string{}) == tournamentDirName) { e = entry; replaced = true; break; }
+        }
+        if (!replaced) comp["tournaments"].push_back(entry);
         std::ofstream idxOut(idxPath);
-        idxOut << idx.dump(2);
+        idxOut << comp.dump(2);
+    } else {
+        // Legacy flat competition index (array), idempotent append.
+        fs::path idxPath = fs::path(resultsDir) / "competition.json";
+        json idx = json::array();
+        if (fs::exists(idxPath)) {
+            std::ifstream f(idxPath);
+            try { f >> idx; } catch(...) {}
+        }
+        bool present = false;
+        for (const auto& e : idx)
+            if (e.value("tournament_id", std::string{}) == tournamentDirName) { present = true; break; }
+        if (!present) {
+            json entry;
+            entry["tournament_id"] = tournamentDirName;
+            entry["summary"]       = tournamentDirName + "/summary.json";
+            idx.push_back(entry);
+            std::ofstream idxOut(idxPath);
+            idxOut << idx.dump(2);
+        }
     }
 }
 
@@ -1005,17 +1097,30 @@ int main(int argc, char** argv)
     EnvLoader = EnvironmentLoader(argv[1]);
 
     int64_t startAt = 0;
+    std::string competitionId;     // empty => legacy flat layout
+    std::string tournamentIndex;   // competition-relative index ("1", "2", ...)
     for (int i = 2; i < argc; i++)
     {
         std::string arg = argv[i];
         if (arg.substr(0, 11) == "--start-at=")
             startAt = std::stoll(arg.substr(11));
+        else if (arg.substr(0, 17) == "--competition-id=")
+            competitionId = arg.substr(17);
+        else if (arg.substr(0, 19) == "--tournament-index=")
+            tournamentIndex = arg.substr(19);
     }
     if (startAt == 0)
         startAt = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()) + 30;
 
     TournamentConfig cfg = loadConfig(startAt);
-    std::string tournamentId = Common::Dates::GetStrDate('-') + "_" + Common::Dates::GetStrTime('-');
+    // In nested (competition) layout the tournament dir is its competition-relative
+    // index; in legacy/standalone runs it is the timestamp.
+    std::string timestampId = Common::Dates::GetStrDate('-') + "_" + Common::Dates::GetStrTime('-');
+    std::string tournamentDirName = competitionId.empty()
+        ? timestampId
+        : (tournamentIndex.empty() ? std::string("1") : tournamentIndex);
+    // Recorded inside summary.json / rules.json regardless of layout.
+    std::string beganAt = timestampId;
 
     LOG("Tournament server starting on port %d, tournament starts at %lld", cfg.port, startAt);
     LOG("  move_timeout_ms=%d  auto_move_after=%d  max_concurrent_per_team=%s",
@@ -1173,7 +1278,7 @@ int main(int argc, char** argv)
         auto f = completedOnly(fin);
         auto qt = tabulateQualifyingPoints(q, cfg.qualifyingPoints);
         auto ft = tabulateQualifyingPoints(f, cfg.qualifyingPoints);
-        writeResults(cfg.resultsDir, tournamentId, q, f, qt, ft, /*complete=*/false);
+        writeResults(cfg, competitionId, tournamentDirName, beganAt, q, f, qt, ft, /*complete=*/false);
     };
 
     // ── Stage 1: Qualifying ─────────────────────────────────────────────────
@@ -1341,10 +1446,15 @@ int main(int argc, char** argv)
         }
     }
 
-    writeResults(cfg.resultsDir, tournamentId, qualifyingResults, finalsResults, qualTotals, finalTotals);
-    LOG("Results written to %s/%s", cfg.resultsDir.c_str(), tournamentId.c_str());
+    writeResults(cfg, competitionId, tournamentDirName, beganAt,
+                 qualifyingResults, finalsResults, qualTotals, finalTotals);
+    if (competitionId.empty())
+        LOG("Results written to %s/%s", cfg.resultsDir.c_str(), tournamentDirName.c_str());
+    else
+        LOG("Results written to %s/%s/%s", cfg.resultsDir.c_str(),
+            competitionId.c_str(), tournamentDirName.c_str());
 
-    LOG("Tournament %s complete.", tournamentId.c_str());
+    LOG("Tournament %s complete.", tournamentDirName.c_str());
 
     // Shut down sockets first — this unblocks ConnectionListener threads (they get
     // a socket error and exit their loops).  Join after so no thread accesses a

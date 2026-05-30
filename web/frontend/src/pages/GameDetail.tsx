@@ -6,8 +6,8 @@ import { nameResolver } from '../lib/playerId'
 import { PlayerName } from '../components/PlayerName'
 
 export function GameDetail() {
-  const { id = '', gameId = '' } = useParams()
-  const { data, loading, error } = useFetch(() => api.game(id, gameId), [id, gameId])
+  const { cid = '', index = '', gameId = '' } = useParams()
+  const { data, loading, error } = useFetch(() => api.game(cid, index, gameId), [cid, index, gameId])
 
   const totals = useMemo<Record<string, number>>(() => {
     const t: Record<string, number> = {}
@@ -30,7 +30,8 @@ export function GameDetail() {
   return (
     <div>
       <div className="crumbs">
-        <Link to="/">Tournaments</Link> / <Link to={`/t/${encodeURIComponent(id)}`}>{id}</Link> / {gameId}
+        <Link to="/">Competitions</Link> / <Link to={`/c/${encodeURIComponent(cid)}`}>{cid}</Link> /{' '}
+        <Link to={`/c/${encodeURIComponent(cid)}/t/${encodeURIComponent(index)}`}>#{index}</Link> / {gameId}
       </div>
       <h1>Game {gameId}</h1>
 
@@ -54,7 +55,9 @@ export function GameDetail() {
             {data.rounds.map((r) => (
               <tr key={r.round_idx}>
                 <td>
-                  <Link to={`/t/${encodeURIComponent(id)}/g/${encodeURIComponent(gameId)}/r/${r.round_idx}`}>
+                  <Link
+                    to={`/c/${encodeURIComponent(cid)}/t/${encodeURIComponent(index)}/g/${encodeURIComponent(gameId)}/r/${r.round_idx}`}
+                  >
                     #{r.round_idx + 1}
                   </Link>
                 </td>
