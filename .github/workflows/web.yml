@@ -53,7 +53,7 @@ jobs:
         echo "WEB_PID=$!" >> "$GITHUB_ENV"
         echo "Waiting for web server on port 8000..."
         for i in $(seq 1 60); do
-          if curl -fsS http://localhost:8000/api/tournaments >/dev/null 2>&1; then
+          if curl -fsS http://localhost:8000/api/competitions >/dev/null 2>&1; then
             echo "Server ready (${i}s)"
             break
           fi
@@ -67,8 +67,8 @@ jobs:
     - name: Smoke-test endpoints
       run: |
         set -e
-        echo "GET /api/tournaments (JSON)"
-        curl -fsS http://localhost:8000/api/tournaments | head -c 200; echo
+        echo "GET /api/competitions (JSON)"
+        curl -fsS http://localhost:8000/api/competitions | head -c 200; echo
         echo "GET /api/live (JSON)"
         curl -fsS http://localhost:8000/api/live | head -c 200; echo
         check() {
@@ -82,8 +82,8 @@ jobs:
           echo "OK ${path} -> ${code}"
         }
         check "/" 200                      # SPA shell
-        check "/t/x/g/y/r/0" 200           # client-side deep link -> SPA fallback
-        check "/api/tournaments" 200
+        check "/c/x/t/y/g/z/r/0" 200       # client-side deep link -> SPA fallback
+        check "/api/competitions" 200
         check "/api/bogus" 404             # unknown API path is a real 404
 
     - name: Stop web server
