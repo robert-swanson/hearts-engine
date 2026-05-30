@@ -327,7 +327,14 @@ static std::vector<GameAssignment> scheduleGames(
             st.available.erase(st.available.begin() + idx);
         }
 
-        game.players = chosen;
+        // Randomize seating per game: the 4 players sit in a random order at the
+        // table (and that order then persists across all rounds of the game, since
+        // runOneGame builds the seating once from game.players). We shuffle a copy
+        // so the post-game roster bookkeeping below can stay aligned with
+        // gameTeams[t]/teamRefreshed[t]/chosen[t].
+        auto seating = chosen;
+        std::shuffle(seating.begin(), seating.end(), rng);
+        game.players = seating;
         assignments.push_back(game);
 
         // Post-game: move each chosen player to the right array.
