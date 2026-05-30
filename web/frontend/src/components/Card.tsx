@@ -3,14 +3,15 @@ import './Card.css'
 
 interface CardProps {
   code: string
-  highlight?: boolean // winning / played card
-  legal?: boolean // when defined: true = legal play (subtle cue), false = illegal (dimmed)
+  highlight?: boolean // winning card
+  legal?: boolean // legal to play in this context (green outline)
+  dim?: boolean // illegal in this context (faded)
   onClick?: () => void
   size?: 'sm' | 'md'
   title?: string // tooltip override for clickable cards
 }
 
-export function Card({ code, highlight, legal, onClick, size = 'md', title }: CardProps) {
+export function Card({ code, highlight, legal, dim, onClick, size = 'md', title }: CardProps) {
   const { rank, suit } = parseCard(code)
   const red = isRedSuit(suit)
   const pts = cardPoints(code)
@@ -19,9 +20,8 @@ export function Card({ code, highlight, legal, onClick, size = 'md', title }: Ca
     `card--${size}`,
     red ? 'card--red' : 'card--black',
     highlight ? 'card--win' : '',
-    // Don't add the green legal ring to the played (gold) card; let gold win.
-    legal === true && !highlight ? 'card--legal' : '',
-    legal === false ? 'card--illegal' : '',
+    legal ? 'card--legal' : '',
+    dim ? 'card--dim' : '',
     onClick ? 'card--clickable' : '',
   ]
     .filter(Boolean)

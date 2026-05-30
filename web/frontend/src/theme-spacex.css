@@ -1,0 +1,303 @@
+/*
+ * SpaceX-inspired design language (issue #34).
+ *
+ * Built from the official getdesign `DESIGN.md` token set (see
+ * web/frontend/DESIGN.md). Aesthetic: pure-black canvas, white uppercase
+ * D-DIN display type with wide positive tracking, ghost-outlined pill CTAs,
+ * 1px hairline rules, no accent color, no shadows. D-DIN is substituted with
+ * Inter (700 for display) per the doc's recommended fallback.
+ *
+ * Scoped under `.theme-spacex` (applied at the app root in App.tsx) so the
+ * whole treatment can be toggled cleanly.
+ */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+.theme-spacex {
+  /* --- tokens (DESIGN.md) --- */
+  --sx-canvas-night: #000000;
+  --sx-canvas-night-soft: #0a0a0a;
+  --sx-on-primary: #ffffff;
+  --sx-on-primary-mute: #f0f0fa;
+  --sx-muted: rgba(255, 255, 255, 0.55);
+  --sx-hairline: #3a3a3f;
+  --sx-hover: rgba(255, 255, 255, 0.06);
+
+  --sx-display: 'Inter', 'Arial Narrow', Arial, Verdana, sans-serif;
+  --sx-body: 'Inter', Arial, Verdana, sans-serif;
+
+  background: var(--sx-canvas-night);
+  color: var(--sx-on-primary);
+  min-height: 100vh;
+  font-family: var(--sx-body);
+  font-size: 16px;
+  font-weight: 400;
+  letter-spacing: 0.32px;
+  line-height: 1.5;
+}
+
+/* ---- Header / nav (nav-bar-overlay) ----------------------------------- */
+.theme-spacex .app-header {
+  background: var(--sx-canvas-night);
+  border-bottom: 1px solid var(--sx-hairline);
+  padding: 24px 32px;
+  gap: 40px;
+}
+
+.theme-spacex .app-brand {
+  font-family: var(--sx-display);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.6px;
+  font-size: 18px;
+}
+
+.theme-spacex .app-nav a {
+  /* micro-cap eyebrow */
+  color: var(--sx-on-primary-mute);
+  text-transform: uppercase;
+  letter-spacing: 1.17px;
+  font-size: 12px;
+  font-weight: 700;
+  transition: opacity 0.15s ease;
+  opacity: 0.7;
+}
+
+.theme-spacex .app-nav a:hover {
+  opacity: 1;
+}
+
+/* ---- Display typography ------------------------------------------------ */
+.theme-spacex h1 {
+  font-family: var(--sx-display);
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  font-weight: 700;
+  font-size: 40px;
+  line-height: 1.1;
+  margin: 0 0 20px;
+}
+
+.theme-spacex h2 {
+  font-family: var(--sx-display);
+  text-transform: uppercase;
+  letter-spacing: 0.96px;
+  font-weight: 700;
+  font-size: 18px;
+  color: var(--sx-on-primary-mute);
+  margin: 28px 0 12px;
+}
+
+.theme-spacex a {
+  color: var(--sx-on-primary);
+  text-decoration: none;
+}
+
+/* link-on-dark: persistent underline for inline links inside content */
+.theme-spacex .app-main a:not(.btn):hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.theme-spacex .muted {
+  color: var(--sx-muted);
+}
+
+/* ---- Surfaces (card-photo-band on canvas-night-soft) ------------------ */
+.theme-spacex .card-surface {
+  background: var(--sx-canvas-night-soft);
+  border: 1px solid var(--sx-hairline);
+  border-radius: 4px;
+  box-shadow: none;
+  padding: 20px 22px;
+}
+
+/* ---- Tables ------------------------------------------------------------ */
+.theme-spacex table.data th {
+  color: var(--sx-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.96px;
+  font-size: 11px;
+  font-weight: 700;
+  border-bottom: 1px solid var(--sx-hairline);
+  padding: 10px 12px;
+}
+
+.theme-spacex table.data td {
+  border-bottom: 1px solid var(--sx-hairline);
+  padding: 12px;
+}
+
+.theme-spacex table.data tbody tr:hover,
+.theme-spacex table.data tbody tr.row-link:hover {
+  background: var(--sx-hover);
+}
+
+/* ---- Pills / chips ----------------------------------------------------- */
+.theme-spacex .pill {
+  background: transparent;
+  border: 1px solid var(--sx-hairline);
+  border-radius: 32px;
+  color: var(--sx-on-primary-mute);
+  text-transform: uppercase;
+  letter-spacing: 0.96px;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 3px 11px;
+}
+
+/* ---- Buttons (button-ghost-on-dark): ghost outline, pill -------------- */
+.theme-spacex button.btn,
+.theme-spacex select.btn {
+  background: transparent;
+  border: 1px solid var(--sx-on-primary);
+  border-radius: 32px;
+  color: var(--sx-on-primary);
+  text-transform: uppercase;
+  letter-spacing: 1.17px;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 10px 20px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.theme-spacex button.btn:hover {
+  background: var(--sx-on-primary);
+  color: var(--sx-canvas-night);
+}
+
+/* Active toggle inverts to solid white — no accent color (brand rule). */
+.theme-spacex button.btn.btn--active {
+  background: var(--sx-on-primary);
+  border-color: var(--sx-on-primary);
+  color: var(--sx-canvas-night);
+}
+
+.theme-spacex select.btn option {
+  background: #000;
+  color: #fff;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+/* ---- Breadcrumbs (micro-cap) ------------------------------------------ */
+.theme-spacex .crumbs {
+  color: var(--sx-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.96px;
+  font-size: 11px;
+}
+
+/* ---- Inputs (text-input: 4px radius) ---------------------------------- */
+.theme-spacex input[type='number'],
+.theme-spacex input[type='text'],
+.theme-spacex input[type='password'] {
+  background: var(--sx-canvas-night-soft);
+  border: 1px solid var(--sx-hairline);
+  color: var(--sx-on-primary);
+  padding: 8px 10px;
+  border-radius: 4px;
+  font-family: var(--sx-body);
+}
+
+/* ---- Checkboxes (monochrome, white accent) ---------------------------- */
+.theme-spacex input[type='checkbox'] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--sx-on-primary-mute);
+  border-radius: 3px;
+  background: transparent;
+  cursor: pointer;
+  position: relative;
+  vertical-align: -2px;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.theme-spacex input[type='checkbox']:hover {
+  border-color: var(--sx-on-primary);
+}
+.theme-spacex input[type='checkbox']:checked {
+  background: var(--sx-on-primary);
+  border-color: var(--sx-on-primary);
+}
+.theme-spacex input[type='checkbox']:checked::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 3px;
+  height: 7px;
+  border: solid var(--sx-canvas-night);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+/* The whole filter pill brightens when its checkbox is checked. */
+.theme-spacex .pill:has(input[type='checkbox']:checked) {
+  border-color: var(--sx-on-primary);
+  color: var(--sx-on-primary);
+}
+
+/* ---- Progress bars (live stats) --------------------------------------- */
+.theme-spacex .progress__track {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 32px;
+}
+.theme-spacex .progress__fill {
+  border-radius: 32px;
+}
+
+/* ---- Auth control (ghost pill, in keeping with the nav) --------------- */
+.theme-spacex .auth-who {
+  color: var(--sx-on-primary-mute);
+  text-transform: uppercase;
+  letter-spacing: 0.96px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.theme-spacex .auth-btn {
+  background: transparent;
+  border: 1px solid var(--sx-on-primary);
+  border-radius: 32px;
+  color: var(--sx-on-primary);
+  text-transform: uppercase;
+  letter-spacing: 1.17px;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 8px 16px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.theme-spacex .auth-btn:hover {
+  background: var(--sx-on-primary);
+  color: var(--sx-canvas-night);
+}
+
+.theme-spacex .auth-popover {
+  background: var(--sx-canvas-night-soft);
+  border: 1px solid var(--sx-hairline);
+  border-radius: 4px;
+  color: var(--sx-on-primary);
+}
+
+.theme-spacex .auth-hint {
+  color: var(--sx-muted);
+}
+
+.theme-spacex .auth-input {
+  background: var(--sx-canvas-night);
+  border: 1px solid var(--sx-hairline);
+  color: var(--sx-on-primary);
+  border-radius: 4px;
+}
+
+.theme-spacex .auth-btn--primary {
+  background: var(--sx-on-primary);
+  color: var(--sx-canvas-night);
+}
+
+.theme-spacex .auth-btn--primary:hover {
+  opacity: 0.85;
+  background: var(--sx-on-primary);
+  color: var(--sx-canvas-night);
+}

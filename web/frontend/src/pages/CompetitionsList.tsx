@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
 import { useFetch } from '../lib/useFetch'
+import { LiveStatsPanel } from './LiveStats'
 
 function formatTime(iso: string | null): string {
   if (!iso) return '—'
@@ -12,13 +13,17 @@ export function CompetitionsList() {
   const { data, loading, error } = useFetch(() => api.competitions(), [])
   const navigate = useNavigate()
 
-  if (loading) return <p className="muted">Loading competitions…</p>
-  if (error) return <p className="muted">Error: {error}</p>
-  if (!data || data.length === 0) return <p className="muted">No competitions found.</p>
-
   return (
     <div>
+      <LiveStatsPanel />
       <h1>Competitions</h1>
+      {loading ? (
+        <p className="muted">Loading competitions…</p>
+      ) : error ? (
+        <p className="muted">Error: {error}</p>
+      ) : !data || data.length === 0 ? (
+        <p className="muted">No competitions found.</p>
+      ) : (
       <div className="card-surface">
         <table className="data">
           <thead>
@@ -62,6 +67,7 @@ export function CompetitionsList() {
           </tbody>
         </table>
       </div>
+      )}
     </div>
   )
 }

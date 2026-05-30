@@ -17,21 +17,18 @@ function elapsedSince(iso: string | null): string {
   return h > 0 ? `${h}h ${m}m ago` : `${m}m ago`
 }
 
-export function LiveStats() {
-  const { data, loading, error } = usePoll(() => api.live(), REFRESH_MS, [])
+// Embeddable live panel. Renders nothing until there is an in-progress
+// tournament, so it can sit quietly at the top of the Competitions page.
+export function LiveStatsPanel() {
+  const { data, error } = usePoll(() => api.live(), REFRESH_MS, [])
 
-  // Only show the full-page loading/error states before the first successful load;
-  // once we have data, background poll failures keep the last-known data on screen.
-  if (loading && !data) return <p className="muted">Loading…</p>
-  if (error && !data) return <p className="muted">Error: {error}</p>
-  if (!data || !data.competition_id || !data.tournament_index)
-    return <p className="muted">No tournament data available.</p>
+  if (!data || !data.competition_id || !data.tournament_index) return null
 
   const standings = Object.entries(data.standings).sort((a, b) => b[1] - a[1])
   const nameOf = nameResolver(standings.map(([p]) => p))
 
   return (
-    <div>
+    <div style={{ marginBottom: 28 }}>
       <h1>Live tournament stats</h1>
       <p className="muted" style={{ marginTop: -8 }}>
         Current tournament:{' '}

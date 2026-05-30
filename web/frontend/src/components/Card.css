@@ -36,14 +36,24 @@
   box-shadow: 0 0 0 2px #f5b301, 0 1px 4px rgba(0, 0, 0, 0.25);
 }
 
+/* Legal-to-play in the shown context: plain borderless card, no extra highlight. */
 .card--legal {
-  border-color: #2e9b5b;
-  box-shadow: 0 0 0 2px rgba(46, 155, 91, 0.4), 0 1px 2px rgba(0, 0, 0, 0.18);
+  border-color: transparent;
+  box-shadow: none;
 }
 
-.card--illegal {
-  opacity: 0.35;
-  filter: grayscale(0.6);
+/* The played card keeps its gold ring even though it was legal to play. */
+.card--legal.card--win {
+  border-color: #f5b301;
+  box-shadow: 0 0 0 2px #f5b301, 0 1px 4px rgba(0, 0, 0, 0.25);
+}
+
+/* Illegal in the shown context: greyed out, borderless. */
+.card--dim {
+  border-color: transparent;
+  box-shadow: none;
+  opacity: 0.45;
+  filter: grayscale(1);
 }
 
 .card--clickable {

@@ -94,6 +94,61 @@ export function legalMovesForHand(
 }
 
 /**
+ * Which cards in a player's hand were legal to play when it was their turn in
+ * `trickIndex`. Mirrors the server's Trick::legalMovesForPlayer exactly:
+ *   - must follow the led suit if able;
+ *   - the leader may not lead hearts until hearts are broken (unless they hold
+ *     only hearts);
+ *   - on the first trick the leader must play 2♣ and no one may play the Q♠.
+ * Hearts are "broken" once any heart has been played in an earlier trick.
+ */
+export function legalMovesBeforePlay(
+  round: RoundRecord,
+  playerOrder: string[],
+  player: string,
+  trickIndex: number,
+): string[] {
+  const { hand } = handBeforePlay(round, playerOrder, player, trickIndex)
+  if (hand.length === 0) return []
+  const trick = round.tricks[trickIndex]
+  if (!trick) return hand
+
+  const n = playerOrder.length
+  const firstSeat = playerOrder.indexOf(trick.first_player)
+  let pos = -1
+  for (let i = 0; i < n; i++) {
+    if (playerOrder[(firstSeat + i) % n] === player) {
+      pos = i
+      break
+    }
+  }
+  const leading = pos === 0
+  const cardsBefore = pos > 0 ? trick.moves.slice(0, pos) : []
+
+  // Hearts are broken if any heart was played in a strictly earlier trick.
+  let heartsBroken = false
+  for (let t = 0; t < trickIndex && !heartsBroken; t++) {
+    if (round.tricks[t].moves.some((c) => c[1] === 'H')) heartsBroken = true
+  }
+
+  let legal = [...hand]
+  if (!leading) {
+    const ledSuit = cardsBefore[0]?.[1]
+    const matching = legal.filter((c) => c[1] === ledSuit)
+    if (matching.length > 0) legal = matching
+  } else if (!heartsBroken) {
+    const nonHearts = legal.filter((c) => c[1] !== 'H')
+    if (nonHearts.length > 0) legal = nonHearts
+  }
+
+  if (trickIndex === 0) {
+    if (leading) return legal.includes('2C') ? ['2C'] : legal
+    legal = legal.filter((c) => c !== 'QS')
+  }
+  return legal
+}
+
+/**
  * Reconstruct a player's hand right before they passed, plus the cards they passed.
  *
  * The post-pass hand (`hands_after_passing[player]`, == the cards they play this

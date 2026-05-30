@@ -5,8 +5,7 @@ import { useFetch } from '../lib/useFetch'
 import { nameResolver, displayString } from '../lib/playerId'
 import { PlayerName } from '../components/PlayerName'
 import { columnSeats, NUM_COLS, CENTER, passRecipient, passSource } from '../lib/seating'
-import { handBeforePlay, handBeforePassing, legalMovesForHand, heartsBrokenBefore } from '../lib/reconstruct'
-import { parseCard } from '../lib/cards'
+import { handBeforePlay, handBeforePassing, legalMovesBeforePlay } from '../lib/reconstruct'
 import { TrickRow } from '../components/TrickRow'
 import { HandOverlay, type HandOverlayData } from '../components/HandOverlay'
 import { Card } from '../components/Card'
@@ -35,17 +34,14 @@ export function RoundDetail() {
 
   const handleCardClick = (player: string, _card: string, trickIndex: number) => {
     const { hand, playedCard } = handBeforePlay(round, data.player_order, player, trickIndex)
-    const trick = round.tricks[trickIndex]
-    const leadingPlay = player === trick.first_player
-    const ledSuit = leadingPlay ? null : parseCard(trick.moves[0]).suit
-    const legal = legalMovesForHand(hand, trickIndex, ledSuit, heartsBrokenBefore(round, trickIndex))
+    const legal = legalMovesBeforePlay(round, data.player_order, player, trickIndex)
     setOverlay({
       player,
       subtitle: `hand before trick #${trickIndex + 1}`,
       hand,
       highlight: playedCard ? [playedCard] : [],
       legal,
-      footer: `Highlighted card was the one played; cards outlined in green were legal plays (others faded). (${hand.length} card${hand.length === 1 ? '' : 's'} in hand)`,
+      footer: `Gold ring = card played. Greyed-out cards weren't legal to play here. (${hand.length} card${hand.length === 1 ? '' : 's'} in hand)`,
     })
   }
 

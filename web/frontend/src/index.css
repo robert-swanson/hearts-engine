@@ -218,6 +218,16 @@ button.btn:hover {
   background: #f0f3f6;
 }
 
+/* Active toggle (e.g. selected tournament stage). */
+button.btn.btn--active {
+  background: #2a5bd7;
+  border-color: #2a5bd7;
+  color: #fff;
+}
+button.btn.btn--active:hover {
+  background: #2a5bd7;
+}
+
 .crumbs {
   font-size: 13px;
   margin-bottom: 12px;

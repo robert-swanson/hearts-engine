@@ -43,12 +43,44 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  /* Gap between suit groups. */
+  gap: 18px;
+  row-gap: 10px;
+}
+
+/* Cards within a single suit sit tight together. */
+.overlay-suit-group {
+  display: flex;
   gap: 6px;
 }
 
-/* Visual break between suit groups (hand is sorted by suit then rank). */
-.overlay-hand__gap {
+.overlay-legend {
+  display: flex;
+  gap: 16px;
+  margin-top: 14px;
+  font-size: 12px;
+  color: #888;
+}
+
+.overlay-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.overlay-legend__swatch {
+  display: inline-block;
   width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid #c7c7c7;
+}
+
+.overlay-legend__swatch--dim {
+  border-color: transparent;
+  opacity: 0.45;
+  filter: grayscale(1);
+  background: #999;
 }
 
 .overlay-footer {
