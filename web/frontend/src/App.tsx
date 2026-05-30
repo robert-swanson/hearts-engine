@@ -13,6 +13,7 @@ export function App() {
         <nav className="app-nav">
           <Link to="/">Competitions</Link>
           <Link to="/lobby">Lobby games</Link>
+          <Link to="/play">Live play</Link>
         </nav>
         <AuthControl />
       </header>

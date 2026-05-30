@@ -123,6 +123,63 @@ export interface LobbyGameListEntry {
   rounds_played: number | null
 }
 
+// --- Live lobby play ---------------------------------------------------------
+
+export type LiveStatus = 'lobby' | 'playing' | 'finished'
+
+export interface LiveSeat {
+  index: number
+  seat_id: string
+  kind: 'empty' | 'human' | 'ai'
+  name: string
+  ai_type: string | null
+  mine: boolean
+}
+
+export interface LiveMove {
+  player: string
+  card: string
+}
+
+export interface LivePublic {
+  status: LiveStatus
+  player_order: string[]
+  players: Record<string, { name: string; seat_id: string | null; kind: string }>
+  round_idx: number | null
+  pass_direction: string | null
+  scores: Record<string, number>
+  round_points: Record<string, number>
+  current_trick: { trick_idx: number | null; leader: string | null; moves: LiveMove[] }
+  completed_trick_count: number
+  turn: string | null
+  winner: string | null
+  final_points: Record<string, number>
+}
+
+export interface LivePending {
+  kind: 'move' | 'pass'
+  hand: string[]
+  legal_moves?: string[]
+  trick_idx?: number
+  pass_direction?: string
+  receiving_player?: string
+}
+
+export interface LiveMySeat {
+  seat_id: string
+  player_tag: string
+  pid: string
+  name: string
+  pending: LivePending | null
+}
+
+export interface LiveSnapshot {
+  type: 'state'
+  table: { code: string; status: LiveStatus; seats: LiveSeat[] }
+  public: LivePublic | null
+  you: { client_id: string; seats: LiveMySeat[] }
+}
+
 export interface LiveStats {
   competition_id: string | null
   tournament_index: string | null
@@ -166,6 +223,13 @@ export const api = {
   lobbyGames: () => getJSON<LobbyGameListEntry[]>('/api/lobby/games'),
   lobbyGame: (gameId: string) => getJSON<GameDetail>(`/api/lobby/games/${encodeURIComponent(gameId)}`),
   live: () => getJSON<LiveStats>('/api/live'),
+  createLiveTable: async (): Promise<{ code: string }> => {
+    const res = await fetch('/api/live/tables', { method: 'POST' })
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+    return res.json() as Promise<{ code: string }>
+  },
+  liveTable: (code: string) =>
+    getJSON<{ code: string; status: LiveStatus }>(`/api/live/tables/${encodeURIComponent(code)}`),
   login: async (team: string | null, password: string): Promise<LoginResult> => {
     const res = await fetch('/api/login', {
       method: 'POST',

@@ -1,0 +1,86 @@
+import { useEffect, useRef, useState, useCallback } from 'react'
+import type { LiveSnapshot } from '../api/client'
+
+/** Stable per-browser id so the backend can tie human seats to this client. */
+export function clientId(): string {
+  const KEY = 'hearts-live-client-id'
+  let id = localStorage.getItem(KEY)
+  if (!id) {
+    id = (crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)) as string
+    localStorage.setItem(KEY, id)
+  }
+  return id
+}
+
+function wsUrl(code: string): string {
+  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
+  const cid = encodeURIComponent(clientId())
+  return `${proto}://${window.location.host}/api/live/ws/${encodeURIComponent(code)}?client_id=${cid}`
+}
+
+export type SendAction =
+  | { action: 'add_human'; seat_id: string; name: string }
+  | { action: 'add_ai'; seat_id: string; ai_type: string; name?: string }
+  | { action: 'clear_seat'; seat_id: string }
+  | { action: 'start' }
+  | { action: 'decide'; seat_id: string; value: string | string[] }
+
+export interface LiveConnection {
+  snapshot: LiveSnapshot | null
+  connected: boolean
+  error: string | null
+  send: (a: SendAction) => void
+}
+
+/** Connect to a live table's WebSocket and track its latest snapshot. */
+export function useLiveTable(code: string | undefined): LiveConnection {
+  const [snapshot, setSnapshot] = useState<LiveSnapshot | null>(null)
+  const [connected, setConnected] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const wsRef = useRef<WebSocket | null>(null)
+
+  useEffect(() => {
+    if (!code) return
+    let closed = false
+    let retry: ReturnType<typeof setTimeout> | undefined
+
+    const connect = () => {
+      if (closed) return
+      const ws = new WebSocket(wsUrl(code))
+      wsRef.current = ws
+      ws.onopen = () => setConnected(true)
+      ws.onclose = () => {
+        setConnected(false)
+        if (!closed) retry = setTimeout(connect, 1000) // simple reconnect
+      }
+      ws.onerror = () => ws.close()
+      ws.onmessage = (ev) => {
+        try {
+          const msg = JSON.parse(ev.data)
+          if (msg.type === 'state') {
+            setSnapshot(msg as LiveSnapshot)
+            setError(null)
+          } else if (msg.type === 'error') {
+            setError(String(msg.message))
+          }
+        } catch {
+          /* ignore malformed frames */
+        }
+      }
+    }
+    connect()
+
+    return () => {
+      closed = true
+      if (retry) clearTimeout(retry)
+      wsRef.current?.close()
+    }
+  }, [code])
+
+  const send = useCallback((a: SendAction) => {
+    const ws = wsRef.current
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(a))
+  }, [])
+
+  return { snapshot, connected, error, send }
+}

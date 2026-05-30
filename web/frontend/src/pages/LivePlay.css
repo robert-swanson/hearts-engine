@@ -1,0 +1,119 @@
+/* Live play layout */
+
+.live-home {
+  display: flex;
+  gap: 28px;
+  align-items: stretch;
+  flex-wrap: wrap;
+}
+.live-home__divider {
+  width: 1px;
+  background: var(--sx-hairline, #333);
+  align-self: stretch;
+}
+
+.live-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.live-status--lobby { opacity: 0.85; }
+.live-status--playing { border-color: #4caf50; color: #4caf50; }
+.live-status--finished { border-color: #888; }
+
+.live-error {
+  color: #e57373;
+  font-size: 13px;
+}
+
+/* --- Lobby seat grid --- */
+.seat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+  margin-top: 8px;
+}
+.seat-card {
+  padding: 16px;
+  min-height: 150px;
+}
+.seat-card--filled { border-color: var(--sx-on-primary, #aaa); }
+.seat-card__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.seat-card__controls { display: flex; flex-direction: column; gap: 8px; }
+.seat-card__name { font-size: 18px; font-weight: 700; }
+.seat-kind--human { border-color: #64b5f6; color: #64b5f6; }
+.seat-kind--ai { border-color: #ba9; color: #cba; }
+
+/* --- Play view --- */
+.live-table-info {
+  display: flex;
+  gap: 36px;
+  margin: 12px 0 18px;
+  padding: 14px 22px;
+}
+.live-stat { font-size: 20px; font-weight: 700; }
+
+.live-seats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+.live-seat {
+  border: 1px solid var(--sx-hairline, #333);
+  border-radius: 6px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.live-seat--turn {
+  border-color: #4caf50;
+  box-shadow: 0 0 0 1px #4caf50 inset;
+}
+.live-seat__name {
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.live-seat__turn { border-color: #4caf50; color: #4caf50; }
+.live-seat__card {
+  min-height: 96px;
+  display: flex;
+  align-items: center;
+}
+.live-seat__empty {
+  width: 64px;
+  height: 90px;
+  border: 1px dashed var(--sx-hairline, #444);
+  border-radius: 6px;
+  opacity: 0.4;
+}
+.live-seat__score { font-size: 12px; text-align: center; }
+
+.live-winner { margin-bottom: 18px; }
+
+/* --- My hand panels --- */
+.my-seat { margin-top: 14px; }
+.my-seat__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.my-seat__prompt { border-color: #4caf50; color: #4caf50; }
+.hand-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
