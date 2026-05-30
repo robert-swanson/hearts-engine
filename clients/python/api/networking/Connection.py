@@ -92,12 +92,16 @@ class Connection:
 
     def send(self, json_data: json):
         json_str = json.dumps(json_data, default=str, indent=1)
+        payload = json_str.encode("utf-8")
         with self.sending_lock:
-            bytes_sent = self.client_socket.send(json_str.encode("utf-8"))
+            # sendall() keeps writing until the whole payload is flushed. Plain
+            # send() can return a short count under TCP back-pressure (common when
+            # one connection drives many concurrent game sessions), which used to
+            # raise ConnectionError and kill the game thread — wedging that session
+            # for the rest of the game.
+            self.client_socket.sendall(payload)
             if self.logger is not None:
                 self.logger.log_message("Sent", json_data, False)
-            if bytes_sent != len(json_str):
-                raise ConnectionError(f"Expected to send {len(json_str)} bytes, but sent {bytes_sent}")
 
     def setup(self):
         connection_request = {

@@ -58,8 +58,17 @@ class ManagedConnection(Connection):
         # Session management
         self.message_store = MessageStore()
         self.last_msg_time = datetime.now()
-        self.message_received_condition = threading.Condition()
+        # Per-session condition variables. The receiver thread used to wake *every*
+        # waiting game thread on *every* message (a single global condition +
+        # notify_all). With up to MAX_CONCURRENT_GAMES_PER_TEAM sessions sharing one
+        # connection that is an O(N) thundering herd per message — under the GIL it
+        # makes the client fall behind the move deadline, so the server times out and
+        # auto-plays for it. Waking only the one session that actually received a
+        # message keeps the client responsive under high concurrency.
+        self._session_conditions: Dict[SessionID, threading.Condition] = {}
+        self._session_conditions_lock = threading.Lock()
         self.waiting_sessions: Set[SessionID] = set()
+        self._waiting_sessions_lock = threading.Lock()
         self.receiver_thread: Optional[threading.Thread] = None
 
     def request_session(self, request: json, timeout_s=10) -> json:
@@ -72,16 +81,49 @@ class ManagedConnection(Connection):
 
     def end_session(self, session_id: SessionID):
         self.message_store.remove_session(session_id)
+        with self._session_conditions_lock:
+            self._session_conditions.pop(session_id, None)
+
+    def _cond_for(self, session_id: SessionID) -> threading.Condition:
+        """Return (creating if needed) the condition variable for one session."""
+        with self._session_conditions_lock:
+            cond = self._session_conditions.get(session_id)
+            if cond is None:
+                cond = threading.Condition()
+                self._session_conditions[session_id] = cond
+            return cond
+
+    def deliver_to_session(self, session_id: SessionID, message: json) -> None:
+        """Queue a message for a session and wake only that session's waiter."""
+        cond = self._cond_for(session_id)
+        with cond:
+            self.message_store.append(session_id, message)
+            cond.notify_all()
+
+    def _wake_all_sessions(self) -> None:
+        """Wake every session's waiter (used when the connection drops)."""
+        with self._session_conditions_lock:
+            conds = list(self._session_conditions.values())
+        for cond in conds:
+            with cond:
+                cond.notify_all()
 
     def _retrieve_next_message_for_session(self, session_id: SessionID, timeout_s: int):
-        assert session_id not in self.waiting_sessions, f"Session {session_id} already waiting for message"
-        self.waiting_sessions.add(session_id)
-        self._start_receiver_thread()
-        start_time = datetime.now()
-        with self.message_received_condition:  # TODO: does this check once in case its waiting?
-            while len(self.message_store.get_all(session_id)) == 0 and timeout_s > (datetime.now() - start_time).seconds:
-                self.message_received_condition.wait(timeout=timeout_s)
-        self.waiting_sessions.remove(session_id)
+        with self._waiting_sessions_lock:
+            assert session_id not in self.waiting_sessions, f"Session {session_id} already waiting for message"
+            self.waiting_sessions.add(session_id)
+        try:
+            self._start_receiver_thread()
+            start_time = datetime.now()
+            cond = self._cond_for(session_id)
+            with cond:
+                # Wake only when *this* session gets a message — no thundering herd.
+                while len(self.message_store.get_all(session_id)) == 0 and \
+                        timeout_s > (datetime.now() - start_time).seconds:
+                    cond.wait(timeout=timeout_s)
+        finally:
+            with self._waiting_sessions_lock:
+                self.waiting_sessions.discard(session_id)
 
     def receive_from_session(self, session_id: SessionID, timeout_s: int) -> json:
         self._retrieve_next_message_for_session(session_id, timeout_s)
@@ -121,8 +163,7 @@ class ManagedConnection(Connection):
             except ConnectionError:
                 # Server closed the connection — notify any waiting sessions so they
                 # see the disconnect promptly rather than waiting for their timeout.
-                with self.message_received_condition:
-                    self.message_received_condition.notify_all()
+                self._wake_all_sessions()
             self.receiver_thread = None
         self.logger.log("Ending receiver thread")
         if len(self.waiting_sessions) > 0:
@@ -130,12 +171,10 @@ class ManagedConnection(Connection):
 
     def _handle_msg(self, message: json):
         session_id = message[Tags.SESSION_ID]
-        with self.message_received_condition:
-            if message[Tags.TYPE] == ServerMsgTypes.GAME_SESSION_RESPONSE:
-                session_id = UNASSIGNED_SESSION
-            self.message_store.append(session_id, message)
-            self.message_received_condition.notify_all()
-            self.logger.log(f"Appended message for session {session_id} (num pending: {len(self.message_store.get_all(session_id))})")
+        if message[Tags.TYPE] == ServerMsgTypes.GAME_SESSION_RESPONSE:
+            session_id = UNASSIGNED_SESSION
+        self.deliver_to_session(session_id, message)
+        self.logger.log(f"Appended message for session {session_id} (num pending: {len(self.message_store.get_all(session_id))})")
 
     def _start_receiver_thread(self):
         if self.receiver_thread is not None:

@@ -93,10 +93,9 @@ class TournamentSession:
             msg_type = message.get(Tags.TYPE, "")
             if msg_type in (TournamentMsgTypes.QUEUED, TournamentMsgTypes.GAME_ASSIGNMENT,
                             TournamentMsgTypes.STAGE_COMPLETE, TournamentMsgTypes.COMPLETE):
-                import collections
-                with self.connection.message_received_condition:
-                    self.connection.message_store._id_to_received_messages[TOURNAMENT_CONTROL_SESSION].append(message)
-                    self.connection.message_received_condition.notify_all()
+                # Route tournament control messages to their own session queue and
+                # wake only the control-session waiter.
+                self.connection.deliver_to_session(TOURNAMENT_CONTROL_SESSION, message)
             else:
                 original(message)
 
