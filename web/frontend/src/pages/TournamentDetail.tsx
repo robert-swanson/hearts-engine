@@ -106,15 +106,13 @@ export function TournamentDetail() {
 
       <div className="row-actions">
         <button
-          className="btn"
-          style={stage === 'qualifying' ? { background: '#2a5bd7', color: '#fff' } : undefined}
+          className={`btn${stage === 'qualifying' ? ' btn--active' : ''}`}
           onClick={() => patch({ stage: 'qualifying', page: null })}
         >
           Qualifying ({data.qualifying.length})
         </button>
         <button
-          className="btn"
-          style={stage === 'finals' ? { background: '#2a5bd7', color: '#fff' } : undefined}
+          className={`btn${stage === 'finals' ? ' btn--active' : ''}`}
           onClick={() => patch({ stage: 'finals', page: null })}
         >
           Finals ({data.finals.length})
