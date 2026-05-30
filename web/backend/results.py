@@ -300,6 +300,52 @@ def get_game(competition_id: str, index: str, game_id: str) -> Optional[dict]:
     return _read_json(target)
 
 
+# ─── Lobby (practice) games ────────────────────────────────────────────────────
+#
+# The regular (non-tournament) server records every completed lobby game the same
+# way tournaments do, under <RESULTS_DIR>/lobby/:
+#   lobby/index.json          append-only array of game metadata (newest appended)
+#   lobby/games/<id>.json     full detail (player_order + rounds), same shape as
+#                             tournament game detail, so the existing game/round
+#                             views render it unchanged.
+# Lobby games are public practice games with no team secrecy, so passed cards are
+# returned to everyone (no redaction).
+
+def _lobby_dir() -> Path:
+    return results_dir() / "lobby"
+
+
+def list_lobby_games() -> list[dict]:
+    """All recorded lobby games, newest first."""
+    index = _read_json(_lobby_dir() / "index.json")
+    if not isinstance(index, list):
+        return []
+    out: list[dict] = []
+    for entry in index:
+        if not isinstance(entry, dict):
+            continue
+        played_at = entry.get("played_at")
+        out.append({
+            "game_id": entry.get("game_id"),
+            "played_at": parse_tournament_time(played_at) or played_at,
+            "player_order": entry.get("player_order", []),
+            "winner": entry.get("winner"),
+            "final_scores": entry.get("final_scores", {}),
+            "rounds_played": entry.get("rounds_played"),
+        })
+    out.sort(key=lambda g: (g["played_at"] or "", g["game_id"] or ""), reverse=True)
+    return out
+
+
+def get_lobby_game(game_id: str) -> Optional[dict]:
+    """Full detail for one lobby game (player_order + rounds), or None."""
+    base = _lobby_dir().resolve()
+    target = (base / "games" / f"{game_id}.json").resolve()
+    if base not in target.parents:
+        return None
+    return _read_json(target)
+
+
 # ─── Env / live stats ──────────────────────────────────────────────────────────
 
 def _parse_env_file(path: Path) -> dict[str, str]:

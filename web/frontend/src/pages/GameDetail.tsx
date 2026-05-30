@@ -5,10 +5,13 @@ import { useFetch } from '../lib/useFetch'
 import { nameResolver } from '../lib/playerId'
 import { PlayerName } from '../components/PlayerName'
 
-export function GameDetail() {
+export function GameDetail({ lobby = false }: { lobby?: boolean }) {
   const { cid = '', index = '', gameId = '' } = useParams()
   const navigate = useNavigate()
-  const { data, loading, error } = useFetch(() => api.game(cid, index, gameId), [cid, index, gameId])
+  const { data, loading, error } = useFetch(
+    () => (lobby ? api.lobbyGame(gameId) : api.game(cid, index, gameId)),
+    [cid, index, gameId, lobby],
+  )
 
   const totals = useMemo<Record<string, number>>(() => {
     const t: Record<string, number> = {}
@@ -29,13 +32,23 @@ export function GameDetail() {
   const rankOf = (p: string) => ranked.indexOf(p) + 1
 
   const roundHref = (roundIdx: number) =>
-    `/c/${encodeURIComponent(cid)}/t/${encodeURIComponent(index)}/g/${encodeURIComponent(gameId)}/r/${roundIdx}`
+    lobby
+      ? `/lobby/g/${encodeURIComponent(gameId)}/r/${roundIdx}`
+      : `/c/${encodeURIComponent(cid)}/t/${encodeURIComponent(index)}/g/${encodeURIComponent(gameId)}/r/${roundIdx}`
 
   return (
     <div>
       <div className="crumbs">
-        <Link to="/">Competitions</Link> / <Link to={`/c/${encodeURIComponent(cid)}`}>{cid}</Link> /{' '}
-        <Link to={`/c/${encodeURIComponent(cid)}/t/${encodeURIComponent(index)}`}>#{index}</Link> / {gameId}
+        {lobby ? (
+          <>
+            <Link to="/lobby">Lobby games</Link> / {gameId}
+          </>
+        ) : (
+          <>
+            <Link to="/">Competitions</Link> / <Link to={`/c/${encodeURIComponent(cid)}`}>{cid}</Link> /{' '}
+            <Link to={`/c/${encodeURIComponent(cid)}/t/${encodeURIComponent(index)}`}>#{index}</Link> / {gameId}
+          </>
+        )}
       </div>
       <h1>Game {gameId}</h1>
 

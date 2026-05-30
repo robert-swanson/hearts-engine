@@ -8,6 +8,7 @@ import { CompetitionDetail } from './pages/CompetitionDetail'
 import { TournamentDetail } from './pages/TournamentDetail'
 import { GameDetail } from './pages/GameDetail'
 import { RoundDetail } from './pages/RoundDetail'
+import { LobbyGamesList } from './pages/LobbyGamesList'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -19,6 +20,9 @@ createRoot(document.getElementById('root')!).render(
           <Route path="c/:cid/t/:index" element={<TournamentDetail />} />
           <Route path="c/:cid/t/:index/g/:gameId" element={<GameDetail />} />
           <Route path="c/:cid/t/:index/g/:gameId/r/:roundIdx" element={<RoundDetail />} />
+          <Route path="lobby" element={<LobbyGamesList />} />
+          <Route path="lobby/g/:gameId" element={<GameDetail lobby />} />
+          <Route path="lobby/g/:gameId/r/:roundIdx" element={<RoundDetail lobby />} />
         </Route>
       </Routes>
     </BrowserRouter>
