@@ -30,13 +30,19 @@ from typing import Any, Optional
 LEGACY_COMPETITION_ID = "legacy"
 
 
-def results_dir() -> Path:
-    return Path(os.environ.get("RESULTS_DIR", "./results")).resolve()
-
-
 def repo_root() -> Path:
     # web/backend/results.py -> repo root is two levels up.
     return Path(__file__).resolve().parents[2]
+
+
+def results_dir() -> Path:
+    # Default to the repo's results/ dir (where the C++ server writes), so the
+    # backend finds tournaments/lobby games regardless of its launch cwd. The
+    # RESULTS_DIR env var still overrides for non-standard layouts.
+    env = os.environ.get("RESULTS_DIR")
+    if env:
+        return Path(env).resolve()
+    return repo_root() / "results"
 
 
 def _read_json(path: Path) -> Optional[Any]:

@@ -95,6 +95,8 @@ class Seat:
     pending: Optional[dict] = None
     response_queue: "queue.Queue" = field(default_factory=queue.Queue)
     cards_ref: List[Card] = field(default_factory=list)  # live hand reference
+    passed: List[str] = field(default_factory=list)      # cards I passed this round
+    received: List[str] = field(default_factory=list)    # cards passed to me this round
 
     def public_view(self, client_id: Optional[str]) -> dict:
         return {
@@ -126,6 +128,8 @@ class WebHumanPlayer(Player):
 
     def handle_new_round(self, round):
         self._seat.cards_ref = round.cards_in_hand  # live, mutated by framework
+        self._seat.passed = []      # reset passing record for the new round
+        self._seat.received = []
         self._table.on_new_round(round)
 
     def handle_new_trick(self, trick):
@@ -144,6 +148,7 @@ class WebHumanPlayer(Player):
         self._table.on_end_game(players_to_points, winner)
 
     def receive_passed_cards(self, cards, pass_dir, donating_player):
+        self._seat.received = [str(c) for c in cards]
         self._table.schedule_broadcast()
 
     # -- decisions: block on the browser ------------------------------------
@@ -160,6 +165,7 @@ class WebHumanPlayer(Player):
         chosen = self._await_response()
         seat.pending = None
         cards = self._coerce_pass(chosen, seat.cards_ref)
+        seat.passed = [str(c) for c in cards]
         self._table.schedule_broadcast()
         return cards
 
@@ -448,9 +454,17 @@ class Table:
         self.schedule_broadcast()
 
     def on_finished_trick(self, trick, winning_player):
+        # Capture the full trick straight off the SDK Trick object (moves are in
+        # play order), so the frontend can render it with the same TrickRow UI as
+        # tournament rounds. Reading from `trick` (not shared state) avoids races
+        # with another seat thread already advancing to the next trick.
+        moves = [str(m.card) for m in trick.moves]
+        first_player = _pid(trick.moves[0].player) if trick.moves else None
         with self._state_lock:
             self._completed_tricks[trick.trick_idx] = {
                 "trick_idx": trick.trick_idx,
+                "first_player": first_player,
+                "moves": moves,
                 "winner": _pid(winning_player),
                 "points": trick.get_current_point_value(),
             }
@@ -492,6 +506,7 @@ class Table:
         with self._state_lock:
             ct = self._current_trick
             moves = [{"player": pid, "card": ct["moves"][pid]} for pid in ct["order"]]
+            completed_tricks = [self._completed_tricks[k] for k in sorted(self._completed_tricks)]
             return {
                 "status": self.status,
                 "player_order": list(self._player_order),
@@ -506,6 +521,7 @@ class Table:
                     "moves": moves,
                 },
                 "completed_trick_count": len(self._completed_tricks),
+                "completed_tricks": completed_tricks,
                 "turn": self._turn,
                 "winner": self._winner,
                 "final_points": dict(self._final_points),
@@ -521,6 +537,8 @@ class Table:
                     "pid": seat.pid,
                     "name": seat.name,
                     "pending": seat.pending,
+                    "passed": list(seat.passed),
+                    "received": list(seat.received),
                 })
         return {
             "type": "state",
