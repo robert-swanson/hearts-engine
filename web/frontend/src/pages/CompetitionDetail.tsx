@@ -39,6 +39,15 @@ export function CompetitionDetail() {
     [data],
   )
 
+  // The competition's rules come from the environment config and are identical
+  // across its tournaments, so we read them off the first tournament's rules.json.
+  // (Legacy bundles predate rules.json, so there is nothing to show.)
+  const rulesIndex = !data || data.is_legacy ? '' : tournaments[0]?.index ?? ''
+  const { data: rules } = useFetch(
+    () => (rulesIndex ? api.rules(cid, rulesIndex) : Promise.resolve(null)),
+    [cid, rulesIndex],
+  )
+
   if (loading) return <p className="muted">Loading…</p>
   if (error) return <p className="muted">Error: {error}</p>
   if (!data) return <p className="muted">Not found.</p>
@@ -62,6 +71,30 @@ export function CompetitionDetail() {
         Teams: {data.teams.length > 0 ? data.teams.join(', ') : '—'}
       </div>
 
+      {rules && (
+        <>
+          <h2>Rules</h2>
+          <div className="card-surface">
+            <table className="data rules-table">
+              <tbody>
+                <RuleRow label="Qualifying games" value={rules.qualifying_games} />
+                <RuleRow label="Finals games" value={rules.finals_games} />
+                <RuleRow
+                  label="Qualifying points (1st–4th)"
+                  value={rules.qualifying_points?.length ? rules.qualifying_points.join(' / ') : '—'}
+                />
+                <RuleRow label="Max players per team" value={rules.max_players_per_team} />
+                <RuleRow label="Allow multi-team finals" value={rules.allow_multi_team_finals ? 'Yes' : 'No'} />
+                <RuleRow label="Move timeout" value={`${rules.move_timeout_ms} ms`} />
+                <RuleRow label="Auto-move after timeouts" value={rules.auto_move_after_timeouts} />
+                <RuleRow label="Max concurrent games per team" value={rules.max_concurrent_games_per_team} />
+                <RuleRow label="Fallback player tag" value={rules.fallback_player_tag} />
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
       <h2>Tournaments ({data.tournaments.length})</h2>
       <div className="card-surface">
         <table className="data">
@@ -84,6 +117,15 @@ export function CompetitionDetail() {
         </table>
       </div>
     </div>
+  )
+}
+
+function RuleRow({ label, value }: { label: string; value: string | number | undefined }) {
+  return (
+    <tr>
+      <td className="muted" style={{ width: '55%' }}>{label}</td>
+      <td style={{ fontWeight: 600 }}>{value ?? '—'}</td>
+    </tr>
   )
 }
 

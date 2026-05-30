@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api/client'
 import { useFetch } from '../lib/useFetch'
 import { nameResolver } from '../lib/playerId'
@@ -7,6 +7,7 @@ import { PlayerName } from '../components/PlayerName'
 
 export function GameDetail() {
   const { cid = '', index = '', gameId = '' } = useParams()
+  const navigate = useNavigate()
   const { data, loading, error } = useFetch(() => api.game(cid, index, gameId), [cid, index, gameId])
 
   const totals = useMemo<Record<string, number>>(() => {
@@ -26,6 +27,9 @@ export function GameDetail() {
   // Rank: lowest total score wins (rank 1).
   const ranked = [...seating].sort((a, b) => totals[a] - totals[b])
   const rankOf = (p: string) => ranked.indexOf(p) + 1
+
+  const roundHref = (roundIdx: number) =>
+    `/c/${encodeURIComponent(cid)}/t/${encodeURIComponent(index)}/g/${encodeURIComponent(gameId)}/r/${roundIdx}`
 
   return (
     <div>
@@ -53,13 +57,9 @@ export function GameDetail() {
           </thead>
           <tbody>
             {data.rounds.map((r) => (
-              <tr key={r.round_idx}>
+              <tr key={r.round_idx} className="row-link" onClick={() => navigate(roundHref(r.round_idx))}>
                 <td>
-                  <Link
-                    to={`/c/${encodeURIComponent(cid)}/t/${encodeURIComponent(index)}/g/${encodeURIComponent(gameId)}/r/${r.round_idx}`}
-                  >
-                    #{r.round_idx + 1}
-                  </Link>
+                  <Link to={roundHref(r.round_idx)}>#{r.round_idx + 1}</Link>
                 </td>
                 <td className="muted">{r.pass_direction}</td>
                 {seating.map((p) => (

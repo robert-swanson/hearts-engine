@@ -36,14 +36,21 @@
   box-shadow: 0 0 0 2px #f5b301, 0 1px 4px rgba(0, 0, 0, 0.25);
 }
 
+/* Legal-to-play in the shown context: green ring. */
 .card--legal {
-  border-color: #2e9b5b;
-  box-shadow: 0 0 0 2px rgba(46, 155, 91, 0.4), 0 1px 2px rgba(0, 0, 0, 0.18);
+  border-color: #2bb673;
+  box-shadow: 0 0 0 2px #2bb673, 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
-.card--illegal {
-  opacity: 0.35;
-  filter: grayscale(0.6);
+/* A legal card that also won the trick keeps the gold ring but stays green-tinted. */
+.card--legal.card--win {
+  box-shadow: 0 0 0 2px #f5b301, 0 0 0 4px #2bb673, 0 1px 4px rgba(0, 0, 0, 0.25);
+}
+
+/* Illegal in the shown context: faded back. */
+.card--dim {
+  opacity: 0.32;
+  filter: grayscale(0.5);
 }
 
 .card--clickable {
