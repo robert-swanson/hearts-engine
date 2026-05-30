@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 import sys
 
 class EnvReader:
@@ -21,7 +22,26 @@ class EnvReader:
         return self.env_dict[key]
 
 
-ENV_FILEPATH = sys.argv[1] if len(sys.argv) > 1 else "./config.env"
+def _resolve_env_filepath() -> str:
+    """Locate the config .env file.
+
+    Priority:
+      1. HEARTS_CONFIG_ENV environment variable — lets the SDK be imported
+         in-process by hosts that own argv (e.g. uvicorn, where sys.argv[1]
+         is the ASGI app target like "main:app", not a config file).
+      2. sys.argv[1], but only if it points at an existing file (preserves the
+         long-standing `python player.py path/to/config.env` invocation).
+      3. ./config.env fallback.
+    """
+    override = os.environ.get("HEARTS_CONFIG_ENV")
+    if override:
+        return override
+    if len(sys.argv) > 1 and os.path.isfile(sys.argv[1]):
+        return sys.argv[1]
+    return "./config.env"
+
+
+ENV_FILEPATH = _resolve_env_filepath()
 ENV = EnvReader(ENV_FILEPATH)
 
 SERVER_IP = ENV.get("SERVER_ADDR")

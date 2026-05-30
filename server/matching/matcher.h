@@ -1,8 +1,11 @@
 #pragma once
 
+#include <chrono>
+
 #include "server/api/game_session.h"
 #include "server/game/remote_player.h"
 #include "server/util/dates.h"
+#include "server/util/env.h"
 #include "lobby.h"
 
 namespace Common::Server
@@ -45,7 +48,16 @@ public:
     SessionRef createPlayerGameSession(ManagedConnection &connection, const PlayerTag& playerTag)
     {
         auto sessionID = sessionCounter.fetch_add(1, std::memory_order_relaxed);
-        auto session = std::make_shared<PlayerGameSession>(sessionID, playerTag, connection);
+        // Allow the regular server's per-move wait to be tuned via config so that
+        // interactive (human) lobby players get enough time to think. Mirrors the
+        // tournament server's MOVE_TIMEOUT_MS handling; defaults to 15s otherwise.
+        std::chrono::milliseconds moveTimeout = std::chrono::seconds(15);
+        if (EnvLoader && EnvLoader->has("MOVE_TIMEOUT_MS"))
+        {
+            moveTimeout = std::chrono::milliseconds(std::stoi(ENV_STRING("MOVE_TIMEOUT_MS")));
+        }
+        auto session = std::make_shared<PlayerGameSession>(sessionID, playerTag, connection,
+                                                           /*starting_seq=*/1, moveTimeout);
         session->Setup();
         return session;
     }
