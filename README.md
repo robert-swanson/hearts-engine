@@ -74,13 +74,22 @@ If the server isn't on localhost, pass the organiser's config file:
 ```bash
 python3 register_team.py path/to/organisers/tournament.config.env
 ```
-This saves credentials to `team.config.env` (gitignored).
+This saves credentials to `config.env` (gitignored).
+
+To register **several teams from one machine**, give each its own env file with `--env-file`:
+```bash
+python3 register_team.py --team=alpha --password=a --env-file=alpha.env
+python3 register_team.py --team=beta  --password=b --env-file=beta.env
+```
 
 **Step 2 — start your player client(s)** (leave running for the whole competition):
 ```bash
 python3 clients/python/tournament_client.py --player=my_player
 ```
-The client retries until the first tournament server opens, plays, then automatically reconnects for every subsequent tournament. Run multiple clients with different `--player` or `--score` values to fill more slots.
+The client retries until the first tournament server opens, plays, then automatically reconnects for every subsequent tournament. Run multiple clients with different `--player` or `--score` values to fill more slots. To run a team whose credentials are in a non-default file, point the client at it:
+```bash
+python3 clients/python/tournament_client.py --env-file=alpha.env --player=my_player
+```
 
 > **Note for Claude / scripted use:** poll `nc -z 127.0.0.1 40406` until it succeeds before running `register_team.py --team=<name> --password=<pw>`. Start `tournament_client.py` processes immediately after — they retry automatically once the server opens.
 

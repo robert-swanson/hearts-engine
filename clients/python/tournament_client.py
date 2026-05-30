@@ -2,13 +2,18 @@
 """
 tournament_client.py — connect a player to a Hearts tournament.
 
-Credentials are read from config.env (written by register_team.py):
+Credentials (team name/password) and the server address are read from an env
+file — config.env by default, written by register_team.py:
     python3 clients/python/tournament_client.py --player=my_player [--score=3]
 
-Override credentials or env file explicitly:
+Point at a different env file to run a specific team (e.g. when several teams
+were registered to separate files):
+    python3 clients/python/tournament_client.py --env-file=alpha.env --player=my_player
+    python3 clients/python/tournament_client.py alpha.env --player=my_player   # positional also works
+
+Override credentials explicitly:
     python3 clients/python/tournament_client.py \\
-        --team=alpha --password=secret --player=my_player [--score=3] \\
-        [env_file]
+        --team=alpha --password=secret --player=my_player [--score=3] [env_file]
 
 Run multiple clients with different --player or --score values to fill all
 your team's slots.  The server tracks each slot separately on the leaderboard.
@@ -36,17 +41,31 @@ def _read_env(path) -> dict:
     return result
 
 
-# Env.py reads sys.argv[1] as the env file path.  Ensure an env file is at
-# position 1 before Env.py is imported.  Prefer an explicit positional arg;
-# fall back to config.env (which holds team credentials written by register_team.py
-# and server address).
-_non_flag = [i for i, a in enumerate(sys.argv[1:], 1) if not a.startswith('--')]
-if _non_flag:
-    _idx = _non_flag[-1]
-    if _idx != 1:
-        sys.argv.insert(1, sys.argv.pop(_idx))
-else:
-    sys.argv.insert(1, './config.env')
+# Env.py reads sys.argv[1] as the env file path, so the env file must be resolved
+# and placed at position 1 *before* Env.py is imported (i.e. before argparse runs).
+# Accept it as --env-file=PATH, --env-file PATH, or a bare positional path; fall
+# back to config.env.  The chosen file holds both the server address (read by
+# Env.py) and the team credentials (read in main()).
+def _resolve_env_file() -> str:
+    for i, a in enumerate(sys.argv[1:], 1):
+        if a.startswith('--env-file='):
+            path = a.split('=', 1)[1]
+            del sys.argv[i]
+            return path
+        if a == '--env-file' and i + 1 < len(sys.argv):
+            path = sys.argv[i + 1]
+            del sys.argv[i + 1]
+            del sys.argv[i]
+            return path
+    # No flag — use the last bare positional argument if present.
+    non_flag = [i for i, a in enumerate(sys.argv[1:], 1) if not a.startswith('--')]
+    if non_flag:
+        return sys.argv.pop(non_flag[-1])
+    return './config.env'
+
+
+ENV_FILE = _resolve_env_file()
+sys.argv.insert(1, ENV_FILE)
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -67,26 +86,31 @@ def discover_player(module_name: str):
 
 
 def main():
-    cfg = _read_env('config.env')
+    # ENV_FILE was resolved at import time (above) and also fed to Env.py.
+    cfg = _read_env(ENV_FILE)
 
     parser = argparse.ArgumentParser(description='Hearts tournament client')
     parser.add_argument('--team',     default=cfg.get('TEAM_NAME'),
-                        help='Team name (default: TEAM_NAME from config.env)')
+                        help=f'Team name (default: TEAM_NAME from {ENV_FILE})')
     parser.add_argument('--password', default=cfg.get('TEAM_PASSWORD'),
-                        help='Team password (default: TEAM_PASSWORD from config.env)')
+                        help=f'Team password (default: TEAM_PASSWORD from {ENV_FILE})')
     parser.add_argument('--player',   required=True,  help='Player module name (e.g. my_player)')
     parser.add_argument('--score',    type=int, default=0,
                         help='Priority score — higher-scored clients get preferred slots')
     parser.add_argument('--host',     default=None,
                         help='Override server host (default: SERVER_ADDR from env file)')
+    # --env-file is consumed before argparse (Env.py needs it at import); declared
+    # here only so it shows up in --help.
+    parser.add_argument('--env-file', dest='env_file_opt', default=None,
+                        help='Env file with credentials + server address (default: config.env)')
     parser.add_argument('env_file',   nargs='?',
-                        help='Server config env file (default: config.env)')
+                        help='Env file (positional alias for --env-file; default: config.env)')
     args = parser.parse_args()
 
     if not args.team:
-        parser.error('--team is required (or run register_team.py to populate config.env)')
+        parser.error(f'--team is required (or run register_team.py to populate {ENV_FILE})')
     if not args.password:
-        parser.error('--password is required (or run register_team.py to populate config.env)')
+        parser.error(f'--password is required (or run register_team.py to populate {ENV_FILE})')
 
     player_cls = discover_player(args.player)
     tag = f"[{args.team}/{player_cls.player_tag}]"

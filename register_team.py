@@ -10,6 +10,12 @@ Usage:
     python3 register_team.py                              # interactive; uses server from config.env
     python3 register_team.py tournament_server.env        # reads server address from organiser's file
     python3 register_team.py --team=my_team --password=secret   # non-interactive
+
+Register several teams from one machine by writing each team's credentials to
+its own env file, then point a client at the same file:
+    python3 register_team.py --team=alpha --password=a --env-file=alpha.env
+    python3 register_team.py --team=beta  --password=b --env-file=beta.env
+    python3 clients/python/tournament_client.py --env-file=alpha.env --player=my_player
 """
 
 import argparse
@@ -19,7 +25,7 @@ import socket
 import sys
 from pathlib import Path
 
-CONFIG_ENV = Path('config.env')
+DEFAULT_ENV = 'config.env'
 
 
 def _read_env(path) -> dict:
@@ -68,17 +74,25 @@ def main():
     parser.add_argument('--team',     default=None, help='Team name (non-interactive)')
     parser.add_argument('--password', default=None, help='Team password (non-interactive)')
     parser.add_argument('--host',     default=None, help='Override server host')
+    parser.add_argument('--env-file', dest='out_env', default=DEFAULT_ENV,
+                        help=f'Env file to save this team\'s credentials to '
+                             f'(default: {DEFAULT_ENV}). Use a distinct file per team '
+                             f'to register and run several teams from one machine.')
     parser.add_argument('env_file',   nargs='?',
                         help="Organiser's config file — used to read server address "
                              "(e.g. their tournament_server.env or config.env)")
     args = parser.parse_args()
 
-    # Server address: --host flag first, then organiser's file, then local config.env, then defaults.
+    target_env = Path(args.out_env)
+
+    # Server address: --host flag first, then organiser's file, then the target
+    # env file (it may already carry an address), then defaults.
     organiser_cfg = _read_env(args.env_file) if args.env_file else {}
-    local_cfg     = _read_env(CONFIG_ENV)
-    host = args.host or organiser_cfg.get('SERVER_ADDR') or local_cfg.get('SERVER_ADDR', '127.0.0.1')
+    target_cfg    = _read_env(target_env)
+    host = (args.host or organiser_cfg.get('SERVER_ADDR')
+            or target_cfg.get('SERVER_ADDR', '127.0.0.1'))
     port = int(organiser_cfg.get('TOURNAMENT_PORT') or organiser_cfg.get('SERVER_PORT')
-               or local_cfg.get('TOURNAMENT_PORT') or local_cfg.get('SERVER_PORT', 40406))
+               or target_cfg.get('TOURNAMENT_PORT') or target_cfg.get('SERVER_PORT', 40406))
 
     non_interactive = args.team is not None and args.password is not None
 
@@ -126,17 +140,20 @@ def main():
         print('Make sure competition_runner.py is running and the registration window is open.')
         sys.exit(1)
 
-    _patch_env(CONFIG_ENV, {
+    _patch_env(target_env, {
         'TEAM_NAME':     name,
         'TEAM_PASSWORD': pw,
         'SERVER_ADDR':   host,
         'TOURNAMENT_PORT': str(port),
         'SERVER_PORT':   str(port),
     })
-    print(f'Credentials saved to {CONFIG_ENV}')
+    print(f'Credentials saved to {target_env}')
     if not non_interactive:
+        # Only the default env file is auto-discovered by the client; for any
+        # other file the client must be told which one to read.
+        env_flag = '' if target_env == Path(DEFAULT_ENV) else f' --env-file={target_env}'
         print('\nTo join a tournament, run:')
-        print('  python3 clients/python/tournament_client.py --player=my_player')
+        print(f'  python3 clients/python/tournament_client.py{env_flag} --player=my_player')
         print('\nRun multiple clients with different --player or --score values')
         print("to fill all your team's slots.")
 
