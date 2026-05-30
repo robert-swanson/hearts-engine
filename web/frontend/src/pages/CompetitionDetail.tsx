@@ -33,6 +33,12 @@ export function CompetitionDetail() {
     return nameResolver(ids)
   }, [data])
 
+  // Show tournaments in competition order (index 1, 2, 3, …).
+  const tournaments = useMemo(
+    () => [...(data?.tournaments ?? [])].sort((a, b) => Number(a.index) - Number(b.index)),
+    [data],
+  )
+
   if (loading) return <p className="muted">Loading…</p>
   if (error) return <p className="muted">Error: {error}</p>
   if (!data) return <p className="muted">Not found.</p>
@@ -63,15 +69,15 @@ export function CompetitionDetail() {
             <tr>
               <th>Index</th>
               <th>Start time</th>
+              <th>Duration</th>
               <th>1st place</th>
               <th>2nd place</th>
               <th>3rd place</th>
               <th>4th place</th>
-              <th>Length</th>
             </tr>
           </thead>
           <tbody>
-            {data.tournaments.map((t) => (
+            {tournaments.map((t) => (
               <TournamentRowView key={t.index} t={t} cid={cid} nameOf={nameOf} navigate={navigate} />
             ))}
           </tbody>
@@ -107,11 +113,11 @@ function TournamentRowView({
         {!t.complete && <span className="muted" style={{ fontSize: 11 }}> (in progress)</span>}
       </td>
       <td>{t.began_at ? new Date(t.began_at).toLocaleString() : '—'}</td>
+      <td className="muted">{formatLength(t.length_seconds)}</td>
       <td style={{ fontSize: 12 }}>{place(0)}</td>
       <td style={{ fontSize: 12 }}>{place(1)}</td>
       <td style={{ fontSize: 12 }}>{place(2)}</td>
       <td style={{ fontSize: 12 }}>{place(3)}</td>
-      <td className="muted">{formatLength(t.length_seconds)}</td>
     </tr>
   )
 }

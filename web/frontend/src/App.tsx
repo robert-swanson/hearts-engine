@@ -12,7 +12,6 @@ export function App() {
         </Link>
         <nav className="app-nav">
           <Link to="/">Competitions</Link>
-          <Link to="/live">Live</Link>
         </nav>
         <AuthControl />
       </header>

@@ -8,7 +8,8 @@ import { aggregate, allPlayers, filterGames } from '../lib/aggregate'
 
 const PAGE_SIZE = 50
 
-type SortKey = 'player' | 'game' | 'tournament' | 'moon'
+type SortKey = 'team' | 'player' | 'gamesCount' | 'game' | 'tournament' | 'moon'
+const TEXT_SORTS: SortKey[] = ['team', 'player']
 
 export function TournamentDetail() {
   const { cid = '', index = '' } = useParams()
@@ -22,8 +23,8 @@ export function TournamentDetail() {
   const selectedPlayers = params.getAll('player')
   const minMoon = Number(params.get('minMoon')) || 0
   const page = Math.max(0, Number(params.get('page')) || 0)
-  const sortKey = (params.get('sort') as SortKey) || 'player'
-  const sortAsc = params.get('dir') ? params.get('dir') === 'asc' : sortKey === 'player'
+  const sortKey = (params.get('sort') as SortKey) || 'tournament'
+  const sortAsc = params.get('dir') ? params.get('dir') === 'asc' : TEXT_SORTS.includes(sortKey)
 
   // Merge a set of changes into the URL search params (preserving the rest).
   const patch = (changes: Record<string, string | string[] | null>) => {
@@ -75,8 +76,8 @@ export function TournamentDetail() {
     if (key === sortKey) {
       patch({ dir: sortAsc ? 'desc' : 'asc' })
     } else {
-      // Player defaults to A→Z; numeric columns default to highest first.
-      patch({ sort: key, dir: key === 'player' ? 'asc' : 'desc' })
+      // Text columns default to A→Z; numeric columns default to highest first.
+      patch({ sort: key, dir: TEXT_SORTS.includes(key) ? 'asc' : 'desc' })
     }
   }
 
@@ -85,7 +86,9 @@ export function TournamentDetail() {
     .filter((v, i, a) => a.indexOf(v) === i)
     .sort((a, b) => {
       let cmp: number
-      if (sortKey === 'player') cmp = playerSortKey(nameOf(a)).localeCompare(playerSortKey(nameOf(b)))
+      if (sortKey === 'team') cmp = (nameOf(a).team ?? '').localeCompare(nameOf(b).team ?? '')
+      else if (sortKey === 'player') cmp = playerSortKey(nameOf(a)).localeCompare(playerSortKey(nameOf(b)))
+      else if (sortKey === 'gamesCount') cmp = (agg.gamesByPlayer[a] ?? 0) - (agg.gamesByPlayer[b] ?? 0)
       else if (sortKey === 'game') cmp = (agg.gamePointsByPlayer[a] ?? 0) - (agg.gamePointsByPlayer[b] ?? 0)
       else if (sortKey === 'tournament')
         cmp = (agg.tournamentPointsByPlayer[a] ?? 0) - (agg.tournamentPointsByPlayer[b] ?? 0)
@@ -154,7 +157,9 @@ export function TournamentDetail() {
         <table className="data">
           <thead>
             <tr>
+              <SortTh label="Team" col="team" sortKey={sortKey} sortAsc={sortAsc} onSort={toggleSort} />
               <SortTh label="Player" col="player" sortKey={sortKey} sortAsc={sortAsc} onSort={toggleSort} />
+              <SortTh label="Total games" col="gamesCount" sortKey={sortKey} sortAsc={sortAsc} onSort={toggleSort} />
               <SortTh label="Total game points" col="game" sortKey={sortKey} sortAsc={sortAsc} onSort={toggleSort} />
               <SortTh
                 label="Total tournament points"
@@ -167,14 +172,19 @@ export function TournamentDetail() {
             </tr>
           </thead>
           <tbody>
-            {aggRows.map((p) => (
-              <tr key={p}>
-                <td><PlayerName d={nameOf(p)} /></td>
-                <td>{agg.gamePointsByPlayer[p] ?? 0}</td>
-                <td>{agg.tournamentPointsByPlayer[p] ?? 0}</td>
-                <td>{agg.moonShotsByPlayer[p] ?? 0}</td>
-              </tr>
-            ))}
+            {aggRows.map((p) => {
+              const d = nameOf(p)
+              return (
+                <tr key={p}>
+                  <td style={{ color: d.color, fontWeight: 600 }}>{d.team ?? '—'}</td>
+                  <td><PlayerName d={d} /></td>
+                  <td>{agg.gamesByPlayer[p] ?? 0}</td>
+                  <td>{agg.gamePointsByPlayer[p] ?? 0}</td>
+                  <td>{agg.tournamentPointsByPlayer[p] ?? 0}</td>
+                  <td>{agg.moonShotsByPlayer[p] ?? 0}</td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>
@@ -188,29 +198,40 @@ export function TournamentDetail() {
           <thead>
             <tr>
               <th>Game</th>
-              <th>Players (finish order)</th>
-              <th>Winner</th>
+              <th>1st</th>
+              <th>2nd</th>
+              <th>3rd</th>
+              <th>4th</th>
               <th>Rounds</th>
             </tr>
           </thead>
           <tbody>
-            {pageGames.map((g) => (
-              <tr key={g.game_id} className="row-link" onClick={() => navigate(gameHref(g.game_id))}>
-                <td>
-                  <Link to={gameHref(g.game_id)}>{g.game_id}</Link>
-                </td>
-                <td style={{ fontSize: 12 }}>
-                  {gamePlayers(g).map((p, i) => (
-                    <span key={p.id}>
-                      {i > 0 && <span className="muted">, </span>}
-                      <PlayerName d={nameOf(p.id)} />
-                    </span>
-                  ))}
-                </td>
-                <td><PlayerName d={nameOf(g.winner)} /></td>
-                <td className="muted">{g.rounds_played}</td>
-              </tr>
-            ))}
+            {pageGames.map((g) => {
+              const ranked = gamePlayers(g)
+              return (
+                <tr key={g.game_id} className="row-link" onClick={() => navigate(gameHref(g.game_id))}>
+                  <td>
+                    <Link to={gameHref(g.game_id)}>{g.game_id}</Link>
+                  </td>
+                  {[0, 1, 2, 3].map((i) => {
+                    const p = ranked[i]
+                    return (
+                      <td key={i} style={{ fontSize: 12 }}>
+                        {p ? (
+                          <>
+                            <PlayerName d={nameOf(p.id)} />{' '}
+                            <span className="muted">({p.game_score})</span>
+                          </>
+                        ) : (
+                          <span className="muted">—</span>
+                        )}
+                      </td>
+                    )
+                  })}
+                  <td className="muted">{g.rounds_played}</td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
         {numPages > 1 && (
@@ -264,7 +285,8 @@ function SortTh({
           color: active ? '#2a5bd7' : 'inherit',
         }}
       >
-        {label} {active ? (sortAsc ? '▲' : '▼') : <span style={{ opacity: 0.3 }}>↕</span>}
+        {label}
+        {active ? ` ${sortAsc ? '▲' : '▼'}` : ''}
       </button>
     </th>
   )
