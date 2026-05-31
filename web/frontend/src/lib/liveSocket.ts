@@ -38,6 +38,9 @@ export interface LiveConnection {
   connected: boolean
   error: string | null
   send: (a: SendAction) => void
+  /** serverEpoch - clientEpoch (seconds), measured at the last message; add to
+   *  Date.now()/1000 to get the server's clock for skew-free countdowns. */
+  serverOffset: number
 }
 
 /** Connect to a live table's WebSocket and track its latest snapshot. */
@@ -45,6 +48,7 @@ export function useLiveTable(code: string | undefined): LiveConnection {
   const [snapshot, setSnapshot] = useState<LiveSnapshot | null>(null)
   const [connected, setConnected] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [serverOffset, setServerOffset] = useState(0)
   const wsRef = useRef<WebSocket | null>(null)
 
   useEffect(() => {
@@ -66,6 +70,9 @@ export function useLiveTable(code: string | undefined): LiveConnection {
         try {
           const msg = JSON.parse(ev.data)
           if (msg.type === 'state') {
+            if (typeof msg.server_now === 'number') {
+              setServerOffset(msg.server_now - Date.now() / 1000)
+            }
             setSnapshot(msg as LiveSnapshot)
             setError(null)
           } else if (msg.type === 'error') {
@@ -90,5 +97,5 @@ export function useLiveTable(code: string | undefined): LiveConnection {
     if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(a))
   }, [])
 
-  return { snapshot, connected, error, send }
+  return { snapshot, connected, error, send, serverOffset }
 }

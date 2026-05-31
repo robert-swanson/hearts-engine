@@ -128,6 +128,67 @@ _ABORT = object()  # sentinel pushed onto a seat queue to unblock a thinking hum
 LIVE_LOG_CAP = 60  # max activity-log entries kept per AI seat
 
 
+# --- stdout capture: route a bot's print() into its seat log -----------------
+# Each AI seat's SDK session runs in its own thread. We install a process-wide
+# stdout proxy that, when the *current thread* has registered a sink (done in
+# the seat's initialize_for_game hook, which runs in that thread), routes the
+# text line-by-line into that seat's activity log instead of the console. Using
+# threading.local means the routing is automatically thread-isolated and cleaned
+# up when the thread dies — no manual unregister bookkeeping or thread-id reuse
+# hazard. Threads with no sink (uvicorn, the event loop) write through untouched.
+
+_seat_sink = threading.local()
+
+
+class _StdoutRouter:
+    def __init__(self, original):
+        self._original = original
+
+    def write(self, s):
+        fn = getattr(_seat_sink, "fn", None)
+        if fn is None:
+            return self._original.write(s)
+        try:
+            fn(s)
+        except Exception:
+            return self._original.write(s)
+        return len(s)
+
+    def flush(self):
+        self._original.flush()
+
+    def __getattr__(self, name):  # delegate isatty/encoding/etc. to the real stream
+        return getattr(self._original, name)
+
+
+_stdout_installed = False
+
+
+def _ensure_stdout_router():
+    global _stdout_installed
+    if not _stdout_installed:
+        sys.stdout = _StdoutRouter(sys.stdout)
+        _stdout_installed = True
+
+
+def _route_print(table: "Table", seat: "Seat", text: str):
+    """Buffer a thread's stdout writes and emit one log entry per complete line."""
+    buf = getattr(_seat_sink, "buf", "") + text
+    *lines, rest = buf.split("\n")
+    _seat_sink.buf = rest
+    for line in lines:
+        if line.strip():
+            table.log_seat(seat, "print", line.rstrip())
+
+
+def _flush_print(table: "Table", seat: "Seat"):
+    """Emit any trailing partial line (no terminating newline) at game end."""
+    rest = getattr(_seat_sink, "buf", "")
+    _seat_sink.buf = ""
+    if rest.strip():
+        table.log_seat(seat, "print", rest.rstrip())
+
+
 def _pid(player_tag_session) -> str:
     """Full server-side id, e.g. ``"alice_0_AB12(1003)"``."""
     return str(player_tag_session)
@@ -157,6 +218,11 @@ class Seat:
     cards_ref: List[Card] = field(default_factory=list)  # live hand reference
     passed: List[str] = field(default_factory=list)      # cards I passed this round
     received: List[str] = field(default_factory=list)    # cards passed to me this round
+    # Per-round passing history (round_idx -> cards), so the live view's
+    # expandable per-round tables can show passing for every round, not just the
+    # current one. Only populated for "my" (this-client) seats.
+    passed_by_round: Dict[int, List[str]] = field(default_factory=dict)
+    received_by_round: Dict[int, List[str]] = field(default_factory=dict)
     # Activity log for AI seats (so the owning browser can watch what its bot is
     # doing / whether it's hung). Each entry: {t, kind, text, pending}.
     log: List[dict] = field(default_factory=list)
@@ -235,6 +301,8 @@ class WebHumanPlayer(Player):
 
     def receive_passed_cards(self, cards, pass_dir, donating_player):
         self._seat.received = [str(c) for c in cards]
+        if self._round is not None:
+            self._seat.received_by_round[self._round.round_idx] = list(self._seat.received)
         self._table.schedule_broadcast()
 
     # -- decisions: block on the browser ------------------------------------
@@ -246,12 +314,16 @@ class WebHumanPlayer(Player):
             "hand": hand,
             "pass_direction": pass_dir.value,
             "receiving_player": _pid(receiving_player),
+            "deadline": time.time() + HUMAN_DECISION_TIMEOUT_S,
+            "timeout_s": HUMAN_DECISION_TIMEOUT_S,
         }
         self._table.schedule_broadcast()
         chosen = self._await_response()
         seat.pending = None
         cards = self._coerce_pass(chosen, seat.cards_ref)
         seat.passed = [str(c) for c in cards]
+        if self._round is not None:
+            seat.passed_by_round[self._round.round_idx] = list(seat.passed)
         self._table.schedule_broadcast()
         return cards
 
@@ -259,7 +331,11 @@ class WebHumanPlayer(Player):
         seat = self._seat
         legal = [str(c) for c in legal_moves]
         hand = self._hand_strings()
-        seat.pending = {"kind": "move", "hand": hand, "legal_moves": legal, "trick_idx": trick.trick_idx}
+        seat.pending = {
+            "kind": "move", "hand": hand, "legal_moves": legal, "trick_idx": trick.trick_idx,
+            "deadline": time.time() + HUMAN_DECISION_TIMEOUT_S,
+            "timeout_s": HUMAN_DECISION_TIMEOUT_S,
+        }
         self._table.set_turn(seat.pid)
         self._table.schedule_broadcast()
         chosen = self._await_response()
@@ -329,6 +405,10 @@ def _make_ai_cls(table: "Table", seat: Seat, base_cls: type) -> type:
             raise
 
     def initialize_for_game(self, game):
+        # Runs in this seat's session thread — register stdout routing here so
+        # the bot's print() output lands in *this* seat's log.
+        _seat_sink.fn = lambda s: _route_print(table, seat, s)
+        _seat_sink.buf = ""
         _safe("initialize_for_game", lambda: base_cls.initialize_for_game(self, game))
         table.log_seat(seat, "game", "Joined game, waiting to start")
         table.on_init(game)
@@ -359,6 +439,8 @@ def _make_ai_cls(table: "Table", seat: Seat, base_cls: type) -> type:
 
     def handle_end_game(self, players_to_points, winner):
         _safe("handle_end_game", lambda: base_cls.handle_end_game(self, players_to_points, winner))
+        _flush_print(table, seat)
+        _seat_sink.fn = None
         table.log_seat(seat, "game", "Game over")
         table.on_end_game(players_to_points, winner)
 
@@ -447,7 +529,10 @@ class Table:
         self._round_idx: Optional[int] = None
         self._pass_direction: Optional[str] = None
         self._current_trick: dict = {"trick_idx": None, "moves": {}, "order": [], "leader": None}
-        self._completed_tricks: Dict[int, dict] = {}  # current round only
+        # Full per-round history (kept for the whole game, not just the current
+        # round) so the live view can show an expandable table per round.
+        self._round_tricks: Dict[int, Dict[int, dict]] = {}   # round_idx -> trick_idx -> trick
+        self._round_pass_dir: Dict[int, str] = {}             # round_idx -> pass direction
         self._round_results: Dict[int, Dict[str, int]] = {}
         self._turn: Optional[str] = None
         self._winner: Optional[str] = None
@@ -507,6 +592,8 @@ class Table:
             return "Game already started"
         if any(s.kind == "empty" for s in self.seats):
             return "All four seats must be filled before starting"
+
+        _ensure_stdout_router()  # so bots' print() output is captured per seat
 
         try:
             self.connection = ManagedConnection(timeout_s=SDK_SESSION_TIMEOUT_S)
@@ -581,8 +668,9 @@ class Table:
             if self._round_idx != round.round_idx:
                 self._round_idx = round.round_idx
                 self._pass_direction = round.pass_direction.value
+                self._round_pass_dir[round.round_idx] = round.pass_direction.value
+                self._round_tricks.setdefault(round.round_idx, {})
                 self._current_trick = {"trick_idx": None, "moves": {}, "order": [], "leader": None}
-                self._completed_tricks = {}
                 self._turn = None
         self.schedule_broadcast()
 
@@ -613,7 +701,7 @@ class Table:
         moves = [str(m.card) for m in trick.moves]
         first_player = _pid(trick.moves[0].player) if trick.moves else None
         with self._state_lock:
-            self._completed_tricks[trick.trick_idx] = {
+            self._round_tricks.setdefault(self._round_idx, {})[trick.trick_idx] = {
                 "trick_idx": trick.trick_idx,
                 "first_player": first_player,
                 "moves": moves,
@@ -664,15 +752,34 @@ class Table:
 
     def _round_running_points(self) -> Dict[str, int]:
         pts = {pid: 0 for pid in self._player_order}
-        for t in self._completed_tricks.values():
+        for t in self._round_tricks.get(self._round_idx, {}).values():
             pts[t["winner"]] = pts.get(t["winner"], 0) + t["points"]
         return pts
+
+    def _round_tricks_sorted(self, round_idx: Optional[int]) -> List[dict]:
+        bucket = self._round_tricks.get(round_idx, {})
+        return [bucket[k] for k in sorted(bucket)]
+
+    def _rounds_history(self) -> List[dict]:
+        """Every round seen so far, oldest first, each with its pass direction,
+        completed tricks (in order) and per-player round scores. Drives the
+        expandable per-round tables in the live view."""
+        rounds = []
+        for ridx in sorted(self._round_tricks):
+            rounds.append({
+                "round_idx": ridx,
+                "pass_direction": self._round_pass_dir.get(ridx),
+                "tricks": self._round_tricks_sorted(ridx),
+                "scores": dict(self._round_results.get(ridx, {})),
+                "complete": ridx in self._round_results,
+            })
+        return rounds
 
     def _public_state(self) -> dict:
         with self._state_lock:
             ct = self._current_trick
             moves = [{"player": pid, "card": ct["moves"][pid]} for pid in ct["order"]]
-            completed_tricks = [self._completed_tricks[k] for k in sorted(self._completed_tricks)]
+            completed_tricks = self._round_tricks_sorted(self._round_idx)
             return {
                 "status": self.status,
                 "player_order": list(self._player_order),
@@ -686,8 +793,9 @@ class Table:
                     "leader": ct["leader"],
                     "moves": moves,
                 },
-                "completed_trick_count": len(self._completed_tricks),
+                "completed_trick_count": len(completed_tricks),
                 "completed_tricks": completed_tricks,
+                "rounds": self._rounds_history(),
                 "turn": self._turn,
                 "winner": self._winner,
                 "final_points": dict(self._final_points),
@@ -706,6 +814,8 @@ class Table:
                     "pending": seat.pending,
                     "passed": list(seat.passed),
                     "received": list(seat.received),
+                    "passed_by_round": {str(k): v for k, v in seat.passed_by_round.items()},
+                    "received_by_round": {str(k): v for k, v in seat.received_by_round.items()},
                 })
             # AI seats this browser added: surface their activity log so the
             # owner can watch the bot (and spot a hung/slow one).
@@ -719,6 +829,7 @@ class Table:
                 })
         return {
             "type": "state",
+            "server_now": time.time(),  # lets the client cancel clock skew on timers
             "table": {
                 "code": self.code,
                 "status": self.status,

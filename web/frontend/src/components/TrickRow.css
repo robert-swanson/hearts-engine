@@ -19,7 +19,13 @@
   grid-template-columns: repeat(7, 1fr);
   gap: 4px;
   flex: 1;
+  overflow: hidden; /* clip cards sliding in from offscreen during a recenter */
 }
+
+/* The recenter slide-in is driven imperatively via the Web Animations API (see
+   useColumnSlide.ts): each grid is animated from its old column offset back to
+   center. The resting layout is already centered, so no CSS animation state is
+   needed here. */
 
 .trick-col {
   display: flex;
@@ -29,10 +35,11 @@
   min-width: 0;
 }
 
+/* Subtle center-column cue: a faint tint with thin vertical guide lines marking
+   the center line — replaces the old bright "white box" highlight. */
 .trick-col--center {
-  background: #f3f7ff;
-  border-radius: 8px;
-  padding: 2px 0;
+  background: rgba(90, 140, 255, 0.08);
+  box-shadow: inset 1px 0 0 rgba(90, 140, 255, 0.3), inset -1px 0 0 rgba(90, 140, 255, 0.3);
 }
 
 .trick-col__seat {
@@ -47,6 +54,16 @@
 .trick-col--center .trick-col__seat {
   color: #2a5bd7;
   font-weight: 700;
+}
+
+/* Clickable header columns: pick the player to center on. */
+.trick-col--clickable {
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background-color 0.12s ease;
+}
+.trick-col--clickable:hover {
+  background: rgba(90, 140, 255, 0.14);
 }
 
 .trick-col__card {
