@@ -1,64 +1,15 @@
 #!/bin/bash
 #
-# Bring up the Hearts web UI as a single process (serves /api + the built SPA).
+# DEPRECATED: use ../run.sh from the repo root instead.
 #
-# Idempotent: creates the Python venv and installs deps on first run, installs
-# node modules if missing, rebuilds the frontend, then execs uvicorn.
+# This used to bring up just the web UI. That logic now lives in the root-level
+# run.sh, which also runs the C++ lobby server and does a port pre-flight. This
+# shim keeps the old entrypoint (and CI) working by delegating to run.sh in
+# web-only mode (SKIP_SERVER defaults to 1 here so no Bazel/C++ server is
+# needed). Pass SKIP_SERVER=0 to also start the lobby server, or just call
+# ../run.sh directly.
 #
-# Usage:
-#   web/run_web.sh                 # build + serve on 0.0.0.0:8000
-#   PORT=9000 web/run_web.sh       # override port
-#   SKIP_BUILD=1 web/run_web.sh    # serve existing dist without rebuilding
-#
-# Env vars:
-#   HOST               bind address     (default 0.0.0.0)
-#   PORT               bind port        (default 8000)
-#   RESULTS_DIR        results location (default <repo>/results)
-#   SKIP_BUILD         set to 1 to skip the npm build step
-#
-# Auth (optional; controls who can see each round's private "cards passed"):
-#   WEB_ADMIN_PASSWORD admin login password — sign in with a blank team to see
-#                      every team's passed cards. If unset, admin login is off.
-#   Team login uses the TEAMS=name:password entries in tournament_server.env;
-#   a signed-in team sees only its own players' passed cards.
+# Usage / env vars are unchanged: HOST, PORT, RESULTS_DIR, SKIP_BUILD.
 
-set -e
-
-# Resolve paths relative to this script so it runs from anywhere.
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BACKEND_DIR="$SCRIPT_DIR/backend"
-FRONTEND_DIR="$SCRIPT_DIR/frontend"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-
-HOST="${HOST:-0.0.0.0}"
-PORT="${PORT:-8000}"
-RESULTS_DIR="${RESULTS_DIR:-$REPO_ROOT/results}"
-VENV="$BACKEND_DIR/.venv"
-
-echo "==> Backend venv"
-if [ ! -d "$VENV" ]; then
-    echo "    creating venv at $VENV"
-    python3 -m venv "$VENV"
-fi
-"$VENV/bin/pip" install -q -r "$BACKEND_DIR/requirements.txt"
-
-echo "==> Frontend"
-if [ ! -d "$FRONTEND_DIR/node_modules" ]; then
-    echo "    installing node modules"
-    npm --prefix "$FRONTEND_DIR" install
-fi
-if [ "${SKIP_BUILD:-0}" != "1" ]; then
-    echo "    building frontend"
-    npm --prefix "$FRONTEND_DIR" run build
-else
-    echo "    SKIP_BUILD=1, using existing dist/"
-fi
-
-if [ ! -d "$FRONTEND_DIR/dist" ]; then
-    echo "ERROR: $FRONTEND_DIR/dist not found; cannot serve the SPA." >&2
-    exit 1
-fi
-
-echo "==> Serving on http://$HOST:$PORT  (RESULTS_DIR=$RESULTS_DIR)"
-cd "$BACKEND_DIR"
-exec env RESULTS_DIR="$RESULTS_DIR" "$VENV/bin/uvicorn" main:app --host "$HOST" --port "$PORT"
+exec env SKIP_SERVER="${SKIP_SERVER:-1}" \
+    "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/run.sh" "$@"
