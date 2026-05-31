@@ -162,32 +162,86 @@
   gap: 8px; /* gap between cards within a suit */
 }
 
-/* --- Round history: an expandable table per round --- */
-.live-rounds {
+/* --- Round history: a compact scoreboard with expandable rows --- */
+.live-scores {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  padding: 6px 8px;
   margin-bottom: 18px;
-}
-.live-round {
-  padding: 0;
   overflow: hidden;
 }
-.live-round__head {
-  display: flex;
+/* Shared column grid: round | pass | one fractional column per player. */
+.live-scores__row {
+  display: grid;
+  grid-template-columns: minmax(3.4em, auto) 2.4em repeat(var(--player-cols, 4), minmax(0, 1fr));
   align-items: center;
-  gap: 10px;
+  gap: 4px;
   width: 100%;
-  padding: 12px 16px;
-  background: none;
-  border: none;
-  cursor: pointer;
+  padding: 7px 8px;
   text-align: left;
   color: inherit;
   font: inherit;
 }
-.live-round__head:hover {
-  background: rgba(128, 128, 128, 0.06);
+.live-scores__row--head {
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.22);
+}
+.live-scores__row--round {
+  background: none;
+  border: none;
+  cursor: pointer;
+  border-radius: 8px;
+}
+.live-scores__row--round:hover {
+  background: rgba(128, 128, 128, 0.07);
+}
+.live-scores__row--round.is-live {
+  background: rgba(76, 175, 80, 0.08);
+}
+.live-scores__row--total {
+  font-weight: 700;
+  border-top: 1px solid rgba(128, 128, 128, 0.22);
+  margin-top: 2px;
+}
+.live-scores__round {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.live-scores__rnum {
+  font-variant-numeric: tabular-nums;
+}
+.live-scores__pass {
+  text-align: center;
+  opacity: 0.8;
+  font-size: 12px;
+}
+.live-scores__pts {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.live-scores__pts.is-pending {
+  opacity: 0.45;
+}
+.live-scores__name {
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.live-scores__livedot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #4caf50;
+  box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.2);
+}
+.live-scores__detail {
+  padding: 6px 8px 14px;
 }
 .live-round__chevron {
   display: inline-block;
@@ -197,26 +251,6 @@
 }
 .live-round__chevron.is-open {
   transform: rotate(90deg);
-}
-.live-round__title {
-  font-weight: 700;
-  font-size: 15px;
-}
-.live-round__pass {
-  opacity: 0.85;
-}
-.live-round__live {
-  border-color: #4caf50;
-  color: #4caf50;
-}
-.live-round__summary {
-  margin-left: auto;
-  font-size: 12px;
-  opacity: 0.7;
-  text-align: right;
-}
-.live-round__body {
-  padding: 0 16px 16px;
 }
 
 /* --- Round history (passing + completed tricks) --- */
