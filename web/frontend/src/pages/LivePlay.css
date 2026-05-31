@@ -151,6 +151,67 @@
   overflow-x: auto;
 }
 
+/* --- AI activity log ------------------------------------------------------ */
+.ai-activity {
+  margin-top: 18px;
+}
+.ai-activity__title {
+  font-size: 12px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--muted, #888);
+  margin-bottom: 10px;
+}
+.ai-seat-log + .ai-seat-log {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(128, 128, 128, 0.2);
+}
+.ai-seat-log__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.ai-seat-log__state {
+  font-size: 11px;
+}
+.ai-seat-log__state--busy {
+  background: #f5b301;
+  color: #1a1a1a;
+}
+.ai-seat-log__state--idle {
+  background: rgba(128, 128, 128, 0.25);
+}
+.ai-log {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  font-family: 'SF Mono', 'Menlo', monospace;
+  font-size: 12.5px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.ai-log__line {
+  padding: 2px 0;
+  color: #444;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.08);
+}
+.ai-log__line--error {
+  color: #d11a2a;
+  font-weight: 600;
+}
+.ai-log__line--move,
+.ai-log__line--pass {
+  color: #1a7a3a;
+}
+.ai-log__line--think {
+  color: #2f7df6;
+}
+.ai-log__timer {
+  font-weight: 700;
+}
+
 @media (max-width: 600px) {
   .live-table-info {
     gap: 20px;

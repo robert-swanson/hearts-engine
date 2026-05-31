@@ -21,12 +21,16 @@ seat threads observe the same public events, every update is written
 
 from __future__ import annotations
 
+import importlib
+import inspect
 import os
+import pkgutil
 import queue
 import random
 import string
 import sys
 import threading
+import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -47,16 +51,70 @@ from clients.python.api.networking.SessionHelpers import MakeSession  # noqa: E4
 from clients.python.api.Player import Player  # noqa: E402
 from clients.python.api.types.Card import Card  # noqa: E402
 from clients.python.util.Constants import GameType  # noqa: E402
-from clients.python.players.random_player import RandomPlayer  # noqa: E402
-from clients.python.players.rob_player import RobPlayer  # noqa: E402
-from clients.python.players.claude_player import RobClaudePlayer  # noqa: E402
+import clients.python.players as _players_pkg  # noqa: E402
 
-# AI personalities the browser can drop into a seat.
-AI_TYPES: Dict[str, type] = {
-    "random": RandomPlayer,
-    "rob": RobPlayer,
-    "claude": RobClaudePlayer,
-}
+
+# --- AI player discovery -----------------------------------------------------
+# Any unmodified ``Player`` subclass under ``clients/python/players/`` is offered
+# as a seat option — no per-client wiring here. Dropping a new player file in
+# makes it appear in the browser automatically. The live wrapper (_make_ai_cls)
+# is already strategy-agnostic, so a discovered class needs no changes.
+
+
+def _label_for(tag: str) -> str:
+    """Human label for a dropdown, e.g. ``rob_claude_player`` -> ``Rob Claude``."""
+    cleaned = tag.replace("_player", "").replace("_", " ").strip()
+    return cleaned.title() or tag
+
+
+def _discover_ai_types() -> Dict[str, dict]:
+    """Scan the players package for concrete, self-contained AI players.
+
+    A class qualifies when it is a concrete ``Player`` subclass *defined in* the
+    scanned module and declares ``player_tag`` directly on itself. The own-tag
+    requirement excludes wrappers such as ``DebuggerPlayer`` (which inherits its
+    tag and blocks on stdin) while keeping every real bot, including subclassed
+    strategy variants that set their own tag.
+    """
+    registry: Dict[str, dict] = {}
+    for mod_info in pkgutil.iter_modules(_players_pkg.__path__):
+        if mod_info.name.startswith("_"):
+            continue
+        try:
+            module = importlib.import_module(f"clients.python.players.{mod_info.name}")
+        except Exception:
+            continue  # a player file that fails to import just isn't offered
+        for _, cls in inspect.getmembers(module, inspect.isclass):
+            if not issubclass(cls, Player) or cls is Player:
+                continue
+            if cls.__module__ != module.__name__:
+                continue  # imported into this module, not defined here
+            if "player_tag" not in cls.__dict__ or cls.player_tag is None:
+                continue
+            if inspect.isabstract(cls):
+                continue
+            registry[cls.player_tag] = {"cls": cls, "label": _label_for(cls.player_tag)}
+    return registry
+
+
+# AI personalities the browser can drop into a seat (keyed by player_tag).
+AI_TYPES: Dict[str, dict] = _discover_ai_types()
+
+
+def ai_type_options() -> List[dict]:
+    """``[{value, label}, ...]`` for the seat-picker dropdown, sorted by label."""
+    return [
+        {"value": tag, "label": meta["label"]}
+        for tag, meta in sorted(AI_TYPES.items(), key=lambda kv: kv[1]["label"])
+    ]
+
+
+def default_ai_type() -> Optional[str]:
+    """A sensible default seat AI (random if available, else the first option)."""
+    if "random_player" in AI_TYPES:
+        return "random_player"
+    opts = ai_type_options()
+    return opts[0]["value"] if opts else None
 
 # Timing budget for a human move. The server auto-moves after MOVE_TIMEOUT_MS
 # (configured when launching the server); we return a fallback just under that
@@ -66,6 +124,8 @@ HUMAN_DECISION_TIMEOUT_S = float(os.environ.get("HEARTS_HUMAN_TIMEOUT_S", "115")
 SDK_SESSION_TIMEOUT_S = int(os.environ.get("HEARTS_SDK_TIMEOUT_S", "150"))
 
 _ABORT = object()  # sentinel pushed onto a seat queue to unblock a thinking human
+
+LIVE_LOG_CAP = 60  # max activity-log entries kept per AI seat
 
 
 def _pid(player_tag_session) -> str:
@@ -97,6 +157,9 @@ class Seat:
     cards_ref: List[Card] = field(default_factory=list)  # live hand reference
     passed: List[str] = field(default_factory=list)      # cards I passed this round
     received: List[str] = field(default_factory=list)    # cards passed to me this round
+    # Activity log for AI seats (so the owning browser can watch what its bot is
+    # doing / whether it's hung). Each entry: {t, kind, text, pending}.
+    log: List[dict] = field(default_factory=list)
 
     def public_view(self, client_id: Optional[str]) -> dict:
         return {
@@ -120,14 +183,37 @@ class WebHumanPlayer(Player):
 
     def __init__(self, player_tag_session):
         super().__init__(player_tag_session)
+        self._round = None  # live ActiveRound, captured each round
         self._seat.pid = _pid(player_tag_session)
+
+    def _hand_strings(self) -> List[str]:
+        """The player's *true* current hand as 2-char codes.
+
+        The SDK never mutates ``round.cards_in_hand`` — it stays the originally
+        dealt 13 for the whole round — so we reconstruct from authoritative round
+        state: dealt cards, minus the cards we donated, plus the cards we
+        received, minus everything we've already played this round.
+        """
+        rnd = self._round
+        if rnd is None:
+            return []
+        me = self.player_tag_session
+        donated = list(getattr(rnd, "donating_cards", []) or [])
+        received = list(getattr(rnd, "received_cards", []) or [])
+        played = {m.card for t in rnd.tricks for m in t.moves if m.player == me}
+        hand = [c for c in rnd.cards_in_hand if c not in donated]
+        for c in received:
+            if c not in hand:
+                hand.append(c)
+        return [str(c) for c in hand if c not in played]
 
     # -- observer hooks: narrate public state -------------------------------
     def initialize_for_game(self, game):
         self._table.on_init(game)
 
     def handle_new_round(self, round):
-        self._seat.cards_ref = round.cards_in_hand  # live, mutated by framework
+        self._round = round  # authoritative source for _hand_strings()
+        self._seat.cards_ref = round.cards_in_hand  # dealt 13 (pass-pool fallback)
         self._seat.passed = []      # reset passing record for the new round
         self._seat.received = []
         self._table.on_new_round(round)
@@ -154,7 +240,7 @@ class WebHumanPlayer(Player):
     # -- decisions: block on the browser ------------------------------------
     def get_cards_to_pass(self, pass_dir, receiving_player):
         seat = self._seat
-        hand = [str(c) for c in seat.cards_ref]
+        hand = self._hand_strings()
         seat.pending = {
             "kind": "pass",
             "hand": hand,
@@ -172,7 +258,7 @@ class WebHumanPlayer(Player):
     def get_move(self, trick, legal_moves, move_request_latency_ms=None):
         seat = self._seat
         legal = [str(c) for c in legal_moves]
-        hand = [str(c) for c in seat.cards_ref]
+        hand = self._hand_strings()
         seat.pending = {"kind": "move", "hand": hand, "legal_moves": legal, "trick_idx": trick.trick_idx}
         self._table.set_turn(seat.pid)
         self._table.schedule_broadcast()
@@ -227,37 +313,91 @@ def _make_human_cls(table: "Table", seat: Seat) -> type:
 
 def _make_ai_cls(table: "Table", seat: Seat, base_cls: type) -> type:
     """Subclass an existing AI player so it keeps its strategy but also narrates
-    public state to the table via the observer hooks."""
+    public state to the table via the observer hooks, and logs its own decision
+    activity so the owning browser can watch what the bot is doing (and tell a
+    slow/hung bot apart from a broken live-play pipeline)."""
+
+    def _safe(label: str, fn):
+        """Run a base-class hook; if the bot's own code raises, surface the
+        error in its activity log before re-raising. An exception in an observer
+        hook (e.g. an outdated handle_move signature) otherwise kills the seat
+        thread silently — the log entry tells the operator it's the bot's fault."""
+        try:
+            return fn()
+        except Exception as exc:
+            table.log_seat(seat, "error", f"{label} raised {type(exc).__name__}: {exc}")
+            raise
 
     def initialize_for_game(self, game):
-        base_cls.initialize_for_game(self, game)
+        _safe("initialize_for_game", lambda: base_cls.initialize_for_game(self, game))
+        table.log_seat(seat, "game", "Joined game, waiting to start")
         table.on_init(game)
 
     def handle_new_round(self, round):
-        base_cls.handle_new_round(self, round)
+        _safe("handle_new_round", lambda: base_cls.handle_new_round(self, round))
+        table.log_seat(seat, "round", f"Round {round.round_idx + 1} — dealt {len(round.cards_in_hand)} cards")
         table.on_new_round(round)
 
     def handle_new_trick(self, trick):
-        base_cls.handle_new_trick(self, trick)
+        _safe("handle_new_trick", lambda: base_cls.handle_new_trick(self, trick))
         table.on_new_trick(trick)
 
     def handle_move(self, player, card, report_latency_ms=None, decided_move_latency_ms=None):
-        base_cls.handle_move(self, player, card,
-                             report_latency_ms=report_latency_ms,
-                             decided_move_latency_ms=decided_move_latency_ms)
+        _safe("handle_move", lambda: base_cls.handle_move(
+            self, player, card,
+            report_latency_ms=report_latency_ms,
+            decided_move_latency_ms=decided_move_latency_ms))
         table.on_move(player, card)
 
     def handle_finished_trick(self, trick, winning_player):
-        base_cls.handle_finished_trick(self, trick, winning_player)
+        _safe("handle_finished_trick", lambda: base_cls.handle_finished_trick(self, trick, winning_player))
         table.on_finished_trick(trick, winning_player)
 
     def handle_finished_round(self, round, round_points):
-        base_cls.handle_finished_round(self, round, round_points)
+        _safe("handle_finished_round", lambda: base_cls.handle_finished_round(self, round, round_points))
         table.on_finished_round(round, round_points)
 
     def handle_end_game(self, players_to_points, winner):
-        base_cls.handle_end_game(self, players_to_points, winner)
+        _safe("handle_end_game", lambda: base_cls.handle_end_game(self, players_to_points, winner))
+        table.log_seat(seat, "game", "Game over")
         table.on_end_game(players_to_points, winner)
+
+    # -- decision instrumentation: time the bot's own thinking --------------
+    def get_cards_to_pass(self, pass_dir, receiving_player):
+        table.log_seat(seat, "think", f"Choosing 3 cards to pass {pass_dir.value.lower()}…", pending=True)
+        t0 = time.time()
+        try:
+            cards = base_cls.get_cards_to_pass(self, pass_dir, receiving_player)
+        except Exception as exc:
+            table.log_seat(seat, "error", f"get_cards_to_pass raised {type(exc).__name__}: {exc}")
+            raise
+        ms = int((time.time() - t0) * 1000)
+        table.log_seat(seat, "pass", f"Passed {' '.join(str(c) for c in cards)} ({ms} ms)")
+        return cards
+
+    def get_move(self, trick, legal_moves, move_request_latency_ms=None):
+        table.log_seat(seat, "think",
+                       f"Thinking · trick {trick.trick_idx + 1} · {len(legal_moves)} legal…",
+                       pending=True)
+        t0 = time.time()
+        try:
+            card = base_cls.get_move(self, trick, legal_moves,
+                                     move_request_latency_ms=move_request_latency_ms)
+        except Exception as exc:
+            table.log_seat(seat, "error", f"get_move raised {type(exc).__name__}: {exc}")
+            raise
+        ms = int((time.time() - t0) * 1000)
+        table.log_seat(seat, "move", f"Played {card} ({ms} ms)")
+        return card
+
+    def handle_auto_move(self):
+        base_cls.handle_auto_move(self)
+        table.log_seat(seat, "error", "Server auto-moved (bot was too slow or returned an invalid move)")
+
+    def handle_auto_pass(self, cards):
+        base_cls.handle_auto_pass(self, cards)
+        table.log_seat(seat, "error",
+                       f"Server auto-passed {' '.join(str(c) for c in cards)} (bot was too slow or invalid)")
 
     return type(
         f"WebAI_{seat.player_tag}",
@@ -271,6 +411,10 @@ def _make_ai_cls(table: "Table", seat: Seat, base_cls: type) -> type:
             "handle_finished_trick": handle_finished_trick,
             "handle_finished_round": handle_finished_round,
             "handle_end_game": handle_end_game,
+            "get_cards_to_pass": get_cards_to_pass,
+            "get_move": get_move,
+            "handle_auto_move": handle_auto_move,
+            "handle_auto_pass": handle_auto_pass,
         },
     )
 
@@ -285,8 +429,11 @@ class Table:
         self.seats: List[Seat] = [Seat(index=i, seat_id=f"seat-{i}") for i in range(4)]
         self.status = "lobby"  # "lobby" | "playing" | "finished"
 
-        # WebSocket clients (browser connections) keyed by client_id.
-        self.clients: Dict[str, object] = {}
+        # WebSocket connections keyed by a unique per-connection id -> (ws,
+        # client_id). Keyed by connection (not client_id) so two sockets sharing
+        # a client_id both keep receiving broadcasts and closing one never evicts
+        # the other.
+        self.clients: Dict[str, tuple] = {}
         self.loop = None  # asyncio loop, captured on first WS connect
 
         # SDK runtime
@@ -322,7 +469,8 @@ class Table:
         seat.owner_client_id = client_id
         return None
 
-    def add_ai(self, seat_id: str, ai_type: str, name: str = "") -> Optional[str]:
+    def add_ai(self, seat_id: str, ai_type: str, name: str = "",
+               client_id: Optional[str] = None) -> Optional[str]:
         if self.status != "lobby":
             return "Game already started"
         if ai_type not in AI_TYPES:
@@ -333,7 +481,10 @@ class Table:
         seat.kind = "ai"
         seat.ai_type = ai_type
         seat.name = _sanitize(name) if name else f"{ai_type}-{seat.index}"
-        seat.owner_client_id = None
+        # Track which browser hosted this bot so we can show *that* browser the
+        # bot's activity log (it runs in this backend process either way).
+        seat.owner_client_id = client_id
+        seat.log = []
         return None
 
     def clear_seat(self, seat_id: str) -> Optional[str]:
@@ -346,6 +497,7 @@ class Table:
         seat.name = ""
         seat.ai_type = None
         seat.owner_client_id = None
+        seat.log = []
         return None
 
     # -- start --------------------------------------------------------------
@@ -367,7 +519,7 @@ class Table:
             if seat.kind == "human":
                 player_cls = _make_human_cls(self, seat)
             else:
-                player_cls = _make_ai_cls(self, seat, AI_TYPES[seat.ai_type])
+                player_cls = _make_ai_cls(self, seat, AI_TYPES[seat.ai_type]["cls"])
             try:
                 thread, _session = MakeSession(
                     self.connection, GameType.ANY, player_cls,
@@ -485,6 +637,20 @@ class Table:
         with self._state_lock:
             self._turn = pid
 
+    # -- AI activity log ----------------------------------------------------
+    def log_seat(self, seat: Seat, kind: str, text: str, *, pending: bool = False):
+        """Append an activity entry for an AI seat and push it to watchers.
+
+        ``pending=True`` marks an open-ended action (e.g. "thinking…") that the
+        frontend renders with a live elapsed timer until a later entry lands.
+        """
+        entry = {"t": time.time(), "kind": kind, "text": text, "pending": pending}
+        with self._state_lock:
+            seat.log.append(entry)
+            if len(seat.log) > LIVE_LOG_CAP:
+                del seat.log[: len(seat.log) - LIVE_LOG_CAP]
+        self.schedule_broadcast()
+
     def _seat_for_tag(self, tag: str) -> Optional[Seat]:
         return next((s for s in self.seats if s.player_tag == tag), None)
 
@@ -529,6 +695,7 @@ class Table:
 
     def snapshot_for(self, client_id: Optional[str]) -> dict:
         mine = []
+        ai = []
         for seat in self.seats:
             if seat.kind == "human" and seat.owner_client_id == client_id and seat.pid:
                 mine.append({
@@ -540,6 +707,16 @@ class Table:
                     "passed": list(seat.passed),
                     "received": list(seat.received),
                 })
+            # AI seats this browser added: surface their activity log so the
+            # owner can watch the bot (and spot a hung/slow one).
+            elif seat.kind == "ai" and seat.owner_client_id == client_id:
+                ai.append({
+                    "seat_id": seat.seat_id,
+                    "ai_type": seat.ai_type,
+                    "name": seat.name,
+                    "pid": seat.pid,
+                    "log": list(seat.log),
+                })
         return {
             "type": "state",
             "table": {
@@ -548,7 +725,7 @@ class Table:
                 "seats": [s.public_view(client_id) for s in self.seats],
             },
             "public": self._public_state() if self.status != "lobby" else None,
-            "you": {"client_id": client_id, "seats": mine},
+            "you": {"client_id": client_id, "seats": mine, "ai": ai},
         }
 
     # -- broadcast (thread -> asyncio bridge) -------------------------------
@@ -564,13 +741,13 @@ class Table:
 
     async def _broadcast(self):
         dead = []
-        for cid, ws in list(self.clients.items()):
+        for conn_key, (ws, client_id) in list(self.clients.items()):
             try:
-                await ws.send_json(self.snapshot_for(cid))
+                await ws.send_json(self.snapshot_for(client_id))
             except Exception:
-                dead.append(cid)
-        for cid in dead:
-            self.clients.pop(cid, None)
+                dead.append(conn_key)
+        for conn_key in dead:
+            self.clients.pop(conn_key, None)
 
 
 # --- Registry ----------------------------------------------------------------

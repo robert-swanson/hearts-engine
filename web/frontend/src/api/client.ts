@@ -182,11 +182,28 @@ export interface LiveMySeat {
   received?: string[]  // cards passed to me this round
 }
 
+// One entry in an AI seat's activity log (so the browser running the bot can
+// watch what it's doing / whether it's hung).
+export interface LiveLogEntry {
+  t: number          // unix seconds
+  kind: 'game' | 'round' | 'think' | 'move' | 'pass' | 'error'
+  text: string
+  pending: boolean   // open-ended action still in progress (render a live timer)
+}
+
+export interface LiveAiSeat {
+  seat_id: string
+  ai_type: string | null
+  name: string
+  pid: string | null
+  log: LiveLogEntry[]
+}
+
 export interface LiveSnapshot {
   type: 'state'
   table: { code: string; status: LiveStatus; seats: LiveSeat[] }
   public: LivePublic | null
-  you: { client_id: string; seats: LiveMySeat[] }
+  you: { client_id: string; seats: LiveMySeat[]; ai?: LiveAiSeat[] }
 }
 
 export interface LiveStats {
@@ -219,6 +236,11 @@ export interface LoginResult {
   is_admin: boolean
 }
 
+export interface AiTypeOption {
+  value: string
+  label: string
+}
+
 const tBase = (cid: string, index: string) =>
   `/api/competitions/${encodeURIComponent(cid)}/tournaments/${encodeURIComponent(index)}`
 
@@ -239,6 +261,7 @@ export const api = {
   },
   liveTable: (code: string) =>
     getJSON<{ code: string; status: LiveStatus }>(`/api/live/tables/${encodeURIComponent(code)}`),
+  aiTypes: () => getJSON<{ ai_types: AiTypeOption[] }>('/api/live/ai-types'),
   login: async (team: string | null, password: string): Promise<LoginResult> => {
     const res = await fetch('/api/login', {
       method: 'POST',

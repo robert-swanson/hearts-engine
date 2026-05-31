@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api/client'
-import type { LiveSeat, LiveMySeat, LivePublic } from '../api/client'
+import type { LiveSeat, LiveMySeat, LivePublic, AiTypeOption, LiveAiSeat, LiveLogEntry } from '../api/client'
 import { useLiveTable, type SendAction } from '../lib/liveSocket'
 import { Card } from '../components/Card'
 import { TrickRow } from '../components/TrickRow'
@@ -15,11 +15,28 @@ function suitGroups(hand: string[]): string[][] {
   return SUIT_ORDER.map((s) => sorted.filter((c) => (c[1] as Suit) === s)).filter((g) => g.length > 0)
 }
 
-const AI_OPTIONS = [
-  { value: 'random', label: 'Random' },
-  { value: 'rob', label: 'Rob' },
-  { value: 'claude', label: 'Claude' },
-]
+// AI seat options are discovered by the backend (every Player subclass under
+// clients/python/players), so adding a bot needs no frontend change. Cache the
+// fetch at module scope — the list is stable for the app's lifetime.
+let aiTypesCache: AiTypeOption[] | null = null
+function useAiTypes(): AiTypeOption[] {
+  const [opts, setOpts] = useState<AiTypeOption[]>(aiTypesCache ?? [])
+  useEffect(() => {
+    if (aiTypesCache) return
+    let alive = true
+    api
+      .aiTypes()
+      .then((r) => {
+        aiTypesCache = r.ai_types
+        if (alive) setOpts(r.ai_types)
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [])
+  return opts
+}
 
 // --- Landing: create or join -------------------------------------------------
 
@@ -118,7 +135,7 @@ export function LiveTable() {
       {status === 'lobby' ? (
         <Lobby seats={table.seats} send={send} />
       ) : (
-        <PlayView pub={pub} mySeats={you.seats} send={send} />
+        <PlayView pub={pub} mySeats={you.seats} aiSeats={you.ai ?? []} send={send} />
       )}
     </div>
   )
@@ -128,11 +145,12 @@ export function LiveTable() {
 
 function Lobby({ seats, send }: { seats: LiveSeat[]; send: (a: SendAction) => void }) {
   const allFilled = seats.every((s) => s.kind !== 'empty')
+  const aiOptions = useAiTypes()
   return (
     <>
       <div className="seat-grid">
         {seats.map((seat) => (
-          <SeatCard key={seat.seat_id} seat={seat} send={send} />
+          <SeatCard key={seat.seat_id} seat={seat} send={send} aiOptions={aiOptions} />
         ))}
       </div>
       <div className="row-actions" style={{ marginTop: 16 }}>
@@ -145,9 +163,20 @@ function Lobby({ seats, send }: { seats: LiveSeat[]; send: (a: SendAction) => vo
   )
 }
 
-function SeatCard({ seat, send }: { seat: LiveSeat; send: (a: SendAction) => void }) {
+function SeatCard({
+  seat,
+  send,
+  aiOptions,
+}: {
+  seat: LiveSeat
+  send: (a: SendAction) => void
+  aiOptions: AiTypeOption[]
+}) {
   const [name, setName] = useState('')
-  const [ai, setAi] = useState('random')
+  const [ai, setAi] = useState('')
+  // Until the user picks, default to Random when available, else the first option.
+  const preferred = aiOptions.find((o) => o.value === 'random_player')?.value
+  const selectedAi = ai || preferred || aiOptions[0]?.value || ''
 
   return (
     <div className={`card-surface seat-card ${seat.kind !== 'empty' ? 'seat-card--filled' : ''}`}>
@@ -179,14 +208,20 @@ function SeatCard({ seat, send }: { seat: LiveSeat; send: (a: SendAction) => voi
             </button>
           </div>
           <div className="row-actions" style={{ gap: 6 }}>
-            <select className="btn" value={ai} onChange={(e) => setAi(e.target.value)}>
-              {AI_OPTIONS.map((o) => (
+            <select
+              className="btn"
+              value={selectedAi}
+              disabled={aiOptions.length === 0}
+              onChange={(e) => setAi(e.target.value)}
+            >
+              {aiOptions.map((o) => (
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </select>
             <button
               className="btn"
-              onClick={() => send({ action: 'add_ai', seat_id: seat.seat_id, ai_type: ai })}
+              disabled={!selectedAi}
+              onClick={() => send({ action: 'add_ai', seat_id: seat.seat_id, ai_type: selectedAi })}
             >
               Add AI
             </button>
@@ -214,10 +249,12 @@ function SeatCard({ seat, send }: { seat: LiveSeat; send: (a: SendAction) => voi
 function PlayView({
   pub,
   mySeats,
+  aiSeats,
   send,
 }: {
   pub: LivePublic | null
   mySeats: LiveMySeat[]
+  aiSeats: LiveAiSeat[]
   send: (a: SendAction) => void
 }) {
   if (!pub) return <p className="muted">Waiting for the game to begin…</p>
@@ -283,7 +320,62 @@ function PlayView({
       {mySeats.map((seat) => (
         <MySeatPanel key={seat.seat_id} seat={seat} send={send} />
       ))}
+
+      {/* AI players I'm running: live activity so I can see a slow/hung bot. */}
+      {aiSeats.length > 0 && (
+        <div className="card-surface ai-activity">
+          <div className="ai-activity__title">AI players you're running</div>
+          {aiSeats.map((seat) => (
+            <AiSeatLog key={seat.seat_id} seat={seat} />
+          ))}
+        </div>
+      )}
     </>
+  )
+}
+
+// --- AI activity log: shows what a bot you host is doing ----------------------
+
+/** Live "Xs" timer that ticks while a bot's action is still pending. */
+function Elapsed({ since }: { since: number }) {
+  const [now, setNow] = useState(() => Date.now() / 1000)
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now() / 1000), 250)
+    return () => clearInterval(id)
+  }, [])
+  const secs = Math.max(0, now - since)
+  return <span className="ai-log__timer"> · {secs.toFixed(1)}s</span>
+}
+
+function AiSeatLog({ seat }: { seat: LiveAiSeat }) {
+  const entries = seat.log ?? []
+  const last = entries[entries.length - 1]
+  const idle = !last || !last.pending
+  return (
+    <div className="ai-seat-log">
+      <div className="ai-seat-log__head">
+        <strong>{seat.name}</strong>
+        <span className="muted" style={{ fontSize: 12 }}> · {seat.ai_type} bot</span>
+        <span className={`pill ai-seat-log__state ai-seat-log__state--${idle ? 'idle' : 'busy'}`}>
+          {idle ? 'idle' : 'thinking'}
+        </span>
+      </div>
+      {entries.length === 0 ? (
+        <p className="muted" style={{ fontSize: 13, margin: '6px 0 0' }}>No activity yet…</p>
+      ) : (
+        <ul className="ai-log">
+          {entries
+            .slice()
+            .reverse()
+            .map((e: LiveLogEntry, i) => (
+              <li key={entries.length - 1 - i} className={`ai-log__line ai-log__line--${e.kind}`}>
+                <span className="ai-log__text">{e.text}</span>
+                {e.pending && i === 0 && <Elapsed since={e.t} />}
+              </li>
+            ))}
+        </ul>
+      )}
+    </div>
   )
 }
 
@@ -405,9 +497,9 @@ function MySeatPanel({ seat, send }: { seat: LiveMySeat; send: (a: SendAction) =
               key={c}
               code={c}
               size="md"
-              legal={picked.includes(c)}
+              selected={picked.includes(c)}
               onClick={() => togglePass(c)}
-              title="Click to select for passing"
+              title={picked.includes(c) ? 'Click to deselect' : 'Click to select for passing'}
             />
           ))}
           <button
