@@ -403,11 +403,15 @@ function AiSeatLog({ seat }: { seat: LiveAiSeat }) {
   )
 }
 
-// --- Round history: an expandable table per round ----------------------------
-// Each round shows its passing info followed by its tricks (same TrickRow UI as
-// tournaments). A round auto-collapses once it has finished AND the *next* round
-// has begun play (i.e. its passing stage is complete), so attention stays on the
-// live round while finished rounds fold away — manually toggleable either way.
+// --- Round history: a compact scoreboard with expandable rows ----------------
+// One shared header names each player as a column; every round is a single row
+// of the points each player took that round (so names aren't repeated per
+// round), and a Total row carries the running game score. Clicking a round row
+// expands its passing + tricks (same TrickRow UI as tournaments) inline below.
+// A round auto-collapses once it has finished AND the *next* round has begun
+// play, so attention stays on the live round — manually toggleable either way.
+
+const PASS_ABBR: Record<string, string> = { Left: 'L', Right: 'R', Across: 'A', Keeper: '—' }
 
 function RoundHistory({ pub, mySeats }: { pub: LivePublic; mySeats: LiveMySeat[] }) {
   const rounds = pub.rounds ?? []
@@ -436,14 +440,27 @@ function RoundHistory({ pub, mySeats }: { pub: LivePublic; mySeats: LiveMySeat[]
     return !!next && playStarted(next)
   }
 
+  // Shared grid: round | pass | one fractional column per player.
+  const gridStyle = { ['--player-cols' as string]: String(pub.player_order.length) } as React.CSSProperties
+
   return (
-    <div className="live-rounds" ref={containerRef}>
+    <div className="card-surface live-scores" ref={containerRef}>
+      <div className="live-scores__row live-scores__row--head" style={gridStyle}>
+        <div className="live-scores__round muted">Round</div>
+        <div className="live-scores__pass muted">Pass</div>
+        {pub.player_order.map((pid) => (
+          <div key={pid} className="live-scores__pts live-scores__name" title={nameOf(pid)}>
+            {nameOf(pid)}
+          </div>
+        ))}
+      </div>
+
       {rounds.map((r) => {
         const expanded = overrides[r.round_idx] ?? !autoCollapsed(r)
         const toggle = () =>
           setOverrides((prev) => ({ ...prev, [r.round_idx]: !expanded }))
         return (
-          <RoundPanel
+          <RoundRow
             key={r.round_idx}
             round={r}
             expanded={expanded}
@@ -453,14 +470,23 @@ function RoundHistory({ pub, mySeats }: { pub: LivePublic; mySeats: LiveMySeat[]
             selected={selected}
             nameOf={nameOf}
             selectColumn={selectColumn}
+            gridStyle={gridStyle}
           />
         )
       })}
+
+      <div className="live-scores__row live-scores__row--total" style={gridStyle}>
+        <div className="live-scores__round">Total</div>
+        <div className="live-scores__pass" />
+        {pub.player_order.map((pid) => (
+          <div key={pid} className="live-scores__pts">{pub.scores[pid] ?? 0}</div>
+        ))}
+      </div>
     </div>
   )
 }
 
-function RoundPanel({
+function RoundRow({
   round,
   expanded,
   onToggle,
@@ -469,6 +495,7 @@ function RoundPanel({
   selected,
   nameOf,
   selectColumn,
+  gridStyle,
 }: {
   round: LiveRound
   expanded: boolean
@@ -478,6 +505,7 @@ function RoundPanel({
   selected: string
   nameOf: (pid: string) => string
   selectColumn: (col: number) => void
+  gridStyle: React.CSSProperties
 }) {
   const dir = round.pass_direction
   const seats = columnSeats(pub.player_order, selected)
@@ -499,23 +527,34 @@ function RoundPanel({
   const isLive = pub.round_idx === round.round_idx && !round.complete
 
   return (
-    <div className="card-surface live-round">
-      <button className="live-round__head" onClick={onToggle} aria-expanded={expanded}>
-        <span className={`live-round__chevron ${expanded ? 'is-open' : ''}`}>▸</span>
-        <span className="live-round__title">Round {round.round_idx + 1}</span>
-        {dir && <span className="pill live-round__pass">{dir}</span>}
-        {isLive && <span className="pill live-round__live">live</span>}
-        <span className="live-round__summary">
-          {round.complete
-            ? pub.player_order
-                .map((pid) => `${nameOf(pid)} +${round.scores[pid] ?? 0}`)
-                .join(' · ')
-            : `${tricks.length} / 13 tricks`}
-        </span>
+    <>
+      <button
+        className={`live-scores__row live-scores__row--round ${isLive ? 'is-live' : ''}`}
+        style={gridStyle}
+        onClick={onToggle}
+        aria-expanded={expanded}
+      >
+        <div className="live-scores__round">
+          <span className={`live-round__chevron ${expanded ? 'is-open' : ''}`}>▸</span>
+          <span className="live-scores__rnum">{round.round_idx + 1}</span>
+          {isLive && <span className="live-scores__livedot" title="Live round" />}
+        </div>
+        <div className="live-scores__pass">{dir ? PASS_ABBR[dir] ?? dir[0] : '—'}</div>
+        {pub.player_order.map((pid) => {
+          // Completed rounds show the final delta; the live round shows running
+          // points so far; not-yet-played rounds show a placeholder dot.
+          const done = round.complete
+          const val = done ? round.scores[pid] ?? 0 : isLive ? pub.round_points[pid] ?? 0 : null
+          return (
+            <div key={pid} className={`live-scores__pts ${done ? '' : 'is-pending'}`}>
+              {val == null ? '·' : val}
+            </div>
+          )
+        })}
       </button>
 
-      {expanded && (
-        <div className="live-round__body">
+      {expanded && (showPass || tricks.length > 0) && (
+        <div className="live-scores__detail">
           {showPass && (
             <div className="live-pass-summary">
               <div className="live-pass-summary__leg">
@@ -568,7 +607,7 @@ function RoundPanel({
           )}
         </div>
       )}
-    </div>
+    </>
   )
 }
 
