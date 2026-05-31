@@ -194,6 +194,68 @@
   gap: 8px; /* gap between cards within a suit */
 }
 
+/* --- Pass action bar -----------------------------------------------------
+   A live preview of the 3 picked cards plus a prominent confirm button.
+   On phones it sticks to the bottom of the viewport so it stays in reach
+   while the player scrolls a 13-card hand. */
+.pass-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 18px;
+  flex-wrap: wrap;
+}
+.pass-bar__preview {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 50px;
+}
+.pass-bar__hint {
+  font-size: 13px;
+}
+.pass-bar__slot {
+  width: 36px;
+  height: 50px;
+  border: 1px dashed var(--sx-hairline, #444);
+  border-radius: 6px;
+  opacity: 0.4;
+}
+.pass-bar__btn {
+  background: #4caf50;
+  border-color: #4caf50;
+  color: #0c2912;
+  font-weight: 700;
+  padding: 10px 20px;
+}
+.pass-bar__btn:disabled {
+  background: transparent;
+  color: inherit;
+  opacity: 0.6;
+}
+
+@media (max-width: 600px) {
+  .pass-bar {
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+    margin: 18px -16px 0;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+    gap: 12px;
+    background: var(--sx-canvas-night, #000);
+    border-top: 1px solid var(--sx-hairline, #333);
+    box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.35);
+  }
+  .pass-bar__preview {
+    flex: 0 0 auto;
+  }
+  .pass-bar__btn {
+    flex: 1 1 auto;
+    min-width: 0;
+    text-align: center;
+  }
+}
+
 /* --- Round history: a compact scoreboard with expandable rows --- */
 .live-scores {
   display: flex;

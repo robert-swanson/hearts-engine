@@ -713,17 +713,43 @@ function MySeatPanel({ seat, send, serverOffset }: { seat: LiveMySeat; send: (a:
               size="md"
               selected={picked.includes(c)}
               onClick={() => togglePass(c)}
-              title={picked.includes(c) ? 'Click to deselect' : 'Click to select for passing'}
+              title={picked.includes(c) ? 'Tap to deselect' : 'Tap to select for passing'}
             />
           ))}
-          <button
-            className="btn"
-            style={{ marginTop: 12 }}
-            disabled={picked.length !== 3}
-            onClick={() => send({ action: 'decide', seat_id: seat.seat_id, value: picked })}
-          >
-            Pass selected
-          </button>
+          {/* Action bar: a live preview of the 3 picks plus a prominent button.
+              Sticks to the bottom of the viewport on phones so it stays in reach
+              while scrolling a 13-card hand. */}
+          <div className="pass-bar">
+            <div className="pass-bar__preview" aria-hidden={picked.length === 0}>
+              {picked.length === 0 ? (
+                <span className="muted pass-bar__hint">
+                  Tap 3 cards to pass {pending.pass_direction}
+                </span>
+              ) : (
+                [0, 1, 2].map((i) =>
+                  picked[i] ? (
+                    <Card
+                      key={i}
+                      code={picked[i]}
+                      size="sm"
+                      selected
+                      onClick={() => togglePass(picked[i])}
+                      title="Tap to deselect"
+                    />
+                  ) : (
+                    <span key={i} className="pass-bar__slot" />
+                  ),
+                )
+              )}
+            </div>
+            <button
+              className="btn pass-bar__btn"
+              disabled={picked.length !== 3}
+              onClick={() => send({ action: 'decide', seat_id: seat.seat_id, value: picked })}
+            >
+              {picked.length === 3 ? 'Pass these 3 →' : `Pick ${3 - picked.length} more`}
+            </button>
+          </div>
         </>
       ) : pending?.kind === 'move' ? (
         groupedHand((c) => {
