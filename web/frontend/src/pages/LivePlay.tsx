@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api/client'
-import type { LiveSeat, LiveMySeat, LivePublic, AiTypeOption, LiveAiSeat, LiveLogEntry } from '../api/client'
+import type { LiveSeat, LiveMySeat, LivePublic, LiveRound, AiTypeOption, LiveAiSeat, LiveLogEntry } from '../api/client'
 import { useLiveTable, type SendAction } from '../lib/liveSocket'
 import { Card } from '../components/Card'
 import { TrickRow } from '../components/TrickRow'
 import { SUIT_ORDER, sortBySuitThenRank, type Suit } from '../lib/cards'
 import { columnSeats, CENTER, passRecipient, passSource } from '../lib/seating'
+import { useColumnSlide } from '../lib/useColumnSlide'
 import './LivePlay.css'
 
 /** Split a hand into suit groups (suit-then-rank sorted) for gapped rendering. */
@@ -103,7 +104,7 @@ export function LivePlayHome() {
 
 export function LiveTable() {
   const { code = '' } = useParams()
-  const { snapshot, connected, error, send } = useLiveTable(code)
+  const { snapshot, connected, error, send, serverOffset } = useLiveTable(code)
 
   if (!snapshot) {
     return (
@@ -135,7 +136,7 @@ export function LiveTable() {
       {status === 'lobby' ? (
         <Lobby seats={table.seats} send={send} />
       ) : (
-        <PlayView pub={pub} mySeats={you.seats} aiSeats={you.ai ?? []} send={send} />
+        <PlayView pub={pub} mySeats={you.seats} aiSeats={you.ai ?? []} send={send} serverOffset={serverOffset} />
       )}
     </div>
   )
@@ -251,16 +252,29 @@ function PlayView({
   mySeats,
   aiSeats,
   send,
+  serverOffset,
 }: {
   pub: LivePublic | null
   mySeats: LiveMySeat[]
   aiSeats: LiveAiSeat[]
   send: (a: SendAction) => void
+  serverOffset: number
 }) {
   if (!pub) return <p className="muted">Waiting for the game to begin…</p>
   const nameOf = (pid: string) => pub.players[pid]?.name ?? pid
   const trickCard: Record<string, string> = {}
   for (const m of pub.current_trick.moves) trickCard[m.player] = m.card
+
+  // Arrange the 4 players around a square table in game (seating) order, with
+  // "me" (or the first seat) at the bottom and the rest clockwise from there.
+  const center = mySeats.find((s) => pub.player_order.includes(s.pid))?.pid ?? pub.player_order[0]
+  const startIdx = Math.max(0, pub.player_order.indexOf(center))
+  const tablePos = ['bottom', 'left', 'top', 'right'] as const
+  const seatAt: Record<string, string> = {}
+  pub.player_order.forEach((_, i) => {
+    const pid = pub.player_order[(startIdx + i) % pub.player_order.length]
+    seatAt[tablePos[i] ?? 'bottom'] = pid
+  })
 
   return (
     <>
@@ -282,26 +296,36 @@ function PlayView({
       {/* This round so far: passing + completed tricks, same UI as tournaments. */}
       <RoundHistory pub={pub} mySeats={mySeats} />
 
-      {/* Table: players with the card they've played this trick. */}
-      <div className="live-seats">
-        {pub.player_order.map((pid) => {
+      {/* Table: the 4 players arranged around a square in seating order, each
+          showing the card they've played this trick. Fixed proportions so the
+          layout reads the same on mobile and desktop. */}
+      <div className="live-table">
+        {tablePos.map((pos) => {
+          const pid = seatAt[pos]
+          if (!pid) return <div key={pos} className={`live-seat-slot live-seat-slot--${pos}`} />
           const isTurn = pub.turn === pid
           return (
-            <div key={pid} className={`live-seat ${isTurn ? 'live-seat--turn' : ''}`}>
-              <div className="live-seat__name">
-                {nameOf(pid)}
-                {isTurn && <span className="pill live-seat__turn">to play</span>}
-              </div>
-              <div className="live-seat__card">
-                {trickCard[pid] ? <Card code={trickCard[pid]} size="md" /> : <div className="live-seat__empty" />}
-              </div>
-              <div className="muted live-seat__score">
-                {pub.scores[pid] ?? 0} pts
-                {(pub.round_points[pid] ?? 0) > 0 && <span> · +{pub.round_points[pid]} this round</span>}
+            <div key={pos} className={`live-seat-slot live-seat-slot--${pos}`}>
+              <div className={`live-seat ${isTurn ? 'live-seat--turn' : ''}`}>
+                <div className="live-seat__name">
+                  {nameOf(pid)}
+                  {isTurn && <span className="pill live-seat__turn">to play</span>}
+                </div>
+                <div className="live-seat__card">
+                  {trickCard[pid] ? <Card code={trickCard[pid]} size="md" /> : <div className="live-seat__empty" />}
+                </div>
+                <div className="muted live-seat__score">
+                  {pub.scores[pid] ?? 0} pts
+                  {(pub.round_points[pid] ?? 0) > 0 && <span> · +{pub.round_points[pid]} this round</span>}
+                </div>
               </div>
             </div>
           )
         })}
+        <div className="live-table__center">
+          <span className="live-table__center-trick">Trick {pub.completed_trick_count + 1}/13</span>
+          {pub.pass_direction && <span className="live-table__center-pass">{pub.pass_direction}</span>}
+        </div>
       </div>
 
       {pub.winner && (
@@ -318,7 +342,7 @@ function PlayView({
 
       {/* My private seats: hand + pass/move controls. */}
       {mySeats.map((seat) => (
-        <MySeatPanel key={seat.seat_id} seat={seat} send={send} />
+        <MySeatPanel key={seat.seat_id} seat={seat} send={send} serverOffset={serverOffset} />
       ))}
 
       {/* AI players I'm running: live activity so I can see a slow/hung bot. */}
@@ -379,75 +403,198 @@ function AiSeatLog({ seat }: { seat: LiveAiSeat }) {
   )
 }
 
-// --- Round history: passing + completed tricks (tournament-style) ------------
+// --- Round history: an expandable table per round ----------------------------
+// Each round shows its passing info followed by its tricks (same TrickRow UI as
+// tournaments). A round auto-collapses once it has finished AND the *next* round
+// has begun play (i.e. its passing stage is complete), so attention stays on the
+// live round while finished rounds fold away — manually toggleable either way.
 
 function RoundHistory({ pub, mySeats }: { pub: LivePublic; mySeats: LiveMySeat[] }) {
-  const tricks = pub.completed_tricks ?? []
+  const rounds = pub.rounds ?? []
   // Center the trick rows on my seat if I'm in this game, else the first seat.
   const me = mySeats.find((s) => pub.player_order.includes(s.pid))
-  const selected = me?.pid ?? pub.player_order[0]
+  const defaultSel = me?.pid ?? pub.player_order[0]
+  // Manual column-click selection overrides the default (my-seat) centering.
+  const [selOverride, setSelOverride] = useState<string | null>(null)
+  const selected = selOverride ?? defaultSel
+  // Per-round manual expand override (round_idx -> expanded?), else auto rule.
+  const [overrides, setOverrides] = useState<Record<number, boolean>>({})
+  const { selectColumn, containerRef } = useColumnSlide(pub.player_order, selected, setSelOverride)
+
+  if (!selected || rounds.length === 0) return null
+
   const nameOf = (pid: string) => pub.players[pid]?.name ?? pid
-  const dir = pub.pass_direction
 
-  const passed = me?.passed ?? []
-  const received = me?.received ?? []
-  const showPass = !!me && !!dir && dir !== 'Keeper' && (passed.length > 0 || received.length > 0)
+  const byIdx = (idx: number) => rounds.find((r) => r.round_idx === idx)
+  const playStarted = (r: LiveRound) =>
+    r.tricks.length > 0 || (pub.round_idx === r.round_idx && pub.current_trick.trick_idx != null)
+  // Auto-collapse: round finished AND the next round's passing stage is done
+  // (its play has started). The latest/live round never auto-collapses.
+  const autoCollapsed = (r: LiveRound) => {
+    if (!r.complete) return false
+    const next = byIdx(r.round_idx + 1)
+    return !!next && playStarted(next)
+  }
 
-  if (!selected || (tricks.length === 0 && !showPass)) return null
+  return (
+    <div className="live-rounds" ref={containerRef}>
+      {rounds.map((r) => {
+        const expanded = overrides[r.round_idx] ?? !autoCollapsed(r)
+        const toggle = () =>
+          setOverrides((prev) => ({ ...prev, [r.round_idx]: !expanded }))
+        return (
+          <RoundPanel
+            key={r.round_idx}
+            round={r}
+            expanded={expanded}
+            onToggle={toggle}
+            pub={pub}
+            me={me}
+            selected={selected}
+            nameOf={nameOf}
+            selectColumn={selectColumn}
+          />
+        )
+      })}
+    </div>
+  )
+}
 
+function RoundPanel({
+  round,
+  expanded,
+  onToggle,
+  pub,
+  me,
+  selected,
+  nameOf,
+  selectColumn,
+}: {
+  round: LiveRound
+  expanded: boolean
+  onToggle: () => void
+  pub: LivePublic
+  me: LiveMySeat | undefined
+  selected: string
+  nameOf: (pid: string) => string
+  selectColumn: (col: number) => void
+}) {
+  const dir = round.pass_direction
   const seats = columnSeats(pub.player_order, selected)
+  const tricks = round.tricks ?? []
+
+  // My passing for this specific round (fall back to the live current-round
+  // fields, which the backend fills the moment a pass resolves).
+  const ridStr = String(round.round_idx)
+  const passed =
+    me?.passed_by_round?.[ridStr] ?? (pub.round_idx === round.round_idx ? me?.passed : undefined) ?? []
+  const received =
+    me?.received_by_round?.[ridStr] ??
+    (pub.round_idx === round.round_idx ? me?.received : undefined) ??
+    []
+  const showPass = !!me && !!dir && dir !== 'Keeper' && (passed.length > 0 || received.length > 0)
   const recipient = me && dir ? passRecipient(selected, pub.player_order, dir) : selected
   const source = me && dir ? passSource(selected, pub.player_order, dir) : selected
 
+  const isLive = pub.round_idx === round.round_idx && !round.complete
+
   return (
-    <div className="card-surface live-history">
-      <div className="live-history__title">This round so far</div>
+    <div className="card-surface live-round">
+      <button className="live-round__head" onClick={onToggle} aria-expanded={expanded}>
+        <span className={`live-round__chevron ${expanded ? 'is-open' : ''}`}>▸</span>
+        <span className="live-round__title">Round {round.round_idx + 1}</span>
+        {dir && <span className="pill live-round__pass">{dir}</span>}
+        {isLive && <span className="pill live-round__live">live</span>}
+        <span className="live-round__summary">
+          {round.complete
+            ? pub.player_order
+                .map((pid) => `${nameOf(pid)} +${round.scores[pid] ?? 0}`)
+                .join(' · ')
+            : `${tricks.length} / 13 tricks`}
+        </span>
+      </button>
 
-      {showPass && (
-        <div className="live-pass-summary">
-          <div className="live-pass-summary__leg">
-            <span className="muted">You passed</span>
-            <div className="hand-suit-group">{passed.map((c) => <Card key={c} code={c} size="sm" />)}</div>
-            <span className="muted">to {nameOf(recipient)}</span>
-          </div>
-          <div className="live-pass-summary__leg">
-            <span className="muted">Received</span>
-            <div className="hand-suit-group">{received.map((c) => <Card key={c} code={c} size="sm" />)}</div>
-            <span className="muted">from {nameOf(source)}</span>
-          </div>
-        </div>
-      )}
+      {expanded && (
+        <div className="live-round__body">
+          {showPass && (
+            <div className="live-pass-summary">
+              <div className="live-pass-summary__leg">
+                <span className="muted">You passed</span>
+                <div className="hand-suit-group">{passed.map((c) => <Card key={c} code={c} size="sm" />)}</div>
+                <span className="muted">to {nameOf(recipient)}</span>
+              </div>
+              <div className="live-pass-summary__leg">
+                <span className="muted">Received</span>
+                <div className="hand-suit-group">{received.map((c) => <Card key={c} code={c} size="sm" />)}</div>
+                <span className="muted">from {nameOf(source)}</span>
+              </div>
+            </div>
+          )}
 
-      {tricks.length > 0 && (
-        <div className="live-tricks">
-          {/* Column header aligned with the trick rows below (selected centered). */}
-          <div className="trick-row">
-            <div className="trick-row__label" />
-            <div className="trick-row__grid">
-              {seats.map((pid, col) => (
-                <div key={col} className={`trick-col ${col === CENTER ? 'trick-col--center' : ''}`}>
-                  <div className="trick-col__seat">{nameOf(pid)}</div>
+          {tricks.length > 0 ? (
+            <div className="live-tricks">
+              {/* Column header aligned with the trick rows; click to recenter. */}
+              <div className="trick-row">
+                <div className="trick-row__label" />
+                <div className="trick-row__grid">
+                  {seats.map((pid, col) => {
+                    const isCenter = col === CENTER
+                    return (
+                      <div
+                        key={col}
+                        className={`trick-col ${isCenter ? 'trick-col--center' : 'trick-col--clickable'}`}
+                        onClick={isCenter ? undefined : () => selectColumn(col)}
+                        title={isCenter ? undefined : `Center on ${nameOf(pid)}`}
+                      >
+                        <div className="trick-col__seat">{nameOf(pid)}</div>
+                      </div>
+                    )
+                  })}
                 </div>
+                <div className="trick-row__pts" />
+              </div>
+              {tricks.map((t) => (
+                <TrickRow
+                  key={t.trick_idx}
+                  trick={t}
+                  trickIndex={t.trick_idx}
+                  playerOrder={pub.player_order}
+                  selected={selected}
+                />
               ))}
             </div>
-            <div className="trick-row__pts" />
-          </div>
-          {tricks.map((t) => (
-            <TrickRow
-              key={t.trick_idx}
-              trick={t}
-              trickIndex={t.trick_idx}
-              playerOrder={pub.player_order}
-              selected={selected}
-            />
-          ))}
+          ) : (
+            !showPass && <p className="muted" style={{ fontSize: 13, margin: 0 }}>No tricks yet…</p>
+          )}
         </div>
       )}
     </div>
   )
 }
 
-function MySeatPanel({ seat, send }: { seat: LiveMySeat; send: (a: SendAction) => void }) {
+/** Shrinking countdown bar for a pending human decision; turns amber then red
+ *  as the server's auto-decide deadline approaches. Skew-free via serverOffset. */
+function DecisionTimer({ deadline, timeoutS, serverOffset }: { deadline: number; timeoutS: number; serverOffset: number }) {
+  const [, tick] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => tick((n) => n + 1), 200)
+    return () => clearInterval(id)
+  }, [])
+  const serverNow = Date.now() / 1000 + serverOffset
+  const remaining = Math.max(0, deadline - serverNow)
+  const frac = timeoutS > 0 ? Math.max(0, Math.min(1, remaining / timeoutS)) : 0
+  const level = remaining <= 10 ? 'danger' : remaining <= 30 ? 'warn' : 'ok'
+  return (
+    <div className="decision-timer" title="Time left before the server auto-plays for you">
+      <div className="decision-timer__bar">
+        <div className={`decision-timer__fill decision-timer__fill--${level}`} style={{ width: `${frac * 100}%` }} />
+      </div>
+      <span className={`decision-timer__secs decision-timer__secs--${level}`}>{Math.ceil(remaining)}s</span>
+    </div>
+  )
+}
+
+function MySeatPanel({ seat, send, serverOffset }: { seat: LiveMySeat; send: (a: SendAction) => void; serverOffset: number }) {
   const [picked, setPicked] = useState<string[]>([])
   const pending = seat.pending
 
@@ -485,6 +632,9 @@ function MySeatPanel({ seat, send }: { seat: LiveMySeat; send: (a: SendAction) =
           <span className="pill my-seat__prompt">
             Pick 3 to pass {pending.pass_direction} ({picked.length}/3)
           </span>
+        )}
+        {pending && pending.deadline != null && (
+          <DecisionTimer deadline={pending.deadline} timeoutS={pending.timeout_s ?? 0} serverOffset={serverOffset} />
         )}
       </div>
 

@@ -59,11 +59,47 @@
 }
 .live-stat { font-size: 20px; font-weight: 700; }
 
-.live-seats {
+/* Square "table": 4 seats arranged N/E/S/W in seating order, with a center
+   marker. Fixed 3x3 grid + max-width so it looks identical on any screen. */
+.live-table {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 14px;
-  margin-bottom: 18px;
+  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-rows: auto auto auto;
+  grid-template-areas:
+    ".    top    ."
+    "left center right"
+    ".    bottom .";
+  gap: 12px;
+  align-items: center;
+  justify-items: center;
+  width: 100%;
+  max-width: 520px;
+  margin: 0 auto 18px;
+}
+.live-seat-slot {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+.live-seat-slot--top { grid-area: top; }
+.live-seat-slot--left { grid-area: left; }
+.live-seat-slot--right { grid-area: right; }
+.live-seat-slot--bottom { grid-area: bottom; }
+.live-table__center {
+  grid-area: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  opacity: 0.7;
+  text-align: center;
+}
+.live-table__center-trick { font-weight: 700; }
+.live-table__center-pass {
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-size: 10px;
 }
 .live-seat {
   border: 1px solid var(--sx-hairline, #333);
@@ -73,6 +109,8 @@
   flex-direction: column;
   align-items: center;
   gap: 10px;
+  width: 100%;
+  max-width: 150px;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 .live-seat--turn {
@@ -124,6 +162,63 @@
   gap: 8px; /* gap between cards within a suit */
 }
 
+/* --- Round history: an expandable table per round --- */
+.live-rounds {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.live-round {
+  padding: 0;
+  overflow: hidden;
+}
+.live-round__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 16px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+}
+.live-round__head:hover {
+  background: rgba(128, 128, 128, 0.06);
+}
+.live-round__chevron {
+  display: inline-block;
+  transition: transform 0.15s ease;
+  opacity: 0.6;
+  font-size: 12px;
+}
+.live-round__chevron.is-open {
+  transform: rotate(90deg);
+}
+.live-round__title {
+  font-weight: 700;
+  font-size: 15px;
+}
+.live-round__pass {
+  opacity: 0.85;
+}
+.live-round__live {
+  border-color: #4caf50;
+  color: #4caf50;
+}
+.live-round__summary {
+  margin-left: auto;
+  font-size: 12px;
+  opacity: 0.7;
+  text-align: right;
+}
+.live-round__body {
+  padding: 0 16px 16px;
+}
+
 /* --- Round history (passing + completed tricks) --- */
 .live-history {
   margin-bottom: 18px;
@@ -149,6 +244,49 @@
 }
 .live-tricks {
   overflow-x: auto;
+}
+
+/* --- Decision countdown --------------------------------------------------- */
+.decision-timer {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.decision-timer__bar {
+  width: 120px;
+  height: 6px;
+  background: rgba(128, 128, 128, 0.25);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.decision-timer__fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.2s linear, background-color 0.3s ease;
+}
+.decision-timer__fill--ok {
+  background: #1a7a3a;
+}
+.decision-timer__fill--warn {
+  background: #f5b301;
+}
+.decision-timer__fill--danger {
+  background: #d11a2a;
+}
+.decision-timer__secs {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: #555;
+  min-width: 30px;
+  text-align: right;
+}
+.decision-timer__secs--warn {
+  color: #b07d00;
+}
+.decision-timer__secs--danger {
+  color: #d11a2a;
 }
 
 /* --- AI activity log ------------------------------------------------------ */
@@ -207,6 +345,14 @@
 }
 .ai-log__line--think {
   color: #2f7df6;
+}
+/* Real stdout from the bot — set apart with a left rule and dimmer ink. */
+.ai-log__line--print {
+  color: #555;
+  padding-left: 8px;
+  border-left: 2px solid #b9c6e0;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 .ai-log__timer {
   font-weight: 700;
