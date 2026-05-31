@@ -63,17 +63,17 @@
    marker. Fixed 3x3 grid + max-width so it looks identical on any screen. */
 .live-table {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  grid-template-rows: auto auto auto;
+  grid-template-columns: 1fr minmax(96px, 1.1fr) 1fr;
+  grid-template-rows: auto 1fr auto;
   grid-template-areas:
     ".    top    ."
     "left center right"
     ".    bottom .";
-  gap: 12px;
+  gap: 10px;
   align-items: center;
   justify-items: center;
   width: 100%;
-  max-width: 520px;
+  max-width: 460px;
   margin: 0 auto 18px;
 }
 .live-seat-slot {
@@ -87,12 +87,43 @@
 .live-seat-slot--bottom { grid-area: bottom; }
 .live-table__center {
   grid-area: center;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: stretch;
+  justify-self: stretch;
+  min-height: 116px;
+}
+/* Clockwise direction ring fills the center cell behind the trick/pass text. */
+.live-table__ring {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 100%;
+  height: 100%;
+  max-width: 132px;
+  max-height: 132px;
+}
+.live-table__ring-track {
+  fill: none;
+  stroke: var(--sx-hairline, #3a3a3a);
+  stroke-width: 1.5;
+  opacity: 0.5;
+}
+.live-table__ring-head {
+  fill: #4caf50;
+  opacity: 0.85;
+}
+.live-table__center-text {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
   font-size: 12px;
-  opacity: 0.7;
+  opacity: 0.85;
   text-align: center;
 }
 .live-table__center-trick { font-weight: 700; }
@@ -100,6 +131,7 @@
   text-transform: uppercase;
   letter-spacing: 1px;
   font-size: 10px;
+  opacity: 0.8;
 }
 .live-seat {
   border: 1px solid var(--sx-hairline, #333);
@@ -411,5 +443,33 @@
   }
   .hand-row {
     gap: 12px;
+  }
+  /* Keep the table a compact square on phones: tighter gaps, smaller seat
+     boxes, and a smaller direction ring so left/center/right fit one row. */
+  .live-table {
+    gap: 6px;
+    max-width: 360px;
+  }
+  .live-seat {
+    padding: 8px 6px;
+    gap: 6px;
+    border-radius: 8px;
+  }
+  .live-seat__name {
+    font-size: 13px;
+    gap: 5px;
+  }
+  .live-seat__card {
+    min-height: 74px;
+  }
+  .live-seat__score {
+    font-size: 11px;
+  }
+  .live-table__center {
+    min-height: 96px;
+  }
+  .live-table__ring {
+    max-width: 104px;
+    max-height: 104px;
   }
 }

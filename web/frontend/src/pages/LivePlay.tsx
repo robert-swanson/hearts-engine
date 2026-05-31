@@ -247,6 +247,28 @@ function SeatCard({
 
 // --- Play view ---------------------------------------------------------------
 
+/** A clockwise ring of arrowheads in the table center: play always rotates
+ *  bottom → left → top → right (clockwise), so the four tangential arrows make
+ *  the move order legible at a glance without naming seats. */
+function PlayDirectionRing() {
+  // One arrowhead at the top of the ring pointing clockwise (to the right),
+  // duplicated at 90° steps so each sits between two seats, tangent to the ring.
+  const heads = [0, 90, 180, 270]
+  return (
+    <svg className="live-table__ring" viewBox="0 0 100 100" aria-hidden="true">
+      <circle className="live-table__ring-track" cx="50" cy="50" r="36" />
+      {heads.map((deg) => (
+        <polygon
+          key={deg}
+          className="live-table__ring-head"
+          points="46,11 46,19 54,15"
+          transform={`rotate(${deg} 50 50)`}
+        />
+      ))}
+    </svg>
+  )
+}
+
 function PlayView({
   pub,
   mySeats,
@@ -323,8 +345,11 @@ function PlayView({
           )
         })}
         <div className="live-table__center">
-          <span className="live-table__center-trick">Trick {pub.completed_trick_count + 1}/13</span>
-          {pub.pass_direction && <span className="live-table__center-pass">{pub.pass_direction}</span>}
+          <PlayDirectionRing />
+          <div className="live-table__center-text">
+            <span className="live-table__center-trick">Trick {pub.completed_trick_count + 1}/13</span>
+            {pub.pass_direction && <span className="live-table__center-pass">{pub.pass_direction}</span>}
+          </div>
         </div>
       </div>
 
