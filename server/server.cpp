@@ -33,6 +33,11 @@ int main(int argc, char **argv)
             acceptor.accept(*socket);
             auto & connection = connections.emplace_back(std::make_unique<ManagedConnection>(socket));
             auto* conn_ptr = connection.get();
+            // Lobby play is interactive: a human seat must be able to take as long
+            // as it likes without the server timing out and playing for them. Unlike
+            // the tournament server (which auto-moves after N timeouts to keep a bracket
+            // moving), disable auto-move entirely here.
+            conn_ptr->setNewSessionAutoMoveThreshold(0);
             std::thread([conn_ptr]() {
                 conn_ptr->ConnectionListener(Matcher::HandleSessionRequest);
             }).detach();
