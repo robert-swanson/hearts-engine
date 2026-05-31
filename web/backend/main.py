@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Optional
 
 import asyncio
+import uuid
 
 from fastapi import FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -97,6 +98,11 @@ def live_stats():
 # --- Live lobby play ---------------------------------------------------------
 
 
+@app.get("/api/live/ai-types")
+def live_ai_types():
+    return {"ai_types": live.ai_type_options()}
+
+
 @app.post("/api/live/tables")
 def create_live_table():
     table = live.manager.create()
@@ -119,7 +125,8 @@ async def live_ws(websocket: WebSocket, code: str, client_id: str):
         return
     await websocket.accept()
     table.loop = asyncio.get_running_loop()
-    table.clients[client_id] = websocket
+    conn_key = uuid.uuid4().hex
+    table.clients[conn_key] = (websocket, client_id)
     await websocket.send_json(table.snapshot_for(client_id))
 
     async def err(msg: str):
@@ -132,7 +139,8 @@ async def live_ws(websocket: WebSocket, code: str, client_id: str):
             if action == "add_human":
                 e = table.add_human(msg["seat_id"], msg.get("name", ""), client_id)
             elif action == "add_ai":
-                e = table.add_ai(msg["seat_id"], msg.get("ai_type", "random"), msg.get("name", ""))
+                e = table.add_ai(msg["seat_id"], msg.get("ai_type") or live.default_ai_type(),
+                                 msg.get("name", ""), client_id)
             elif action == "clear_seat":
                 e = table.clear_seat(msg["seat_id"])
             elif action == "start":
@@ -147,7 +155,7 @@ async def live_ws(websocket: WebSocket, code: str, client_id: str):
     except WebSocketDisconnect:
         pass
     finally:
-        table.clients.pop(client_id, None)
+        table.clients.pop(conn_key, None)
 
 
 # Serve the built frontend (web/frontend/dist) when present, so prod is a single process.

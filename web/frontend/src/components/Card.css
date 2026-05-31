@@ -56,6 +56,19 @@
   filter: grayscale(1);
 }
 
+/* Chosen card (e.g. picked to pass): blue ring + raised, distinct from the
+   gold winner ring. */
+.card--selected {
+  border-color: #2f7df6;
+  box-shadow: 0 0 0 2px #2f7df6, 0 4px 8px rgba(0, 0, 0, 0.3);
+  transform: translateY(-8px);
+}
+
+/* Keep the lift on hover instead of dropping back to the generic -3px. */
+.card--selected.card--clickable:hover {
+  transform: translateY(-8px);
+}
+
 .card--clickable {
   cursor: pointer;
   transition: transform 0.08s ease;

@@ -1,13 +1,21 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import type { LiveSnapshot } from '../api/client'
 
-/** Stable per-browser id so the backend can tie human seats to this client. */
+/**
+ * Per-tab id so the backend can tie human seats to this client.
+ *
+ * Uses sessionStorage (not localStorage) so each tab/window is a *distinct*
+ * participant — otherwise two windows of the same browser share one id, collide
+ * on seat ownership, and the server keeps only the last socket per id. It stays
+ * stable across reloads within the same tab, so seat ownership survives the
+ * socket's auto-reconnect.
+ */
 export function clientId(): string {
   const KEY = 'hearts-live-client-id'
-  let id = localStorage.getItem(KEY)
+  let id = sessionStorage.getItem(KEY)
   if (!id) {
     id = (crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)) as string
-    localStorage.setItem(KEY, id)
+    sessionStorage.setItem(KEY, id)
   }
   return id
 }
