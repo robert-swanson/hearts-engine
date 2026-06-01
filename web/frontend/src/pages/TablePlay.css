@@ -1,0 +1,198 @@
+/* Physical-table game — operator console. Builds on LivePlay.css for the
+   shared table/board classes; this file styles the prompt panel, the
+   suit-then-rank card picker, and the inference panel. */
+
+.table-prompt {
+  margin: 14px 0;
+}
+
+.table-prompt__q {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.table-lead {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--muted, #9aa);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.suit-red { color: #e23; font-size: 16px; }
+.suit-black { color: #ccd; font-size: 16px; }
+
+.table-prompt--done h2 { color: var(--accent, #6cf); }
+
+/* AI instruction: a loud "do this physically" callout. */
+.table-prompt--instruct {
+  border: 1px solid var(--accent, #6cf);
+  background: linear-gradient(180deg, rgba(80, 160, 255, 0.10), rgba(80, 160, 255, 0.03));
+}
+.table-instruct__label {
+  font-size: 11px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--accent, #6cf);
+  margin-bottom: 6px;
+}
+.table-instruct__msg {
+  font-size: 20px;
+  font-weight: 700;
+  margin-bottom: 14px;
+}
+.table-instruct__btn { min-width: 140px; }
+
+/* --- Card picker ----------------------------------------------------------- */
+
+.card-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.card-picker__suits {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.card-picker__suit {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 4px;
+  border-radius: 10px;
+  border: 1px solid var(--border, #2a3140);
+  background: var(--surface-2, #161b24);
+  color: inherit;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s, transform 0.06s;
+}
+.card-picker__suit:active { transform: translateY(1px); }
+.card-picker__suit.is-active {
+  border-color: var(--accent, #6cf);
+  background: rgba(80, 160, 255, 0.12);
+}
+.card-picker__suit.is-red .card-picker__suit-sym { color: #e23; }
+.card-picker__suit.is-black .card-picker__suit-sym { color: #ccd; }
+.card-picker__suit-sym { font-size: 22px; line-height: 1; }
+.card-picker__suit-name { font-size: 11px; letter-spacing: 0.5px; }
+.card-picker__suit-count {
+  font-size: 11px;
+  color: var(--muted, #9aa);
+  background: var(--surface, #0e131b);
+  border-radius: 8px;
+  padding: 0 6px;
+}
+
+.card-picker__ranks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+}
+
+.card-picker__reason {
+  font-size: 13px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 180, 60, 0.10);
+  border: 1px solid rgba(255, 180, 60, 0.35);
+}
+.card-picker__error {
+  font-size: 13px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 70, 70, 0.10);
+  border: 1px solid rgba(255, 70, 70, 0.4);
+}
+
+.card-picker__tray {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--border, #2a3140);
+  padding-top: 12px;
+}
+.card-picker__chosen {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  min-height: 40px;
+}
+.card-picker__undo { margin-top: 4px; }
+
+/* --- Inference panel ------------------------------------------------------- */
+
+.table-inference { margin-top: 16px; }
+.table-inference__head {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+}
+.table-inference__body {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.table-infer-row {
+  border-top: 1px solid var(--border, #2a3140);
+  padding-top: 10px;
+}
+.table-infer-row__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.table-infer-row__cards {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.table-infer-row__cards--possible { margin-top: 6px; opacity: 0.85; }
+.table-infer-label {
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--muted, #9aa);
+  min-width: 64px;
+}
+
+/* Seat kind pills (AI vs human) on the board and inference rows. */
+.table-kind { font-size: 10px; letter-spacing: 0.5px; }
+.table-kind--ai { background: rgba(80, 160, 255, 0.18); }
+.table-kind--human { background: rgba(120, 220, 140, 0.18); }
+
+/* Lobby seat AI/Human toggle. */
+.table-seat-toggle { display: inline-flex; gap: 4px; }
+.table-seat-toggle .seat-kind {
+  cursor: pointer;
+  opacity: 0.45;
+  border: 1px solid transparent;
+}
+.table-seat-toggle .seat-kind.is-active {
+  opacity: 1;
+  border-color: currentColor;
+}

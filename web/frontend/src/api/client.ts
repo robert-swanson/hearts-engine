@@ -223,6 +223,82 @@ export interface LiveSnapshot {
   you: { client_id: string; seats: LiveMySeat[]; ai?: LiveAiSeat[] }
 }
 
+// --- Physical-table play (AI vs. real humans at a real table) ----------------
+
+export type TableStatus = 'lobby' | 'playing' | 'finished' | 'error'
+
+export interface TableSeat {
+  index: number
+  kind: 'empty' | 'human' | 'ai'
+  name: string
+  ai_type: string | null
+}
+
+// One of the 52 cards in an entry/play prompt, with whether it's a provably
+// impossible choice (greyed) and, if so, why.
+export interface TableCardState {
+  code: string
+  disabled: boolean
+  reason: string | null
+}
+
+// The single outstanding prompt the engine is blocked on. Exactly one kind is
+// active at a time; the operator answers it via a `respond` action.
+export type TablePending =
+  | { kind: 'pass_direction'; prompt: string; default: string; options: string[] }
+  | {
+      kind: 'deal_hand' | 'pass_received' | 'cards'
+      prompt: string
+      subject: string | null
+      num_cards: number
+      cards: TableCardState[]
+      error: string | null
+    }
+  | {
+      kind: 'human_play'
+      prompt: string
+      subject: string | null
+      player: string
+      trick_idx: number
+      lead_suit: string | null
+      allow_undo: boolean
+      cards: TableCardState[]
+      error: string | null
+    }
+  | { kind: 'pick_player'; prompt: string; players: { pid: string; name: string }[] }
+  | { kind: 'instruct'; prompt: string; message: string }
+
+export interface TablePublic {
+  player_order: string[]
+  players: Record<string, { name: string; kind: string; seat: number }>
+  round_idx: number
+  pass_direction: string
+  scores: Record<string, number>
+  current_trick: { trick_idx: number; leader: string | null; moves: LiveMove[] } | null
+  completed_tricks: number
+  ai_hands: Record<string, string[]>
+}
+
+// Per-player card knowledge for the inference panel: what they're known to hold
+// vs. what they could still be holding.
+export type TableInference = Record<
+  string,
+  { name: string; num_cards: number; guaranteed: string[]; possible: string[] }
+>
+
+export interface TableSnapshot {
+  type: 'state'
+  server_now?: number
+  code: string
+  status: TableStatus
+  error: string | null
+  seats: TableSeat[]
+  ai_type_options: AiTypeOption[]
+  pending: TablePending | null
+  public: TablePublic | null
+  inference: TableInference | null
+}
+
 export interface LiveStats {
   competition_id: string | null
   tournament_index: string | null
@@ -279,6 +355,13 @@ export const api = {
   liveTable: (code: string) =>
     getJSON<{ code: string; status: LiveStatus }>(`/api/live/tables/${encodeURIComponent(code)}`),
   aiTypes: () => getJSON<{ ai_types: AiTypeOption[] }>('/api/live/ai-types'),
+  createTableSession: async (): Promise<{ code: string }> => {
+    const res = await fetch('/api/table/sessions', { method: 'POST' })
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+    return res.json() as Promise<{ code: string }>
+  },
+  tableSession: (code: string) =>
+    getJSON<{ code: string; status: TableStatus }>(`/api/table/sessions/${encodeURIComponent(code)}`),
   login: async (team: string | null, password: string): Promise<LoginResult> => {
     const res = await fetch('/api/login', {
       method: 'POST',
