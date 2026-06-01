@@ -1,0 +1,539 @@
+/* Live play layout */
+
+.live-home {
+  display: flex;
+  gap: 28px;
+  align-items: stretch;
+  flex-wrap: wrap;
+}
+.live-home__divider {
+  width: 1px;
+  background: var(--sx-hairline, #333);
+  align-self: stretch;
+}
+
+.live-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.live-status--lobby { opacity: 0.85; }
+.live-status--playing { border-color: #4caf50; color: #4caf50; }
+.live-status--finished { border-color: #888; }
+
+.live-error {
+  color: #e57373;
+  font-size: 13px;
+}
+
+/* --- Lobby seat grid --- */
+.seat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+  margin-top: 8px;
+}
+.seat-card {
+  padding: 16px;
+  min-height: 150px;
+}
+.seat-card--filled { border-color: var(--sx-on-primary, #aaa); }
+.seat-card__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.seat-card__controls { display: flex; flex-direction: column; gap: 8px; }
+.seat-card__name { font-size: 18px; font-weight: 700; }
+.seat-kind--human { border-color: #64b5f6; color: #64b5f6; }
+.seat-kind--ai { border-color: #ba9; color: #cba; }
+
+/* --- Play view --- */
+.live-table-info {
+  display: flex;
+  gap: 36px;
+  margin: 12px 0 18px;
+  padding: 14px 22px;
+}
+.live-stat { font-size: 20px; font-weight: 700; }
+
+/* Square "table": 4 seats in the quadrants of a 2x2 grid in seating order,
+   with a central column holding the direction ring. Two seats per row keeps
+   the table compact on narrow screens. Fixed proportions + max-width so it
+   looks the same on mobile and desktop. */
+.live-table {
+  display: grid;
+  grid-template-columns: 1fr minmax(84px, 0.9fr) 1fr;
+  grid-template-rows: 1fr 1fr;
+  grid-template-areas:
+    "tl center tr"
+    "bl center br";
+  gap: 10px;
+  align-items: center;
+  justify-items: center;
+  width: 100%;
+  max-width: 420px;
+  margin: 0 auto 18px;
+}
+.live-seat-slot {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+.live-seat-slot--tl { grid-area: tl; }
+.live-seat-slot--tr { grid-area: tr; }
+.live-seat-slot--bl { grid-area: bl; }
+.live-seat-slot--br { grid-area: br; }
+.live-table__center {
+  grid-area: center;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: stretch;
+  justify-self: stretch;
+  min-height: 116px;
+}
+/* Clockwise direction ring fills the center cell behind the trick/pass text. */
+.live-table__ring {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 100%;
+  height: 100%;
+  max-width: 132px;
+  max-height: 132px;
+}
+.live-table__ring-track {
+  fill: none;
+  stroke: var(--sx-hairline, #3a3a3a);
+  stroke-width: 1.5;
+  opacity: 0.5;
+}
+.live-table__ring-head {
+  fill: #4caf50;
+  opacity: 0.85;
+}
+.live-table__center-text {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+  opacity: 0.85;
+  text-align: center;
+}
+.live-table__center-trick { font-weight: 700; }
+.live-table__center-pass {
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-size: 10px;
+  opacity: 0.8;
+}
+.live-seat {
+  border: 1px solid var(--sx-hairline, #333);
+  border-radius: 6px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  max-width: 150px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.live-seat--turn {
+  border-color: #4caf50;
+  box-shadow: 0 0 0 1px #4caf50 inset;
+}
+.live-seat__name {
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.live-seat__turn { border-color: #4caf50; color: #4caf50; }
+.live-seat__card {
+  min-height: 96px;
+  display: flex;
+  align-items: center;
+}
+.live-seat__empty {
+  width: 64px;
+  height: 90px;
+  border: 1px dashed var(--sx-hairline, #444);
+  border-radius: 6px;
+  opacity: 0.4;
+}
+.live-seat__score { font-size: 12px; text-align: center; }
+
+.live-winner { margin-bottom: 18px; }
+
+/* --- My hand panels --- */
+.my-seat { margin-top: 14px; }
+.my-seat__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.my-seat__prompt { border-color: #4caf50; color: #4caf50; }
+.hand-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px; /* gap between suit groups */
+  align-items: flex-start;
+}
+.hand-suit-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px; /* gap between cards within a suit */
+}
+
+/* --- Pass action bar -----------------------------------------------------
+   A live preview of the 3 picked cards plus a prominent confirm button.
+   On phones it sticks to the bottom of the viewport so it stays in reach
+   while the player scrolls a 13-card hand. */
+.pass-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 18px;
+  flex-wrap: wrap;
+}
+.pass-bar__preview {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 50px;
+}
+.pass-bar__hint {
+  font-size: 13px;
+}
+.pass-bar__slot {
+  width: 36px;
+  height: 50px;
+  border: 1px dashed var(--sx-hairline, #444);
+  border-radius: 6px;
+  opacity: 0.4;
+}
+.pass-bar__btn {
+  background: #4caf50;
+  border-color: #4caf50;
+  color: #0c2912;
+  font-weight: 700;
+  padding: 10px 20px;
+}
+.pass-bar__btn:disabled {
+  background: transparent;
+  color: inherit;
+  opacity: 0.6;
+}
+
+@media (max-width: 600px) {
+  .pass-bar {
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+    margin: 18px -16px 0;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+    gap: 12px;
+    background: var(--sx-canvas-night, #000);
+    border-top: 1px solid var(--sx-hairline, #333);
+    box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.35);
+  }
+  .pass-bar__preview {
+    flex: 0 0 auto;
+  }
+  .pass-bar__btn {
+    flex: 1 1 auto;
+    min-width: 0;
+    text-align: center;
+  }
+}
+
+/* --- Round history: a compact scoreboard with expandable rows --- */
+.live-scores {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 8px;
+  margin-bottom: 18px;
+  overflow: hidden;
+}
+/* Shared column grid: round | pass | one fractional column per player. */
+.live-scores__row {
+  display: grid;
+  grid-template-columns: minmax(3.4em, auto) 2.4em repeat(var(--player-cols, 4), minmax(0, 1fr));
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 7px 8px;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+}
+.live-scores__row--head {
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.22);
+}
+.live-scores__row--round {
+  background: none;
+  border: none;
+  cursor: pointer;
+  border-radius: 8px;
+}
+.live-scores__row--round:hover {
+  background: rgba(128, 128, 128, 0.07);
+}
+.live-scores__row--round.is-live {
+  background: rgba(76, 175, 80, 0.08);
+}
+.live-scores__row--total {
+  font-weight: 700;
+  border-top: 1px solid rgba(128, 128, 128, 0.22);
+  margin-top: 2px;
+}
+.live-scores__round {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.live-scores__rnum {
+  font-variant-numeric: tabular-nums;
+}
+.live-scores__pass {
+  text-align: center;
+  opacity: 0.8;
+  font-size: 12px;
+}
+.live-scores__pts {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.live-scores__pts.is-pending {
+  opacity: 0.45;
+}
+.live-scores__name {
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.live-scores__livedot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #4caf50;
+  box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.2);
+}
+.live-scores__detail {
+  padding: 6px 8px 14px;
+}
+.live-round__chevron {
+  display: inline-block;
+  transition: transform 0.15s ease;
+  opacity: 0.6;
+  font-size: 12px;
+}
+.live-round__chevron.is-open {
+  transform: rotate(90deg);
+}
+
+/* --- Round history (passing + completed tricks) --- */
+.live-history {
+  margin-bottom: 18px;
+}
+.live-history__title {
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  opacity: 0.65;
+  margin-bottom: 12px;
+}
+.live-pass-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 28px;
+  margin-bottom: 14px;
+}
+.live-pass-summary__leg {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.live-tricks {
+  overflow-x: auto;
+}
+
+/* --- Decision countdown --------------------------------------------------- */
+.decision-timer {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.decision-timer__bar {
+  width: 120px;
+  height: 6px;
+  background: rgba(128, 128, 128, 0.25);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.decision-timer__fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.2s linear, background-color 0.3s ease;
+}
+.decision-timer__fill--ok {
+  background: #1a7a3a;
+}
+.decision-timer__fill--warn {
+  background: #f5b301;
+}
+.decision-timer__fill--danger {
+  background: #d11a2a;
+}
+.decision-timer__secs {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: #555;
+  min-width: 30px;
+  text-align: right;
+}
+.decision-timer__secs--warn {
+  color: #b07d00;
+}
+.decision-timer__secs--danger {
+  color: #d11a2a;
+}
+
+/* --- AI activity log ------------------------------------------------------ */
+.ai-activity {
+  margin-top: 18px;
+}
+.ai-activity__title {
+  font-size: 12px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--muted, #888);
+  margin-bottom: 10px;
+}
+.ai-seat-log + .ai-seat-log {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(128, 128, 128, 0.2);
+}
+.ai-seat-log__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.ai-seat-log__state {
+  font-size: 11px;
+}
+.ai-seat-log__state--busy {
+  background: #f5b301;
+  color: #1a1a1a;
+}
+.ai-seat-log__state--idle {
+  background: rgba(128, 128, 128, 0.25);
+}
+.ai-log {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  font-family: 'SF Mono', 'Menlo', monospace;
+  font-size: 12.5px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.ai-log__line {
+  padding: 2px 0;
+  color: #444;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.08);
+}
+.ai-log__line--error {
+  color: #d11a2a;
+  font-weight: 600;
+}
+.ai-log__line--move,
+.ai-log__line--pass {
+  color: #1a7a3a;
+}
+.ai-log__line--think {
+  color: #2f7df6;
+}
+/* Real stdout from the bot — set apart with a left rule and dimmer ink. */
+.ai-log__line--print {
+  color: #555;
+  padding-left: 8px;
+  border-left: 2px solid #b9c6e0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.ai-log__timer {
+  font-weight: 700;
+}
+
+@media (max-width: 600px) {
+  .live-table-info {
+    gap: 20px;
+    padding: 12px 14px;
+  }
+  .live-stat {
+    font-size: 17px;
+  }
+  .live-home {
+    gap: 18px;
+  }
+  .live-home__divider {
+    display: none;
+  }
+  .live-pass-summary {
+    gap: 16px;
+  }
+  .hand-row {
+    gap: 12px;
+  }
+  /* Keep the table a compact square on phones: tighter gaps, a narrower center
+     column, and a smaller direction ring so two seats fit per row. */
+  .live-table {
+    grid-template-columns: 1fr minmax(58px, 0.6fr) 1fr;
+    gap: 6px;
+    max-width: 360px;
+  }
+  .live-seat {
+    padding: 8px 6px;
+    gap: 6px;
+    border-radius: 8px;
+  }
+  .live-seat__name {
+    font-size: 13px;
+    gap: 5px;
+  }
+  .live-seat__card {
+    min-height: 74px;
+  }
+  .live-seat__score {
+    font-size: 11px;
+  }
+  .live-table__center {
+    min-height: 96px;
+  }
+  .live-table__ring {
+    max-width: 104px;
+    max-height: 104px;
+  }
+}

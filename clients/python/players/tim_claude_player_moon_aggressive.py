@@ -86,7 +86,8 @@ class TimClaudePlayerMoonAggressive(ClaudePlayer):
         if score >= self.POST_RECEIVE_THRESHOLD:
             self.shooting = True
 
-    def get_move(self, trick: Trick, legal_moves: List[Card]) -> Card:
+    def get_move(self, trick: Trick, legal_moves: List[Card],
+                 move_request_latency_ms: Optional[int] = None) -> Card:
         if self.shooting:
             return self._shoot_move(trick, legal_moves)
         return super().get_move(trick, legal_moves)

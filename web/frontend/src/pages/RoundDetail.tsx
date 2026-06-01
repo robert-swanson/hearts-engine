@@ -5,6 +5,7 @@ import { useFetch } from '../lib/useFetch'
 import { nameResolver, displayString } from '../lib/playerId'
 import { PlayerName } from '../components/PlayerName'
 import { columnSeats, NUM_COLS, CENTER, passRecipient, passSource } from '../lib/seating'
+import { useColumnSlide } from '../lib/useColumnSlide'
 import { handBeforePlay, handBeforePassing, legalMovesBeforePlay } from '../lib/reconstruct'
 import { TrickRow } from '../components/TrickRow'
 import { HandOverlay, type HandOverlayData } from '../components/HandOverlay'
@@ -21,6 +22,8 @@ export function RoundDetail({ lobby = false }: { lobby?: boolean }) {
   const round = data?.rounds[Number(roundIdx)]
   const [selected, setSelected] = useState<string>('')
   const [overlay, setOverlay] = useState<HandOverlayData | null>(null)
+  // Click a column header to center on that player, with a scroll animation.
+  const { selectColumn, containerRef } = useColumnSlide(data?.player_order ?? [], selected, setSelected)
 
   // Default the selected player to the first seat once data loads.
   useEffect(() => {
@@ -136,18 +139,9 @@ export function RoundDetail({ lobby = false }: { lobby?: boolean }) {
       </h1>
 
       <div className="row-actions">
-        <label className="muted" style={{ fontSize: 13 }}>
-          Selected player:{' '}
-          <select className="btn" value={selected} onChange={(e) => setSelected(e.target.value)}>
-            {data.player_order.map((p) => (
-              <option key={p} value={p}>
-                {displayString(nameOf(p))}
-              </option>
-            ))}
-          </select>
-        </label>
         <span className="muted" style={{ fontSize: 12 }}>
-          Click any card to see that player's hand just before the play.
+          Click a player's column header to center the view on them · click any card to see that
+          player's hand just before the play.
         </span>
       </div>
 
@@ -194,18 +188,29 @@ export function RoundDetail({ lobby = false }: { lobby?: boolean }) {
         )}
       </div>
 
-      <div className="card-surface">
-        {/* Column header aligned with the trick rows below. */}
+      <div
+        className="card-surface"
+        ref={containerRef as React.RefObject<HTMLDivElement>}
+      >
+        {/* Column header aligned with the trick rows below; click to recenter. */}
         <div className="trick-row" style={{ borderBottom: '2px solid #ddd' }}>
           <div className="trick-row__label" />
           <div className="trick-row__grid">
-            {Array.from({ length: NUM_COLS }, (_, col) => (
-              <div key={col} className={`trick-col ${col === CENTER ? 'trick-col--center' : ''}`}>
-                <div className="trick-col__seat">
-                  <PlayerName d={nameOf(seats[col])} />
+            {Array.from({ length: NUM_COLS }, (_, col) => {
+              const isCenter = col === CENTER
+              return (
+                <div
+                  key={col}
+                  className={`trick-col ${isCenter ? 'trick-col--center' : 'trick-col--clickable'}`}
+                  onClick={isCenter ? undefined : () => selectColumn(col)}
+                  title={isCenter ? undefined : `Center on ${displayString(nameOf(seats[col]))}`}
+                >
+                  <div className="trick-col__seat">
+                    <PlayerName d={nameOf(seats[col])} />
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
           <div className="trick-row__pts" />
         </div>

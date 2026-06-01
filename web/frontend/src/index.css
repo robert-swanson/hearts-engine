@@ -262,4 +262,24 @@ button.btn.btn--active:hover {
   table.data td {
     padding: 6px 7px;
   }
+
+  /* Passing flow: keep both Left/Right and Across layouts compact on phones so
+     the cards, arrow, and player name stay legible without horizontal scroll. */
+  .passing-flow {
+    gap: 8px;
+  }
+  .passing-flow__cards {
+    flex-wrap: wrap;
+    min-height: 0;
+  }
+  .passing-flow__player,
+  .passing-across__player {
+    font-size: 14px;
+  }
+  .passing-flow__arrow-line {
+    font-size: 18px;
+  }
+  .passing-across__cols {
+    gap: 18px;
+  }
 }

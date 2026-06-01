@@ -123,6 +123,106 @@ export interface LobbyGameListEntry {
   rounds_played: number | null
 }
 
+// --- Live lobby play ---------------------------------------------------------
+
+export type LiveStatus = 'lobby' | 'playing' | 'finished'
+
+export interface LiveSeat {
+  index: number
+  seat_id: string
+  kind: 'empty' | 'human' | 'ai'
+  name: string
+  ai_type: string | null
+  mine: boolean
+}
+
+export interface LiveMove {
+  player: string
+  card: string
+}
+
+// A completed trick this round — same shape as TrickRecord, so the tournament
+// TrickRow component renders it unchanged.
+export interface LiveTrick extends TrickRecord {
+  trick_idx: number
+}
+
+// A full round's worth of public history (pass direction + completed tricks +
+// per-player round scores), so the live view can render an expandable table per
+// round rather than only the current round.
+export interface LiveRound {
+  round_idx: number
+  pass_direction: string | null
+  tricks: LiveTrick[]
+  scores: Record<string, number>
+  complete: boolean
+}
+
+export interface LivePublic {
+  status: LiveStatus
+  player_order: string[]
+  players: Record<string, { name: string; seat_id: string | null; kind: string }>
+  round_idx: number | null
+  pass_direction: string | null
+  scores: Record<string, number>
+  round_points: Record<string, number>
+  current_trick: { trick_idx: number | null; leader: string | null; moves: LiveMove[] }
+  completed_trick_count: number
+  completed_tricks: LiveTrick[]
+  rounds: LiveRound[]
+  turn: string | null
+  winner: string | null
+  final_points: Record<string, number>
+}
+
+export interface LivePending {
+  kind: 'move' | 'pass'
+  hand: string[]
+  legal_moves?: string[]
+  trick_idx?: number
+  pass_direction?: string
+  receiving_player?: string
+  deadline?: number    // server epoch seconds when the server will auto-decide
+  timeout_s?: number   // total budget, for sizing the countdown bar
+}
+
+export interface LiveMySeat {
+  seat_id: string
+  player_tag: string
+  pid: string
+  name: string
+  pending: LivePending | null
+  passed?: string[]    // cards I passed this round
+  received?: string[]  // cards passed to me this round
+  passed_by_round?: Record<string, string[]>    // round_idx -> cards I passed
+  received_by_round?: Record<string, string[]>  // round_idx -> cards passed to me
+}
+
+// One entry in an AI seat's activity log (so the browser running the bot can
+// watch what it's doing / whether it's hung).
+export interface LiveLogEntry {
+  t: number          // unix seconds
+  kind: 'game' | 'round' | 'think' | 'move' | 'pass' | 'error' | 'print'
+  text: string
+  pending: boolean   // open-ended action still in progress (render a live timer)
+}
+
+export interface LiveAiSeat {
+  seat_id: string
+  ai_type: string | null
+  name: string
+  pid: string | null
+  log: LiveLogEntry[]
+}
+
+export interface LiveSnapshot {
+  type: 'state'
+  server_now?: number  // server epoch seconds at send time (for clock-skew-free timers)
+  table: { code: string; status: LiveStatus; seats: LiveSeat[] }
+  public: LivePublic | null
+  you: { client_id: string; seats: LiveMySeat[]; ai?: LiveAiSeat[] }
+}
+
 export interface LiveStats {
   competition_id: string | null
   tournament_index: string | null
@@ -153,6 +253,11 @@ export interface LoginResult {
   is_admin: boolean
 }
 
+export interface AiTypeOption {
+  value: string
+  label: string
+}
+
 const tBase = (cid: string, index: string) =>
   `/api/competitions/${encodeURIComponent(cid)}/tournaments/${encodeURIComponent(index)}`
 
@@ -166,6 +271,14 @@ export const api = {
   lobbyGames: () => getJSON<LobbyGameListEntry[]>('/api/lobby/games'),
   lobbyGame: (gameId: string) => getJSON<GameDetail>(`/api/lobby/games/${encodeURIComponent(gameId)}`),
   live: () => getJSON<LiveStats>('/api/live'),
+  createLiveTable: async (): Promise<{ code: string }> => {
+    const res = await fetch('/api/live/tables', { method: 'POST' })
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+    return res.json() as Promise<{ code: string }>
+  },
+  liveTable: (code: string) =>
+    getJSON<{ code: string; status: LiveStatus }>(`/api/live/tables/${encodeURIComponent(code)}`),
+  aiTypes: () => getJSON<{ ai_types: AiTypeOption[] }>('/api/live/ai-types'),
   login: async (team: string | null, password: string): Promise<LoginResult> => {
     const res = await fetch('/api/login', {
       method: 'POST',
