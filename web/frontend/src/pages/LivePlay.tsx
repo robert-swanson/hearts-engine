@@ -287,15 +287,18 @@ function PlayView({
   const trickCard: Record<string, string> = {}
   for (const m of pub.current_trick.moves) trickCard[m.player] = m.card
 
-  // Arrange the 4 players around a square table in game (seating) order, with
-  // "me" (or the first seat) at the bottom and the rest clockwise from there.
+  // Arrange the 4 players in the quadrants of a 2x2 grid in game (seating)
+  // order, with "me" (or the first seat) bottom-left and the rest going
+  // clockwise from there (bl → tl → tr → br). A central column holds the
+  // direction ring. Packing two seats per row keeps the table compact on
+  // narrow mobile screens.
   const center = mySeats.find((s) => pub.player_order.includes(s.pid))?.pid ?? pub.player_order[0]
   const startIdx = Math.max(0, pub.player_order.indexOf(center))
-  const tablePos = ['bottom', 'left', 'top', 'right'] as const
+  const tablePos = ['bl', 'tl', 'tr', 'br'] as const
   const seatAt: Record<string, string> = {}
   pub.player_order.forEach((_, i) => {
     const pid = pub.player_order[(startIdx + i) % pub.player_order.length]
-    seatAt[tablePos[i] ?? 'bottom'] = pid
+    seatAt[tablePos[i] ?? 'bl'] = pid
   })
 
   return (
@@ -662,8 +665,16 @@ function MySeatPanel({ seat, send, serverOffset }: { seat: LiveMySeat; send: (a:
   const [picked, setPicked] = useState<string[]>([])
   const pending = seat.pending
 
-  // Reset pass selection whenever the pending prompt changes.
+  // Clear the pass selection whenever the prompt changes (e.g. a new round's
+  // pass, or moving on to play). Resetting during render — rather than via the
+  // component key, which is pinned to seat_id and never changes between rounds —
+  // avoids carrying stale picks the player no longer holds.
   const promptKey = pending ? `${pending.kind}-${pending.trick_idx ?? ''}-${pending.hand.join(',')}` : 'idle'
+  const [lastPromptKey, setLastPromptKey] = useState(promptKey)
+  if (promptKey !== lastPromptKey) {
+    setLastPromptKey(promptKey)
+    setPicked([])
+  }
 
   const hand = pending?.hand ?? []
   const legal = new Set(pending?.legal_moves ?? [])
@@ -687,7 +698,7 @@ function MySeatPanel({ seat, send, serverOffset }: { seat: LiveMySeat; send: (a:
   )
 
   return (
-    <div className="card-surface my-seat" key={promptKey}>
+    <div className="card-surface my-seat">
       <div className="my-seat__head">
         <strong>{seat.name}</strong>
         <span className="muted" style={{ fontSize: 12 }}> — your hand</span>
