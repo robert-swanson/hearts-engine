@@ -59,21 +59,22 @@
 }
 .live-stat { font-size: 20px; font-weight: 700; }
 
-/* Square "table": 4 seats arranged N/E/S/W in seating order, with a center
-   marker. Fixed 3x3 grid + max-width so it looks identical on any screen. */
+/* Square "table": 4 seats in the quadrants of a 2x2 grid in seating order,
+   with a central column holding the direction ring. Two seats per row keeps
+   the table compact on narrow screens. Fixed proportions + max-width so it
+   looks the same on mobile and desktop. */
 .live-table {
   display: grid;
-  grid-template-columns: 1fr minmax(96px, 1.1fr) 1fr;
-  grid-template-rows: auto 1fr auto;
+  grid-template-columns: 1fr minmax(84px, 0.9fr) 1fr;
+  grid-template-rows: 1fr 1fr;
   grid-template-areas:
-    ".    top    ."
-    "left center right"
-    ".    bottom .";
+    "tl center tr"
+    "bl center br";
   gap: 10px;
   align-items: center;
   justify-items: center;
   width: 100%;
-  max-width: 460px;
+  max-width: 420px;
   margin: 0 auto 18px;
 }
 .live-seat-slot {
@@ -81,10 +82,10 @@
   display: flex;
   justify-content: center;
 }
-.live-seat-slot--top { grid-area: top; }
-.live-seat-slot--left { grid-area: left; }
-.live-seat-slot--right { grid-area: right; }
-.live-seat-slot--bottom { grid-area: bottom; }
+.live-seat-slot--tl { grid-area: tl; }
+.live-seat-slot--tr { grid-area: tr; }
+.live-seat-slot--bl { grid-area: bl; }
+.live-seat-slot--br { grid-area: br; }
 .live-table__center {
   grid-area: center;
   position: relative;
@@ -506,9 +507,10 @@
   .hand-row {
     gap: 12px;
   }
-  /* Keep the table a compact square on phones: tighter gaps, smaller seat
-     boxes, and a smaller direction ring so left/center/right fit one row. */
+  /* Keep the table a compact square on phones: tighter gaps, a narrower center
+     column, and a smaller direction ring so two seats fit per row. */
   .live-table {
+    grid-template-columns: 1fr minmax(58px, 0.6fr) 1fr;
     gap: 6px;
     max-width: 360px;
   }
