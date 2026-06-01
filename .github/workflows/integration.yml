@@ -26,6 +26,11 @@ jobs:
         export PYTHONPATH="$(pwd):${PYTHONPATH}"
         python3 tests/table_game_test.py
 
+    - name: Run web table game adapter test
+      run: |
+        export PYTHONPATH="$(pwd):${PYTHONPATH}"
+        python3 tests/table_game_web_test.py
+
   competition:
     runs-on: macos-latest
 

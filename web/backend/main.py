@@ -13,6 +13,7 @@ from pydantic import BaseModel
 import auth
 import live
 import results
+import table
 
 app = FastAPI(title="Hearts Web UI")
 
@@ -156,6 +157,64 @@ async def live_ws(websocket: WebSocket, code: str, client_id: str):
         pass
     finally:
         table.clients.pop(conn_key, None)
+
+
+# --- Physical-table play (AI vs. real humans at a real table) ----------------
+
+
+@app.get("/api/table/ai-types")
+def table_ai_types():
+    return {"ai_types": table.ai_type_options()}
+
+
+@app.post("/api/table/sessions")
+def create_table_session():
+    session = table.manager.create()
+    return {"code": session.code}
+
+
+@app.get("/api/table/sessions/{code}")
+def get_table_session(code: str):
+    session = table.manager.get(code)
+    if session is None:
+        raise HTTPException(status_code=404, detail="table session not found")
+    return {"code": session.code, "status": session.status}
+
+
+@app.websocket("/api/table/ws/{code}")
+async def table_ws(websocket: WebSocket, code: str):
+    session = table.manager.get(code)
+    if session is None:
+        await websocket.close(code=4404)
+        return
+    await websocket.accept()
+    session.loop = asyncio.get_running_loop()
+    conn_key = uuid.uuid4().hex
+    session.clients[conn_key] = websocket
+    await websocket.send_json(session.snapshot())
+
+    async def err(msg: str):
+        await websocket.send_json({"type": "error", "message": msg})
+
+    try:
+        while True:
+            msg = await websocket.receive_json()
+            action = msg.get("action")
+            if action == "configure":
+                e = session.configure(msg.get("seats", []))
+            elif action == "start":
+                e = await asyncio.get_running_loop().run_in_executor(None, session.start)
+            elif action == "respond":
+                e = session.submit(msg.get("value"))
+            else:
+                e = f"Unknown action '{action}'"
+            if e:
+                await err(e)
+            await session._broadcast()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        session.clients.pop(conn_key, None)
 
 
 # Serve the built frontend (web/frontend/dist) when present, so prod is a single process.
