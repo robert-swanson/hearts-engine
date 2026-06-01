@@ -1,13 +1,17 @@
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, Header, HTTPException
+import asyncio
+import uuid
+
+from fastapi import FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import auth
+import live
 import results
 
 app = FastAPI(title="Hearts Web UI")
@@ -87,8 +91,71 @@ def lobby_game(game_id: str):
 
 
 @app.get("/api/live")
-def live():
+def live_stats():
     return results.get_live_stats()
+
+
+# --- Live lobby play ---------------------------------------------------------
+
+
+@app.get("/api/live/ai-types")
+def live_ai_types():
+    return {"ai_types": live.ai_type_options()}
+
+
+@app.post("/api/live/tables")
+def create_live_table():
+    table = live.manager.create()
+    return {"code": table.code}
+
+
+@app.get("/api/live/tables/{code}")
+def get_live_table(code: str):
+    table = live.manager.get(code)
+    if table is None:
+        raise HTTPException(status_code=404, detail="table not found")
+    return {"code": table.code, "status": table.status}
+
+
+@app.websocket("/api/live/ws/{code}")
+async def live_ws(websocket: WebSocket, code: str, client_id: str):
+    table = live.manager.get(code)
+    if table is None:
+        await websocket.close(code=4404)
+        return
+    await websocket.accept()
+    table.loop = asyncio.get_running_loop()
+    conn_key = uuid.uuid4().hex
+    table.clients[conn_key] = (websocket, client_id)
+    await websocket.send_json(table.snapshot_for(client_id))
+
+    async def err(msg: str):
+        await websocket.send_json({"type": "error", "message": msg})
+
+    try:
+        while True:
+            msg = await websocket.receive_json()
+            action = msg.get("action")
+            if action == "add_human":
+                e = table.add_human(msg["seat_id"], msg.get("name", ""), client_id)
+            elif action == "add_ai":
+                e = table.add_ai(msg["seat_id"], msg.get("ai_type") or live.default_ai_type(),
+                                 msg.get("name", ""), client_id)
+            elif action == "clear_seat":
+                e = table.clear_seat(msg["seat_id"])
+            elif action == "start":
+                e = await asyncio.get_running_loop().run_in_executor(None, table.start)
+            elif action == "decide":
+                e = table.submit_decision(msg["seat_id"], client_id, msg.get("value"))
+            else:
+                e = f"Unknown action '{action}'"
+            if e:
+                await err(e)
+            await table._broadcast()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        table.clients.pop(conn_key, None)
 
 
 # Serve the built frontend (web/frontend/dist) when present, so prod is a single process.

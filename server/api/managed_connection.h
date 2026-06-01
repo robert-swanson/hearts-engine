@@ -59,6 +59,11 @@ public:
         playerGameSessions.emplace(sessionId, std::move(parts));
     }
 
+    // Auto-move threshold applied to sessions that ConnectionListener auto-registers
+    // (the client-initiated path). The lobby server sets this to 0 so a human's turn
+    // never times out into a server-played move. Defaults to 2 (tournament behavior).
+    void setNewSessionAutoMoveThreshold(int threshold) { mNewSessionAutoMoveThreshold = threshold; }
+
     void ConnectionListener(
         const std::function<PlayerGameSessionID (ManagedConnection &, Message::Message)> &new_session_callback,
         const std::function<bool(const Message::Message &)> &is_new_session =
@@ -70,8 +75,10 @@ public:
                 if (is_new_session(message)) {
                     PlayerGameSessionID sessionID = new_session_callback(*this, message);
                     {
+                        auto parts = std::make_unique<SessionParts>();
+                        parts->autoMoveThreshold = mNewSessionAutoMoveThreshold;
                         std::lock_guard<std::mutex> lock(mSessionsMtx);
-                        playerGameSessions.emplace(sessionID, std::make_unique<SessionParts>());
+                        playerGameSessions.emplace(sessionID, std::move(parts));
                     }
                 } else {
                     auto sessionId = message.getJson()[Tags::SESSION_ID].get<PlayerGameSessionID>();
@@ -209,6 +216,7 @@ public:
 private:
     std::mutex mSessionsMtx;
     std::unordered_map<PlayerGameSessionID, std::unique_ptr<SessionParts>> playerGameSessions;
+    int mNewSessionAutoMoveThreshold = 2;
 };
 
 }

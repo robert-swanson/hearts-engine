@@ -6,12 +6,13 @@ interface CardProps {
   highlight?: boolean // winning card
   legal?: boolean // legal to play in this context (green outline)
   dim?: boolean // illegal in this context (faded)
+  selected?: boolean // chosen (e.g. picked to pass): raised + ringed
   onClick?: () => void
   size?: 'sm' | 'md'
   title?: string // tooltip override for clickable cards
 }
 
-export function Card({ code, highlight, legal, dim, onClick, size = 'md', title }: CardProps) {
+export function Card({ code, highlight, legal, dim, selected, onClick, size = 'md', title }: CardProps) {
   const { rank, suit } = parseCard(code)
   const red = isRedSuit(suit)
   const pts = cardPoints(code)
@@ -22,6 +23,7 @@ export function Card({ code, highlight, legal, dim, onClick, size = 'md', title 
     highlight ? 'card--win' : '',
     legal ? 'card--legal' : '',
     dim ? 'card--dim' : '',
+    selected ? 'card--selected' : '',
     onClick ? 'card--clickable' : '',
   ]
     .filter(Boolean)

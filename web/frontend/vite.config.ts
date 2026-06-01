@@ -6,7 +6,8 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      '/api': 'http://localhost:8000',
+      // `ws: true` lets the live-play WebSocket (/api/live/ws/...) proxy through too.
+      '/api': { target: 'http://localhost:8000', ws: true },
     },
   },
 })

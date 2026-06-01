@@ -101,7 +101,9 @@ class TimClaudeHeuristic(Player):
             self._last_winner = winner
             self._streak = 1
 
-    def handle_move(self, player, card: Card) -> None:
+    def handle_move(self, player, card: Card,
+                    report_latency_ms: Optional[int] = None,
+                    decided_move_latency_ms: Optional[int] = None) -> None:
         self.played_cards.add(card)
         if card.suit == Suit.HEARTS:
             self.hearts_broken = True
@@ -212,7 +214,8 @@ class TimClaudeHeuristic(Player):
         return scored[:3]
 
     # ── playing ────────────────────────────────────────────────────────────
-    def get_move(self, trick: Trick, legal_moves: List[Card]) -> Card:
+    def get_move(self, trick: Trick, legal_moves: List[Card],
+                 move_request_latency_ms: Optional[int] = None) -> Card:
         assert legal_moves
         try:
             return self._move_inner(trick, legal_moves)

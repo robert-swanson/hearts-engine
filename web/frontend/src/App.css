@@ -1,5 +1,8 @@
 .app {
   min-height: 100vh;
+  /* Guard against accidental horizontal overflow (clip doesn't break the
+     sticky header the way overflow:hidden/auto would). */
+  overflow-x: clip;
 }
 
 .app-header {
@@ -19,6 +22,7 @@
   font-weight: 700;
   color: #fff;
   text-decoration: none;
+  white-space: nowrap;
 }
 
 .app-nav {
@@ -36,10 +40,110 @@
   color: #fff;
 }
 
+/* Auth control + hamburger pinned to the right of the header. */
+.app-header__right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-left: auto;
+}
+
+/* Hamburger button — hidden on wide screens, shown on small ones. */
+.app-menu-btn {
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  width: 38px;
+  height: 38px;
+  padding: 9px 8px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 6px;
+  color: #fff;
+  cursor: pointer;
+}
+.app-menu-btn span {
+  display: block;
+  height: 2px;
+  width: 100%;
+  background: currentColor;
+  border-radius: 2px;
+}
+
+/* Side drawer — only rendered visibly on small screens. */
+.app-drawer {
+  display: none;
+}
+
 .app-main {
   max-width: 1100px;
   margin: 0 auto;
   padding: 24px;
+}
+
+@media (max-width: 760px) {
+  /* Collapse the inline nav into the hamburger-triggered drawer. */
+  .app-nav--inline {
+    display: none;
+  }
+  .app-menu-btn {
+    display: inline-flex;
+  }
+
+  .app-drawer {
+    display: block;
+  }
+  .app-drawer__backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+    z-index: 40;
+  }
+  .app-drawer__panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 72%;
+    max-width: 280px;
+    background: #1f2d3d;
+    border-left: 1px solid rgba(255, 255, 255, 0.12);
+    transform: translateX(100%);
+    transition: transform 0.22s ease;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    padding: 64px 26px 26px;
+  }
+  .app-drawer__panel a {
+    color: #fff;
+    text-decoration: none;
+    font-size: 16px;
+  }
+  .app-drawer__close {
+    position: absolute;
+    top: 14px;
+    right: 16px;
+    background: transparent;
+    border: none;
+    color: #fff;
+    font-size: 30px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+  }
+  .app-drawer--open .app-drawer__backdrop {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .app-drawer--open .app-drawer__panel {
+    transform: translateX(0);
+  }
 }
 
 @media (max-width: 600px) {
@@ -50,10 +154,6 @@
 
   .app-brand {
     font-size: 16px;
-  }
-
-  .app-nav {
-    gap: 12px;
   }
 
   .app-main {
