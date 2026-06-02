@@ -152,6 +152,17 @@ def compute_card_knowledge(
         )
         return 13 - played_by
 
+    # A played card is held by nobody now. Subtract these *before* the
+    # counting fixed point so guaranteed/possible stay consistent with
+    # ``num_cards`` (which already excludes played cards). Otherwise a card a
+    # player was guaranteed to hold but has since played would still be counted
+    # as "known", tripping the ``known == n`` branch and wrongly eliminating
+    # their genuinely-held remaining cards.
+    played = rnd.get_played_cards()
+    for p in players:
+        possible[p] -= played
+        guaranteed[p] -= played
+
     # Iterate process-of-elimination + counting to a fixed point.
     changed = True
     while changed:
@@ -173,12 +184,6 @@ def compute_card_knowledge(
             elif known + maybe == n and maybe > 0:
                 guarantee(player, list(possible[player]))
                 changed = True
-
-    # A played card is held by nobody now; keep holdable sets honest.
-    played = rnd.get_played_cards()
-    for p in players:
-        possible[p] -= played
-        guaranteed[p] -= played
 
     knowledge = {
         p: {
