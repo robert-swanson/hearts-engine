@@ -81,6 +81,7 @@ struct TournamentConfig {
     int autoMoveAfterTimeouts;            // consecutive receive timeouts before auto-move (0 = never)
     int moveTimeoutMs;                    // ms to wait for a client move before counting a timeout
     int maxConcurrentGamesPerTeam;        // 0 = unlimited
+    int gameParallelism;                  // worker threads running games at once (0 = auto)
     int64_t startAt;                      // unix timestamp
 };
 
@@ -105,6 +106,11 @@ static TournamentConfig loadConfig(int64_t startAt)
         ? std::stoi(ENV_STRING("MOVE_TIMEOUT_MS")) : 15000;
     cfg.maxConcurrentGamesPerTeam = EnvLoader->has("MAX_CONCURRENT_GAMES_PER_TEAM")
         ? std::stoi(ENV_STRING("MAX_CONCURRENT_GAMES_PER_TEAM")) : 0;
+    // Number of games to run in parallel. Games are I/O-bound (each move is a
+    // network round-trip to a remote client), so the sweet spot is well above
+    // the core count. 0 => pick a sensible default from hardware concurrency.
+    cfg.gameParallelism = EnvLoader->has("GAME_PARALLELISM")
+        ? std::stoi(ENV_STRING("GAME_PARALLELISM")) : 0;
 
     // Qualifying points: "10,5,3,1"
     std::string pts = ENV_STRING("QUALIFYING_POINTS");
@@ -449,6 +455,7 @@ static std::vector<GameResult> runGames(
     int autoMoveAfterTimeouts,
     std::chrono::milliseconds moveTimeout,
     int maxConcurrentPerTeam,
+    int gameParallelism,
     // Optional: invoked after each game completes with the partial results vector
     // (incomplete entries have an empty gameId). Used to write live progress.
     const std::function<void(const std::vector<GameResult>&)>& onProgress = {})
@@ -484,24 +491,51 @@ static std::vector<GameResult> runGames(
 
     if (maxConcurrentPerTeam <= 0)
     {
-        // No limit: start everything at once.
-        std::mutex resultMtx; // serializes results[] writes + onProgress reads
-        std::vector<std::future<GameResult>> futures;
-        futures.reserve(assignments.size());
-        for (size_t i = 0; i < assignments.size(); i++)
-            futures.push_back(std::async(std::launch::async, [&, i]() -> GameResult {
+        // No per-team limit: run games through a fixed-size worker pool instead of
+        // spawning one thread per game. The old thread-per-game model launched one
+        // std::async thread per assignment; with thousands of games that
+        // oversubscribed the scheduler and (with ~8 MB stacks each) could exhaust
+        // memory. It is also *slower*: a tournament's clients are a handful of
+        // processes that each multiplex many game sessions over one connection, so
+        // running far more games than there are client cores just starves some
+        // sessions of CPU time and leaves a long tail of stragglers limping along
+        // at the move timeout. Benchmarking 4 random-filler teams (see
+        // benchmark_tournament.py) shows the runtime is minimised near the core
+        // count and degrades sharply above it (8 workers: ~31s; 16: ~142s; 64:
+        // ~124s; 170: ~252s for 170 games). Default to hardware_concurrency and let
+        // GAME_PARALLELISM override it for setups with many independent clients.
+        // Workers pull the next assignment index atomically; each results[i] is
+        // written by exactly one worker, so no per-element locking is needed.
+        unsigned hw = std::thread::hardware_concurrency();
+        if (hw == 0) hw = 4;
+        int workers = gameParallelism > 0 ? gameParallelism : (int)hw;
+        workers = std::min<int>(workers, (int)assignments.size());
+        if (workers < 1) workers = 1;
+        LOG("[%s] running %d games across %d worker threads",
+            stage.c_str(), total, workers);
+
+        std::atomic<size_t> nextIdx{0};
+        std::mutex progressWriteMtx; // serializes onProgress reads of results[]
+        auto worker = [&]() {
+            while (true)
+            {
+                size_t i = nextIdx.fetch_add(1);
+                if (i >= assignments.size()) break;
                 auto r = runOneGame(assignments[i], resultsDir, sessionCounter,
                                     nullLogger, autoMoveAfterTimeouts, moveTimeout);
+                results[i] = r;             // unique index — no lock needed
+                completedCount++;
+                if (onProgress)
                 {
-                    std::lock_guard<std::mutex> g(resultMtx);
-                    results[i] = r;
-                    completedCount++;
-                    if (onProgress) onProgress(results);
+                    std::lock_guard<std::mutex> g(progressWriteMtx);
+                    onProgress(results);
                 }
-                return r;
-            }));
-        // Wait for all to finish; results[] is already populated under resultMtx.
-        for (auto& f : futures) f.get();
+            }
+        };
+        std::vector<std::thread> pool;
+        pool.reserve(workers);
+        for (int w = 0; w < workers; w++) pool.emplace_back(worker);
+        for (auto& t : pool) t.join();
         stopProgress();
         return results;
     }
@@ -627,9 +661,16 @@ static void writeResults(
         ? Common::Dates::GetStrDate('-') + "_" + Common::Dates::GetStrTime('-')
         : std::string{};
 
-    // Per-game detail files
+    // Per-game detail files. A game's detail is immutable once the game
+    // completes, so never rewrite an existing file. This is the difference
+    // between O(N) and O(N^2) disk I/O: writeResults is also called on every
+    // throttled live-progress tick, and re-emitting every completed game's JSON
+    // on each tick dominated large-tournament runtime (a 1600-game run spent
+    // hours rewriting the same files millions of times).
     auto writeGame = [&](const GameResult& gr) {
-        std::ofstream f(gDir / (gr.gameId + ".json"));
+        fs::path p = gDir / (gr.gameId + ".json");
+        if (fs::exists(p)) return;
+        std::ofstream f(p);
         f << compactHandArrays(gameResultToDetailJson(gr).dump(2));
     };
     for (const auto& g : qualifying) writeGame(g);
@@ -1050,7 +1091,7 @@ int main(int argc, char** argv)
     auto qualifyingResults = runGames(qAssignments, cfg.resultsDir, gameSessionCounter,
         nullLogger, cfg.autoMoveAfterTimeouts,
         std::chrono::milliseconds(cfg.moveTimeoutMs),
-        cfg.maxConcurrentGamesPerTeam,
+        cfg.maxConcurrentGamesPerTeam, cfg.gameParallelism,
         [&](const std::vector<GameResult>& partial) { writeProgress(partial, {}); });
 
     LOG("Qualifying complete. Tabulating scores...");
@@ -1180,7 +1221,7 @@ int main(int argc, char** argv)
     auto finalsResults = runGames(fAssignments, cfg.resultsDir, gameSessionCounter,
         nullLogger, cfg.autoMoveAfterTimeouts,
         std::chrono::milliseconds(cfg.moveTimeoutMs),
-        cfg.maxConcurrentGamesPerTeam,
+        cfg.maxConcurrentGamesPerTeam, cfg.gameParallelism,
         [&](const std::vector<GameResult>& partial) { writeProgress(qualifyingResults, partial); });
 
     // ── Notify clients and write results ────────────────────────────────────
