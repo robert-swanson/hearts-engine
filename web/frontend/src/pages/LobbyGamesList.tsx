@@ -10,13 +10,27 @@ function formatTime(iso: string | null): string {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString()
 }
 
+// Standalone page (kept for direct /lobby links); the list itself lives in
+// LobbyGamesSection so it can also be embedded under Live play.
 export function LobbyGamesList() {
+  return (
+    <div>
+      <LobbyGamesSection headingLevel="h1" />
+    </div>
+  )
+}
+
+// The lobby-games list, reusable as its own page or embedded (e.g. under the
+// Live play landing). `headingLevel` controls whether the title is an <h1>
+// (standalone page) or an <h2> (embedded under another page's <h1>).
+export function LobbyGamesSection({ headingLevel = 'h2' }: { headingLevel?: 'h1' | 'h2' }) {
   const { data, loading, error } = useFetch(() => api.lobbyGames(), [])
   const navigate = useNavigate()
+  const Heading = headingLevel
 
   return (
     <div>
-      <h1>Lobby games</h1>
+      <Heading>Lobby games</Heading>
       <p className="muted" style={{ marginTop: -8 }}>
         Practice games played on the regular server (outside any tournament).
       </p>
