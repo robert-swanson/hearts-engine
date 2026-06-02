@@ -36,6 +36,11 @@ jobs:
         export PYTHONPATH="$(pwd):${PYTHONPATH}"
         python3 tests/table_game_inference_test.py
 
+    - name: Run SDK resilience test
+      run: |
+        export PYTHONPATH="$(pwd):${PYTHONPATH}"
+        python3 tests/sdk_resilience_test.py
+
   competition:
     runs-on: macos-latest
 

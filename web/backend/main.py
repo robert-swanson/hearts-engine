@@ -139,6 +139,10 @@ def upload_live_client(code: str, req: UploadClientRequest):
         option = table.register_upload(req.source, req.filename or "")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    # Push the updated roster to every connected client so the new option shows
+    # up in the seat picker immediately (otherwise it only appears on the next
+    # WS action, e.g. clicking Clear).
+    table.schedule_broadcast()
     return option
 
 
