@@ -121,15 +121,22 @@ def get_live_table(code: str):
 
 
 @app.websocket("/api/live/ws/{code}")
-async def live_ws(websocket: WebSocket, code: str, client_id: str):
+async def live_ws(websocket: WebSocket, code: str, client_id: Optional[str] = None):
+    # `client_id` is Optional (not a required str) on purpose: a *missing*
+    # required query param makes FastAPI reject the handshake before we can
+    # accept it, which the ASGI layer logs as a bare "403 Forbidden" and the
+    # client only sees as a generic abnormal close it then reconnects to
+    # forever. Accept first and close with an application code instead, so the
+    # logs stay quiet and the client gets a reason it can stop on.
     table = live.manager.get(code)
-    if table is None:
+    if table is None or not client_id:
         # Accept first, *then* close with an application code. Closing before
         # accept makes the ASGI layer reject the handshake with HTTP 403, which
         # (a) spams the logs and (b) hides the reason from the client, whose
         # onclose only sees a generic abnormal close and reconnects forever.
         await websocket.accept()
-        await websocket.close(code=4404, reason="table not found")
+        reason = "table not found" if table is None else "missing client_id"
+        await websocket.close(code=4404, reason=reason)
         return
     await websocket.accept()
     table.loop = asyncio.get_running_loop()
