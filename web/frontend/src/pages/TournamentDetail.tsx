@@ -18,8 +18,20 @@ import {
 
 const PAGE_SIZE = 50
 
-type SortKey = 'team' | 'player' | 'gamesCount' | 'gamesWon' | 'game' | 'tournament' | 'moon'
+type SortKey =
+  | 'rank'
+  | 'team'
+  | 'player'
+  | 'avgTournament'
+  | 'gamesCount'
+  | 'gamesWon'
+  | 'tournament'
+  | 'avgGame'
+  | 'moon'
+// Columns that compare as text (localeCompare).
 const TEXT_SORTS: SortKey[] = ['team', 'player']
+// Columns whose natural/default direction is ascending (smallest/best first).
+const ASC_DEFAULT_SORTS: SortKey[] = ['team', 'player', 'rank']
 
 export function TournamentDetail() {
   const { cid = '', index = '' } = useParams()
@@ -34,8 +46,8 @@ export function TournamentDetail() {
   const selectedTPKeys = params.getAll('tp') // "team/tag"
   const minMoon = Number(params.get('minMoon')) || 0
   const page = Math.max(0, Number(params.get('page')) || 0)
-  const sortKey = (params.get('sort') as SortKey) || 'tournament'
-  const sortAsc = params.get('dir') ? params.get('dir') === 'asc' : TEXT_SORTS.includes(sortKey)
+  const sortKey = (params.get('sort') as SortKey) || 'rank'
+  const sortAsc = params.get('dir') ? params.get('dir') === 'asc' : ASC_DEFAULT_SORTS.includes(sortKey)
 
   // Merge a set of changes into the URL search params (preserving the rest).
   const patch = (changes: Record<string, string | string[] | null>) => {
@@ -83,6 +95,28 @@ export function TournamentDetail() {
 
   const filtered = useMemo(() => filterGames(games, filter), [games, filter])
   const agg = useMemo(() => aggregate(filtered), [filtered])
+
+  // Overall rank by total tournament points across ALL games in this stage
+  // (filters do NOT affect it) — so the "Rank" column is a stable reference for
+  // who's ahead in the tournament regardless of the subset being viewed.
+  const rankByPlayer = useMemo(() => {
+    const full = aggregate(games)
+    const ids = Object.keys(full.tournamentPointsByPlayer).sort((a, b) => {
+      const d = (full.tournamentPointsByPlayer[b] ?? 0) - (full.tournamentPointsByPlayer[a] ?? 0)
+      if (d !== 0) return d
+      return playerSortKey(nameOf(a)).localeCompare(playerSortKey(nameOf(b)))
+    })
+    const m: Record<string, number> = {}
+    let rank = 0
+    let prevPts: number | null = null
+    ids.forEach((id, i) => {
+      const pts = full.tournamentPointsByPlayer[id] ?? 0
+      if (prevPts === null || pts !== prevPts) rank = i + 1
+      m[id] = rank
+      prevPts = pts
+    })
+    return m
+  }, [games, nameOf])
 
   // For each candidate team filter, the team that would rank #1 if that filter
   // were added to the current set — or null if it would leave no games.
@@ -140,18 +174,28 @@ export function TournamentDetail() {
     }
   }
 
+  // Per-game averages over the currently-matching subset (0 when no games).
+  const avgOf = (totals: Record<string, number>, p: string) => {
+    const n = agg.gamesByPlayer[p] ?? 0
+    return n ? (totals[p] ?? 0) / n : 0
+  }
+
   const aggRows = Object.keys(agg.gamePointsByPlayer)
     .concat(Object.keys(agg.tournamentPointsByPlayer))
     .filter((v, i, a) => a.indexOf(v) === i)
     .sort((a, b) => {
       let cmp: number
-      if (sortKey === 'team') cmp = (nameOf(a).team ?? '').localeCompare(nameOf(b).team ?? '')
+      if (sortKey === 'rank') cmp = (rankByPlayer[a] ?? Infinity) - (rankByPlayer[b] ?? Infinity)
+      else if (sortKey === 'team') cmp = (nameOf(a).team ?? '').localeCompare(nameOf(b).team ?? '')
       else if (sortKey === 'player') cmp = playerSortKey(nameOf(a)).localeCompare(playerSortKey(nameOf(b)))
+      else if (sortKey === 'avgTournament')
+        cmp = avgOf(agg.tournamentPointsByPlayer, a) - avgOf(agg.tournamentPointsByPlayer, b)
       else if (sortKey === 'gamesCount') cmp = (agg.gamesByPlayer[a] ?? 0) - (agg.gamesByPlayer[b] ?? 0)
       else if (sortKey === 'gamesWon') cmp = (agg.gamesWonByPlayer[a] ?? 0) - (agg.gamesWonByPlayer[b] ?? 0)
-      else if (sortKey === 'game') cmp = (agg.gamePointsByPlayer[a] ?? 0) - (agg.gamePointsByPlayer[b] ?? 0)
       else if (sortKey === 'tournament')
         cmp = (agg.tournamentPointsByPlayer[a] ?? 0) - (agg.tournamentPointsByPlayer[b] ?? 0)
+      else if (sortKey === 'avgGame')
+        cmp = avgOf(agg.gamePointsByPlayer, a) - avgOf(agg.gamePointsByPlayer, b)
       else cmp = (agg.moonShotsByPlayer[a] ?? 0) - (agg.moonShotsByPlayer[b] ?? 0)
       if (cmp === 0) cmp = playerSortKey(nameOf(a)).localeCompare(playerSortKey(nameOf(b)))
       return sortAsc ? cmp : -cmp
@@ -246,11 +290,18 @@ export function TournamentDetail() {
         <table className="data">
           <thead>
             <tr>
+              <SortTh label="Rank" col="rank" sortKey={sortKey} sortAsc={sortAsc} onSort={toggleSort} />
               <SortTh label="Team" col="team" sortKey={sortKey} sortAsc={sortAsc} onSort={toggleSort} />
               <SortTh label="Player" col="player" sortKey={sortKey} sortAsc={sortAsc} onSort={toggleSort} />
+              <SortTh
+                label="Avg tournament points"
+                col="avgTournament"
+                sortKey={sortKey}
+                sortAsc={sortAsc}
+                onSort={toggleSort}
+              />
               <SortTh label="Total games" col="gamesCount" sortKey={sortKey} sortAsc={sortAsc} onSort={toggleSort} />
               <SortTh label="Games won" col="gamesWon" sortKey={sortKey} sortAsc={sortAsc} onSort={toggleSort} />
-              <SortTh label="Total game points" col="game" sortKey={sortKey} sortAsc={sortAsc} onSort={toggleSort} />
               <SortTh
                 label="Total tournament points"
                 col="tournament"
@@ -258,6 +309,7 @@ export function TournamentDetail() {
                 sortAsc={sortAsc}
                 onSort={toggleSort}
               />
+              <SortTh label="Avg game score" col="avgGame" sortKey={sortKey} sortAsc={sortAsc} onSort={toggleSort} />
               <SortTh label="Moon shots" col="moon" sortKey={sortKey} sortAsc={sortAsc} onSort={toggleSort} />
             </tr>
           </thead>
@@ -266,12 +318,14 @@ export function TournamentDetail() {
               const d = nameOf(p)
               return (
                 <tr key={p}>
+                  <td>{rankByPlayer[p] ?? '—'}</td>
                   <td style={{ color: d.color, fontWeight: 600 }}>{d.team ?? '—'}</td>
                   <td><PlayerName d={d} /></td>
+                  <td>{avgOf(agg.tournamentPointsByPlayer, p).toFixed(2)}</td>
                   <td>{agg.gamesByPlayer[p] ?? 0}</td>
                   <td>{agg.gamesWonByPlayer[p] ?? 0}</td>
-                  <td>{agg.gamePointsByPlayer[p] ?? 0}</td>
                   <td>{agg.tournamentPointsByPlayer[p] ?? 0}</td>
+                  <td>{avgOf(agg.gamePointsByPlayer, p).toFixed(2)}</td>
                   <td>{agg.moonShotsByPlayer[p] ?? 0}</td>
                 </tr>
               )
