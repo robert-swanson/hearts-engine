@@ -41,6 +41,11 @@ jobs:
         export PYTHONPATH="$(pwd):${PYTHONPATH}"
         python3 tests/sdk_resilience_test.py
 
+    - name: Run tournament timing test
+      run: |
+        export PYTHONPATH="$(pwd):${PYTHONPATH}"
+        python3 tests/tournament_timing_test.py
+
   competition:
     runs-on: macos-latest
 
