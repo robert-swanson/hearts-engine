@@ -53,6 +53,19 @@ def competition(competition_id: str):
     return detail
 
 
+@app.get("/api/live/tournament")
+def live_tournament():
+    """Live status of the next/registering tournament across all competitions
+    (countdown target + currently-registered players). {} when none is open."""
+    return results.get_latest_live_status() or {}
+
+
+@app.get("/api/competitions/{competition_id}/live")
+def competition_live(competition_id: str):
+    """Live registration/countdown status for one competition. {} when none."""
+    return results.get_live_status(competition_id) or {}
+
+
 @app.get("/api/competitions/{competition_id}/tournaments/{index}")
 def tournament(competition_id: str, index: str):
     summary = results.get_summary(competition_id, index)

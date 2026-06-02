@@ -272,6 +272,41 @@ def get_competition(competition_id: str) -> Optional[dict]:
     }
 
 
+# ─── Live tournament status ────────────────────────────────────────────────────
+
+def get_live_status(competition_id: str) -> Optional[dict]:
+    """Live registration/countdown status for a competition. The tournament server
+    writes <results>/<competition_id>/live.json while a registration window is open
+    (state, tournament_index, start_at, registered players). None if absent."""
+    comp_dir = _safe_child(results_dir(), competition_id)
+    if comp_dir is None:
+        return None
+    data = _read_json(comp_dir / "live.json")
+    return data if isinstance(data, dict) else None
+
+
+def get_latest_live_status() -> Optional[dict]:
+    """The most recently-updated live.json across all competitions, so the UI can
+    surface "the next tournament" without first knowing which competition is live."""
+    base = results_dir()
+    best: Optional[dict] = None
+    best_updated = -1
+    try:
+        children = list(base.iterdir())
+    except FileNotFoundError:
+        return None
+    for child in children:
+        if not child.is_dir():
+            continue
+        data = _read_json(child / "live.json")
+        if isinstance(data, dict):
+            updated = data.get("updated_at", 0) or 0
+            if updated > best_updated:
+                best_updated = updated
+                best = data
+    return best
+
+
 # ─── Tournament / game / rules ─────────────────────────────────────────────────
 
 def get_summary(competition_id: str, index: str) -> Optional[dict]:

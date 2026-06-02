@@ -38,6 +38,20 @@ export interface CompetitionDetail {
   tournaments: TournamentRow[]
 }
 
+export interface LiveTournamentRegistrant {
+  team: string
+  tag: string
+}
+
+export interface LiveTournament {
+  competition_id: string
+  tournament_index: string
+  state: 'registering' | 'running'
+  start_at: number
+  updated_at: number
+  registered: LiveTournamentRegistrant[]
+}
+
 export interface TournamentRules {
   competition_id: string
   tournament_index: string
@@ -359,6 +373,8 @@ const tBase = (cid: string, index: string) =>
 export const api = {
   competitions: () => getJSON<CompetitionListEntry[]>('/api/competitions'),
   competition: (cid: string) => getJSON<CompetitionDetail>(`/api/competitions/${encodeURIComponent(cid)}`),
+  // Live tournament status: `{}` (no fields) when no registration window is open.
+  liveTournament: () => getJSON<Partial<LiveTournament>>('/api/live/tournament'),
   tournament: (cid: string, index: string) => getJSON<TournamentSummary>(tBase(cid, index)),
   rules: (cid: string, index: string) => getJSON<TournamentRules>(`${tBase(cid, index)}/rules`),
   game: (cid: string, index: string, gameId: string) =>
