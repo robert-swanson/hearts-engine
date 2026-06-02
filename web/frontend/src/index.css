@@ -84,6 +84,70 @@ table.data tbody tr.row-link a {
   color: #4a5a6a;
 }
 
+/* ---- Filter chips (inclusion / exclusion) ----------------------------- */
+.filter-group {
+  margin-bottom: 4px;
+}
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+/* Separates applied filters (above) from the available ones (below). */
+.filter-divider {
+  flex-basis: 100%;
+  height: 0;
+  border-top: 1px dashed #cdd6e2;
+  margin: 8px 0;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  background: #eef2f7;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 3px 10px;
+  color: #4a5a6a;
+  cursor: pointer;
+}
+.chip:hover {
+  border-color: #b9c6d4;
+}
+.chip__badge {
+  font-weight: 700;
+  font-size: 11px;
+  opacity: 0.85;
+}
+.chip--include {
+  background: #e7f6ec;
+  border-color: #2e9e5b;
+  color: #1c6b3c;
+}
+.chip--include .chip__badge {
+  color: #2e9e5b;
+}
+.chip--exclude {
+  background: #fdeaea;
+  border-color: #d14343;
+  color: #8f2a2a;
+}
+.chip--exclude .chip__badge {
+  color: #d14343;
+}
+.chip-key {
+  font-weight: 700;
+}
+.chip-key--include {
+  color: #1c6b3c;
+}
+.chip-key--exclude {
+  color: #8f2a2a;
+}
+
 .progress {
   margin: 14px 0;
 }

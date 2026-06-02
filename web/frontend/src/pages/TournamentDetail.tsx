@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, type ReactNode } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api, gamePlayers, type GameSummary } from '../api/client'
 import { useFetch } from '../lib/useFetch'
@@ -42,8 +42,14 @@ export function TournamentDetail() {
   // shareable and survives back/forward navigation.
   const [params, setParams] = useSearchParams()
   const stage: 'qualifying' | 'finals' = params.get('stage') === 'finals' ? 'finals' : 'qualifying'
-  const selectedTeams = params.getAll('team')
-  const selectedTPKeys = params.getAll('tp') // "team/tag"
+  const selectedTeams = params.getAll('team') // inclusion: game must contain
+  const excludedTeams = params.getAll('xteam') // exclusion: game must not contain
+  const selectedTPKeys = params.getAll('tp') // "team/tag", inclusion
+  const excludedTPKeys = params.getAll('xtp') // "team/tag", exclusion
+  // When on, clicking an unfiltered chip adds it as an *exclusion*; otherwise as
+  // an inclusion. Only affects not-yet-applied chips, so include and exclude
+  // filters can coexist.
+  const excludeMode = params.get('mode') === 'exclude'
   const minMoon = Number(params.get('minMoon')) || 0
   const page = Math.max(0, Number(params.get('page')) || 0)
   const sortKey = (params.get('sort') as SortKey) || 'rank'
@@ -69,19 +75,31 @@ export function TournamentDetail() {
   const teams = useMemo(() => allTeams(games), [games])
   const teamPlayers = useMemo(() => allTeamPlayers(games), [games])
 
+  const keysToTPs = (keys: string[]): TeamPlayer[] =>
+    keys.map((k) => {
+      const [team, tag] = k.split('/')
+      return { team, tag }
+    })
+
   const selectedTPs: TeamPlayer[] = useMemo(
-    () =>
-      selectedTPKeys.map((k) => {
-        const [team, tag] = k.split('/')
-        return { team, tag }
-      }),
+    () => keysToTPs(selectedTPKeys),
     // re-derive only when the URL list changes
     [selectedTPKeys.join('|')],
   )
+  const excludedTPs: TeamPlayer[] = useMemo(
+    () => keysToTPs(excludedTPKeys),
+    [excludedTPKeys.join('|')],
+  )
 
   const filter: GameFilter = useMemo(
-    () => ({ teams: selectedTeams, teamPlayers: selectedTPs, minMoonShots: minMoon }),
-    [selectedTeams.join('|'), selectedTPs, minMoon],
+    () => ({
+      teams: selectedTeams,
+      excludeTeams: excludedTeams,
+      teamPlayers: selectedTPs,
+      excludeTeamPlayers: excludedTPs,
+      minMoonShots: minMoon,
+    }),
+    [selectedTeams.join('|'), excludedTeams.join('|'), selectedTPs, excludedTPs, minMoon],
   )
 
   const nameOf = useMemo(() => {
@@ -118,48 +136,70 @@ export function TournamentDetail() {
     return m
   }, [games, nameOf])
 
-  // For each candidate team filter, the team that would rank #1 if that filter
-  // were added to the current set — or null if it would leave no games.
+  // For each not-yet-applied team chip, the team that would rank #1 if that chip
+  // were added in the current mode (include vs exclude) — or null if it would
+  // leave no games. Applied chips get no prediction (their effect is already in
+  // the table). The hint respects the mode so it previews the right subset.
   const teamPredictions = useMemo(() => {
     const m: Record<string, string | null> = {}
     for (const t of teams) {
-      const nextTeams = selectedTeams.includes(t) ? selectedTeams : [...selectedTeams, t]
-      const sub = filterGames(games, { ...filter, teams: nextTeams })
+      if (selectedTeams.includes(t) || excludedTeams.includes(t)) {
+        m[t] = null
+        continue
+      }
+      const nextFilter: GameFilter = excludeMode
+        ? { ...filter, excludeTeams: [...excludedTeams, t] }
+        : { ...filter, teams: [...selectedTeams, t] }
+      const sub = filterGames(games, nextFilter)
       m[t] = sub.length ? topTeam(sub) : null
     }
     return m
-  }, [games, teams, filter, selectedTeams.join('|')])
+  }, [games, teams, filter, excludeMode, selectedTeams.join('|'), excludedTeams.join('|')])
 
-  // For each candidate team+player filter, the player ("team/tag") that would
-  // rank #1 if that filter were added — or null if it would leave no games.
+  // Same idea for the team+player chips: the player ("team/tag") that would lead
+  // if this chip were added in the current mode.
   const tpPredictions = useMemo(() => {
     const m: Record<string, string | null> = {}
     for (const tp of teamPlayers) {
       const key = teamPlayerId(tp)
-      const has = selectedTPKeys.includes(key)
-      const nextTPs = has ? selectedTPs : [...selectedTPs, tp]
-      const sub = filterGames(games, { ...filter, teamPlayers: nextTPs })
+      if (selectedTPKeys.includes(key) || excludedTPKeys.includes(key)) {
+        m[key] = null
+        continue
+      }
+      const nextFilter: GameFilter = excludeMode
+        ? { ...filter, excludeTeamPlayers: [...excludedTPs, tp] }
+        : { ...filter, teamPlayers: [...selectedTPs, tp] }
+      const sub = filterGames(games, nextFilter)
       m[key] = sub.length ? topTeamPlayer(sub) : null
     }
     return m
-  }, [games, teamPlayers, filter, selectedTPKeys.join('|')])
+  }, [games, teamPlayers, filter, excludeMode, selectedTPKeys.join('|'), excludedTPKeys.join('|')])
 
   if (loading) return <p className="muted">Loading…</p>
   if (error) return <p className="muted">Error: {error}</p>
   if (!data) return <p className="muted">Not found.</p>
 
-  const toggleTeam = (t: string) => {
-    const next = selectedTeams.includes(t)
-      ? selectedTeams.filter((x) => x !== t)
-      : [...selectedTeams, t]
-    patch({ team: next, page: null })
+  type FilterState = 'include' | 'exclude' | 'off'
+  const teamState = (t: string): FilterState =>
+    selectedTeams.includes(t) ? 'include' : excludedTeams.includes(t) ? 'exclude' : 'off'
+  const tpState = (key: string): FilterState =>
+    selectedTPKeys.includes(key) ? 'include' : excludedTPKeys.includes(key) ? 'exclude' : 'off'
+
+  // Clicking a chip applies it (in the current mode) when off, or removes it when
+  // already applied — whether it was an include or an exclude filter. The mode
+  // only governs not-yet-applied chips, so includes and excludes can coexist.
+  const cycleTeam = (t: string) => {
+    if (selectedTeams.includes(t)) patch({ team: selectedTeams.filter((x) => x !== t), page: null })
+    else if (excludedTeams.includes(t)) patch({ xteam: excludedTeams.filter((x) => x !== t), page: null })
+    else if (excludeMode) patch({ xteam: [...excludedTeams, t], page: null })
+    else patch({ team: [...selectedTeams, t], page: null })
   }
 
-  const toggleTP = (key: string) => {
-    const next = selectedTPKeys.includes(key)
-      ? selectedTPKeys.filter((x) => x !== key)
-      : [...selectedTPKeys, key]
-    patch({ tp: next, page: null })
+  const cycleTP = (key: string) => {
+    if (selectedTPKeys.includes(key)) patch({ tp: selectedTPKeys.filter((x) => x !== key), page: null })
+    else if (excludedTPKeys.includes(key)) patch({ xtp: excludedTPKeys.filter((x) => x !== key), page: null })
+    else if (excludeMode) patch({ xtp: [...excludedTPKeys, key], page: null })
+    else patch({ tp: [...selectedTPKeys, key], page: null })
   }
 
   const pageGames = filtered.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE)
@@ -241,50 +281,48 @@ export function TournamentDetail() {
           </label>
         </div>
 
-        <div className="muted" style={{ fontSize: 13, marginBottom: 6 }}>
-          Teams (game must include all checked) — label shows who'd lead if added:
-        </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
-          {teams.map((t) => {
-            const lead = teamPredictions[t]
-            const checked = selectedTeams.includes(t)
-            return (
-              <label key={t} className="pill" style={{ cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  onChange={() => toggleTeam(t)}
-                  style={{ marginRight: 5 }}
-                />
-                <span style={{ color: teamColor(t), fontWeight: 600 }}>{t}</span>
-                <FilterLead text={lead === null ? '∅' : lead} />
-              </label>
-            )
-          })}
+        <div className="filter-mode" style={{ marginBottom: 12 }}>
+          <label className="muted" style={{ fontSize: 13, cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={excludeMode}
+              onChange={() => patch({ mode: excludeMode ? null : 'exclude' })}
+              style={{ marginRight: 6 }}
+            />
+            Exclude mode — chips you click next will <strong>exclude</strong> instead of include.
+            Filters already applied keep their type, so the two can be combined.
+          </label>
         </div>
 
         <div className="muted" style={{ fontSize: 13, marginBottom: 6 }}>
-          Players by team (game must include all checked, any slot) — label shows who'd lead if added:
+          Teams — <span className="chip-key chip-key--include">required</span>{' '}
+          <span className="chip-key chip-key--exclude">excluded</span>; click a chip to toggle.
+          Hints show who'd lead if added.
         </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-          {teamPlayers.map((tp) => {
-            const key = teamPlayerId(tp)
+        <FilterChipRow
+          items={teams}
+          stateOf={teamState}
+          onClick={cycleTeam}
+          renderLabel={(t) => <span style={{ color: teamColor(t), fontWeight: 600 }}>{t}</span>}
+          renderHint={(t) => {
+            const lead = teamPredictions[t]
+            return <FilterLead text={lead === null ? '∅' : lead} />
+          }}
+        />
+
+        <div className="muted" style={{ fontSize: 13, margin: '14px 0 6px' }}>
+          Players by team (any slot) — click a chip to toggle; same include/exclude rules.
+        </div>
+        <FilterChipRow
+          items={teamPlayers.map((tp) => teamPlayerId(tp))}
+          stateOf={tpState}
+          onClick={cycleTP}
+          renderLabel={(key) => <PlayerName d={nameOf(key)} />}
+          renderHint={(key) => {
             const lead = tpPredictions[key]
-            const checked = selectedTPKeys.includes(key)
-            return (
-              <label key={key} className="pill" style={{ cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  onChange={() => toggleTP(key)}
-                  style={{ marginRight: 5 }}
-                />
-                <PlayerName d={nameOf(key)} />
-                <FilterLead d={lead ? nameOf(lead) : undefined} text={lead === null ? '∅' : undefined} />
-              </label>
-            )
-          })}
-        </div>
+            return <FilterLead d={lead ? nameOf(lead) : undefined} text={lead === null ? '∅' : undefined} />
+          }}
+        />
 
         <h2>Aggregate over {agg.numGames} matching game(s)</h2>
         <table className="data">
@@ -397,6 +435,76 @@ export function TournamentDetail() {
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+type ChipState = 'include' | 'exclude' | 'off'
+
+/** One clickable filter chip. Color + badge encode whether the item is an
+ *  inclusion (✓, green), an exclusion (✕, red), or not yet applied (+). */
+function FilterChip({
+  state,
+  onClick,
+  label,
+  hint,
+}: {
+  state: ChipState
+  onClick: () => void
+  label: ReactNode
+  hint?: ReactNode
+}) {
+  const badge = state === 'include' ? '✓' : state === 'exclude' ? '✕' : '+'
+  return (
+    <button
+      type="button"
+      className={`chip chip--${state}`}
+      onClick={onClick}
+      title={state === 'off' ? 'Click to add this filter' : 'Click to remove this filter'}
+    >
+      <span className="chip__badge" aria-hidden>
+        {badge}
+      </span>
+      {label}
+      {hint}
+    </button>
+  )
+}
+
+/** A row of filter chips, with the applied ones (include/exclude) visually
+ *  separated from the not-yet-applied ones by a divider. */
+function FilterChipRow<T extends string>({
+  items,
+  stateOf,
+  onClick,
+  renderLabel,
+  renderHint,
+}: {
+  items: T[]
+  stateOf: (item: T) => ChipState
+  onClick: (item: T) => void
+  renderLabel: (item: T) => ReactNode
+  renderHint: (item: T) => ReactNode
+}) {
+  const applied = items.filter((i) => stateOf(i) !== 'off')
+  const available = items.filter((i) => stateOf(i) === 'off')
+  const chip = (item: T) => {
+    const state = stateOf(item)
+    return (
+      <FilterChip
+        key={item}
+        state={state}
+        onClick={() => onClick(item)}
+        label={renderLabel(item)}
+        hint={state === 'off' ? renderHint(item) : null}
+      />
+    )
+  }
+  return (
+    <div className="filter-group">
+      {applied.length > 0 && <div className="filter-chips filter-chips--applied">{applied.map(chip)}</div>}
+      {applied.length > 0 && available.length > 0 && <div className="filter-divider" />}
+      {available.length > 0 && <div className="filter-chips">{available.map(chip)}</div>}
     </div>
   )
 }
