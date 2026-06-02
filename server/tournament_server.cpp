@@ -291,22 +291,39 @@ static std::vector<GameAssignment> scheduleGames(
 
     int numTeams = (int)teamNames.size();
 
-    // Per-team 3-array state:
-    //   available — players ready to be picked (array 1)
-    //   resting   — players who have recently played (array 3)
-    //   array 2 is the transient "chosen for this game" vector
+    // Per-team round-robin queue. Fairness guarantee (see issue #69): every slot
+    // on a team must play the *exact* same number of games. The team-rotation
+    // below ((4g+t) % numTeams) walks the consecutive integers 0..4*numGames-1,
+    // so when numTeams divides 4*numGames — which the qualifying-game count is
+    // rounded up to ensure — each team is selected exactly the same number of
+    // times, M. Because every team has the same roster size R (buildRoster pads
+    // to MAX_PLAYERS_PER_TEAM) and R divides M, draining each team's queue in
+    // full R-slot cycles (reshuffled per cycle for random combinations) hands
+    // every slot exactly M/R games. No slot can be over- or under-played.
     struct TeamState {
-        std::vector<PlayerSlot*> available;
-        std::vector<PlayerSlot*> resting;
+        std::vector<PlayerSlot*> roster;  // all slots, fixed for the whole stage
+        std::vector<PlayerSlot*> queue;   // slots not yet used in the current cycle
     };
     std::map<std::string, TeamState> states;
     for (auto& name : teamNames)
     {
         TeamState st;
-        for (auto& slot : teamRosters[name]) st.available.push_back(&slot);
-        std::shuffle(st.available.begin(), st.available.end(), rng);
+        for (auto& slot : teamRosters[name]) st.roster.push_back(&slot);
         states[name] = std::move(st);
     }
+
+    // Hand out the next slot for a team, reshuffling a fresh cycle when the
+    // current one is exhausted. One slot per (team, cycle) ⇒ equal play.
+    auto nextSlot = [&](TeamState& st) -> PlayerSlot* {
+        if (st.queue.empty())
+        {
+            st.queue = st.roster;
+            std::shuffle(st.queue.begin(), st.queue.end(), rng);
+        }
+        PlayerSlot* p = st.queue.back();
+        st.queue.pop_back();
+        return p;
+    };
 
     std::vector<GameAssignment> assignments;
     assignments.reserve(numGames);
@@ -317,61 +334,22 @@ static std::vector<GameAssignment> scheduleGames(
         game.gameId = stage + "_" + std::to_string(g + 1);
         game.stage  = stage;
 
-        // Pick 4 teams for this game (rotating through the shuffled list)
-        std::vector<std::string> gameTeams;
-        for (int t = 0; t < 4; t++)
-            gameTeams.push_back(teamNames[(g * 4 + t) % numTeams]);
-
-        // For each team pick one player using the 3-array algorithm.
-        // Track per-team whether it had to refresh this game.
-        std::vector<bool> teamRefreshed(4, false);
+        // Pick 4 teams for this game (rotating through the shuffled list). With
+        // numTeams >= 4 these four consecutive residues are always distinct, so
+        // no team faces itself and each team's slots only meet other teams.
         std::vector<PlayerSlot*> chosen(4, nullptr);
-
         for (int t = 0; t < 4; t++)
         {
-            auto& st = states[gameTeams[t]];
-            if (st.available.empty())
-            {
-                // Array 1 exhausted: move array 3 → array 1 (shuffle)
-                st.available = st.resting;
-                st.resting.clear();
-                std::shuffle(st.available.begin(), st.available.end(), rng);
-                teamRefreshed[t] = true;
-            }
-            std::uniform_int_distribution<int> dist(0, (int)st.available.size() - 1);
-            int idx = dist(rng);
-            chosen[t] = st.available[idx];
-            st.available.erase(st.available.begin() + idx);
+            const std::string& team = teamNames[(g * 4 + t) % numTeams];
+            chosen[t] = nextSlot(states[team]);
         }
 
         // Randomize seating per game: the 4 players sit in a random order at the
         // table (and that order then persists across all rounds of the game, since
-        // runOneGame builds the seating once from game.players). We shuffle a copy
-        // so the post-game roster bookkeeping below can stay aligned with
-        // gameTeams[t]/teamRefreshed[t]/chosen[t].
-        auto seating = chosen;
-        std::shuffle(seating.begin(), seating.end(), rng);
-        game.players = seating;
-        assignments.push_back(game);
-
-        // Post-game: move each chosen player to the right array.
-        //   Normal:    chosen → array 3 (resting), will be cycled back later.
-        //   Refreshed: chosen → array 1 (available) at a random position >= min(4, size),
-        //              so it won't be selected again immediately.
-        for (int t = 0; t < 4; t++)
-        {
-            auto& st = states[gameTeams[t]];
-            if (!teamRefreshed[t])
-            {
-                st.resting.push_back(chosen[t]);
-            }
-            else
-            {
-                int minPos = std::min(4, (int)st.available.size());
-                std::uniform_int_distribution<int> posDist(minPos, (int)st.available.size());
-                st.available.insert(st.available.begin() + posDist(rng), chosen[t]);
-            }
-        }
+        // runOneGame builds the seating once from game.players).
+        std::shuffle(chosen.begin(), chosen.end(), rng);
+        game.players = std::move(chosen);
+        assignments.push_back(std::move(game));
     }
 
     return assignments;
