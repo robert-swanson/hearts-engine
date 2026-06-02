@@ -107,6 +107,8 @@ def live_ai_types():
 @app.post("/api/live/tables")
 def create_live_table():
     table = live.manager.create()
+    if table is None:
+        raise HTTPException(status_code=503, detail="server is at capacity; try again later")
     return {"code": table.code}
 
 
@@ -140,21 +142,39 @@ async def live_ws(websocket: WebSocket, code: str, client_id: str):
 
     try:
         while True:
-            msg = await websocket.receive_json()
-            action = msg.get("action")
-            if action == "add_human":
-                e = table.add_human(msg["seat_id"], msg.get("name", ""), client_id)
-            elif action == "add_ai":
-                e = table.add_ai(msg["seat_id"], msg.get("ai_type") or live.default_ai_type(),
-                                 msg.get("name", ""), client_id)
-            elif action == "clear_seat":
-                e = table.clear_seat(msg["seat_id"])
-            elif action == "start":
-                e = await asyncio.get_running_loop().run_in_executor(None, table.start)
-            elif action == "decide":
-                e = table.submit_decision(msg["seat_id"], client_id, msg.get("value"))
-            else:
-                e = f"Unknown action '{action}'"
+            # A malformed frame (non-JSON, or JSON that isn't an object) must not
+            # tear down the socket or log a traceback — answer with an error and
+            # keep going, so one buggy/hostile client can't spam or self-DoS.
+            try:
+                msg = await websocket.receive_json()
+            except WebSocketDisconnect:
+                break
+            except Exception:
+                await err("malformed message (expected a JSON object)")
+                continue
+            if not isinstance(msg, dict):
+                await err("malformed message (expected a JSON object)")
+                continue
+            try:
+                action = msg.get("action")
+                if action == "add_human":
+                    e = table.add_human(str(msg.get("seat_id", "")), str(msg.get("name", "")), client_id)
+                elif action == "add_ai":
+                    e = table.add_ai(str(msg.get("seat_id", "")),
+                                     msg.get("ai_type") or live.default_ai_type(),
+                                     str(msg.get("name", "")), client_id)
+                elif action == "clear_seat":
+                    e = table.clear_seat(str(msg.get("seat_id", "")))
+                elif action == "start":
+                    e = await asyncio.get_running_loop().run_in_executor(None, table.start)
+                elif action == "decide":
+                    e = table.submit_decision(str(msg.get("seat_id", "")), client_id, msg.get("value"))
+                else:
+                    e = f"Unknown action '{action}'"
+            except WebSocketDisconnect:
+                break
+            except Exception:
+                e = "could not process request"
             if e:
                 await err(e)
             await table._broadcast()
@@ -175,6 +195,8 @@ def table_ai_types():
 @app.post("/api/table/sessions")
 def create_table_session():
     session = table.manager.create()
+    if session is None:
+        raise HTTPException(status_code=503, detail="server is at capacity; try again later")
     return {"code": session.code}
 
 
@@ -206,16 +228,31 @@ async def table_ws(websocket: WebSocket, code: str):
 
     try:
         while True:
-            msg = await websocket.receive_json()
-            action = msg.get("action")
-            if action == "configure":
-                e = session.configure(msg.get("seats", []))
-            elif action == "start":
-                e = await asyncio.get_running_loop().run_in_executor(None, session.start)
-            elif action == "respond":
-                e = session.submit(msg.get("value"))
-            else:
-                e = f"Unknown action '{action}'"
+            # See live_ws: tolerate malformed frames without crashing the socket.
+            try:
+                msg = await websocket.receive_json()
+            except WebSocketDisconnect:
+                break
+            except Exception:
+                await err("malformed message (expected a JSON object)")
+                continue
+            if not isinstance(msg, dict):
+                await err("malformed message (expected a JSON object)")
+                continue
+            try:
+                action = msg.get("action")
+                if action == "configure":
+                    e = session.configure(msg.get("seats", []))
+                elif action == "start":
+                    e = await asyncio.get_running_loop().run_in_executor(None, session.start)
+                elif action == "respond":
+                    e = session.submit(msg.get("value"))
+                else:
+                    e = f"Unknown action '{action}'"
+            except WebSocketDisconnect:
+                break
+            except Exception:
+                e = "could not process request"
             if e:
                 await err(e)
             await session._broadcast()

@@ -27,6 +27,7 @@ import os
 import pkgutil
 import queue
 import random
+import secrets
 import string
 import sys
 import threading
@@ -864,20 +865,37 @@ class Table:
 # --- Registry ----------------------------------------------------------------
 
 
+# Cap on concurrently-held live tables. Each table is created by an
+# unauthenticated POST and lives until process exit, so without a ceiling a
+# script could allocate unbounded memory (DoS). 500 is far above any real use.
+MAX_TABLES = 500
+
+
 class TableManager:
     def __init__(self):
         self._tables: Dict[str, Table] = {}
         self._lock = threading.Lock()
 
-    def create(self) -> Table:
+    def create(self) -> Optional[Table]:
+        """Allocate a new table, or None if at capacity / no free code."""
         with self._lock:
-            for _ in range(20):
-                code = "".join(random.choices(string.ascii_uppercase + string.digits, k=4))
-                if code not in self._tables:
-                    break
+            if len(self._tables) >= MAX_TABLES:
+                return None
+            code = self._fresh_code()
+            if code is None:
+                return None
             table = Table(code)
             self._tables[code] = table
             return table
+
+    def _fresh_code(self) -> Optional[str]:
+        # secrets (not random) so codes aren't predictable from prior ones, and
+        # never overwrite an existing table by reusing a colliding code.
+        for _ in range(100):
+            code = "".join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(4))
+            if code not in self._tables:
+                return code
+        return None
 
     def get(self, code: str) -> Optional[Table]:
         return self._tables.get(code.upper())

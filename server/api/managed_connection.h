@@ -81,13 +81,23 @@ public:
                         playerGameSessions.emplace(sessionID, std::move(parts));
                     }
                 } else {
-                    auto sessionId = message.getJson()[Tags::SESSION_ID].get<PlayerGameSessionID>();
+                    // .at() throws (caught below) on a missing/ill-typed session id,
+                    // rather than the old const operator[] which was UB for a missing key.
+                    auto sessionId = message.getJson().at(Tags::SESSION_ID).get<PlayerGameSessionID>();
                     auto sessionMessage = Message::SessionMessage(message);
-                    SessionParts* parts;
+                    SessionParts* parts = nullptr;
                     {
                         std::lock_guard<std::mutex> mapLock(mSessionsMtx);
                         auto it = playerGameSessions.find(sessionId);
-                        ASRT(it != playerGameSessions.end(), "Session ID %lld not found", sessionId);
+                        if (it == playerGameSessions.end()) {
+                            // A client referencing an unknown session must not crash
+                            // the server. ASRT compiles to assert(), a no-op under
+                            // NDEBUG, after which the old code dereferenced an end()
+                            // iterator (UB). Skip the message and keep serving.
+                            LOG("Client at %s:%d referenced unknown session %lld; ignoring",
+                                this->mClientIP, this->mClientPort, (long long) sessionId);
+                            continue;
+                        }
                         parts = it->second.get();
                     }
                     {
@@ -114,18 +124,36 @@ public:
             else {
                 LOG("Error with client at %s:%d: %s", this->mClientIP, this->mClientPort, e.what());
             }
-            std::vector<SessionParts*> snapshot;
-            {
-                std::lock_guard<std::mutex> mapLock(mSessionsMtx);
-                for (auto& [id, p] : playerGameSessions)
-                    snapshot.push_back(p.get());
-            }
-            for (auto* p : snapshot)
-            {
-                std::lock_guard<std::mutex> lock(p->mutex);
-                p->disconnected = true;
-                p->waitCondition.notify_all();
-            }
+            disconnectAllSessions();
+        }
+        catch (const std::exception &e) {
+            // A malformed-but-valid-JSON message (e.g. missing "type", wrong
+            // value type for session_id) throws from the Message ctor / .get<>()
+            // rather than as a boost system_error. Without this clause the
+            // exception escapes the per-connection thread and calls
+            // std::terminate(), taking the whole server down — a trivial
+            // client-triggerable DoS. Tear down only this connection instead.
+            LOG("Client at %s:%d sent an unprocessable message (%s); dropping connection",
+                this->mClientIP, this->mClientPort, e.what());
+            disconnectAllSessions();
+        }
+    }
+
+    // Mark every session on this connection disconnected and wake any thread
+    // blocked in receiveOnSession so it can observe the disconnect and exit.
+    void disconnectAllSessions()
+    {
+        std::vector<SessionParts*> snapshot;
+        {
+            std::lock_guard<std::mutex> mapLock(mSessionsMtx);
+            for (auto& [id, p] : playerGameSessions)
+                snapshot.push_back(p.get());
+        }
+        for (auto* p : snapshot)
+        {
+            std::lock_guard<std::mutex> lock(p->mutex);
+            p->disconnected = true;
+            p->waitCondition.notify_all();
         }
     }
 

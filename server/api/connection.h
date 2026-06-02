@@ -1,6 +1,7 @@
 # pragma once
 
 #include <mutex>
+#include <cstdio>
 #include <netinet/in.h>
 #include <vector>
 #include <algorithm>
@@ -35,7 +36,10 @@ public:
         // Get Client IP and Port
         ip::tcp::endpoint endpoint = clientSocket->remote_endpoint();
         mClientPort = endpoint.port();
-        strcpy(mClientIP, endpoint.address().to_string().c_str());
+        // snprintf (not strcpy) so an IPv6 peer address that exceeds the buffer
+        // is truncated rather than overflowing mClientIP and smashing the stack.
+        std::snprintf(mClientIP, sizeof(mClientIP), "%s",
+                      endpoint.address().to_string().c_str());
     }
 
 protected:
@@ -52,29 +56,43 @@ protected:
     std::string readBytes()
     {
         std::vector<char> buf(1024);
-        mClientSocket->read_some(buffer(buf));
-        return std::string(buf.begin(), buf.end());
+        // read_some returns the number of bytes actually read; the rest of buf
+        // is uninitialized. Constructing the string from the full vector (the
+        // old behavior) appended up to 1024 garbage/NUL bytes onto every read,
+        // corrupting message framing. Use only the bytes we received.
+        size_t n = mClientSocket->read_some(buffer(buf));
+        return std::string(buf.data(), n);
     }
 
     Message::Message receive()
     {
-        auto msgStr = getFirstMessage(mUnprocessedData.empty() ? readBytes() : mUnprocessedData);
-        try
+        // Loop rather than recurse: a peer that dribbles bytes without ever
+        // forming a complete JSON object would otherwise recurse once per read
+        // and overflow the stack. Cap how much we'll buffer for a single
+        // message so a peer can't make us allocate unboundedly either.
+        static constexpr size_t kMaxBufferedBytes = 1u << 20;  // 1 MiB
+        std::string msgStr = getFirstMessage(mUnprocessedData.empty() ? readBytes() : mUnprocessedData);
+        while (true)
         {
-            json jsonMsg = json::parse(msgStr);
-            return {jsonMsg};
-        }
-        catch (json::parse_error &e)
-        {
-            if (mUnprocessedData.empty())
+            try
             {
-                mUnprocessedData = msgStr + readBytes();
-                return receive();
+                json jsonMsg = json::parse(msgStr);
+                return {jsonMsg};
             }
-            else
+            catch (json::parse_error &e)
             {
-                LOG("Error parsing message: %s", e.what());
-                throw e;
+                if (!mUnprocessedData.empty())
+                {
+                    LOG("Error parsing message: %s", e.what());
+                    throw e;
+                }
+                if (msgStr.size() > kMaxBufferedBytes)
+                {
+                    LOG("Discarding oversized unparseable message (%zu bytes) from %s:%d",
+                        msgStr.size(), mClientIP, mClientPort);
+                    throw e;
+                }
+                msgStr = getFirstMessage(msgStr + readBytes());
             }
         }
     }
@@ -125,7 +143,7 @@ private:
 
 protected:
     SocketPtr mClientSocket;
-    char mClientIP[INET_ADDRSTRLEN];
+    char mClientIP[INET6_ADDRSTRLEN];
     int mClientPort;
     ConnectionStatus mStatus;
 
