@@ -49,6 +49,21 @@
 .seat-card__name { font-size: 18px; font-weight: 700; }
 .seat-kind--human { border-color: #64b5f6; color: #64b5f6; }
 .seat-kind--ai { border-color: #ba9; color: #cba; }
+.seat-kind--open { border-color: #8d9; color: #9eb; }
+
+/* Copy-pasteable CLI invocation for joining a table by lobby code. */
+.cli-hint {
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+}
 
 /* --- Play view --- */
 .live-table-info {

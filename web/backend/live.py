@@ -117,6 +117,57 @@ def default_ai_type() -> Optional[str]:
     opts = ai_type_options()
     return opts[0]["value"] if opts else None
 
+
+# --- Uploaded AI clients -----------------------------------------------------
+# A browser can upload a .py file holding a Player subclass to drop into a seat
+# *without merging it* — handy for trying an iteration against humans/other bots.
+# Uploaded clients are scoped to a single table (not added to the global
+# AI_TYPES registry) so one user's experiment never leaks into another's lobby.
+#
+# SECURITY: an uploaded client is arbitrary Python executed in this process. The
+# web UI is intended as a trusted local/dev tool; do not expose this endpoint to
+# untrusted users. Upload size is capped and the module must define exactly one
+# Player subclass, but there is no sandbox.
+
+UPLOAD_TAG_PREFIX = "upload:"  # ai_type values for uploaded clients start with this
+MAX_UPLOAD_BYTES = 256 * 1024
+
+
+def load_uploaded_player(source: str) -> type:
+    """Exec ``source`` in a fresh namespace and return its single Player subclass.
+
+    Raises ValueError with a human-readable reason on any problem (syntax error,
+    no Player subclass, more than one) so the caller can surface it to the UI.
+    """
+    import types as _types
+
+    module = _types.ModuleType("uploaded_player_" + uuid.uuid4().hex)
+    module.__dict__["__name__"] = module.__name__
+    # Example players bootstrap sys.path with Path(__file__).resolve().parents[3].
+    # Give the uploaded module a __file__ inside the real players package so that
+    # idiom resolves to the repo root and the SDK imports succeed.
+    module.__dict__["__file__"] = str(Path(_players_pkg.__path__[0]) / "uploaded_client.py")
+    try:
+        exec(compile(source, "<uploaded_client>", "exec"), module.__dict__)
+    except Exception as exc:  # syntax error, import error, etc.
+        raise ValueError(f"could not import client: {type(exc).__name__}: {exc}")
+
+    found = [
+        cls for _, cls in inspect.getmembers(module, inspect.isclass)
+        if issubclass(cls, Player) and cls is not Player
+        and cls.__module__ == module.__name__
+        and not inspect.isabstract(cls)
+    ]
+    if not found:
+        raise ValueError("no concrete Player subclass found in the uploaded file")
+    if len(found) > 1:
+        names = ", ".join(c.__name__ for c in found)
+        raise ValueError(f"file defines multiple Player subclasses ({names}); keep one")
+    cls = found[0]
+    if getattr(cls, "player_tag", None) is None:
+        cls.player_tag = cls.__name__.lower()
+    return cls
+
 # Timing budget for a human move. The server auto-moves after MOVE_TIMEOUT_MS
 # (configured when launching the server); we return a fallback just under that
 # so the human's decided_move stays ahead of the server's auto-move, and the SDK
@@ -523,6 +574,10 @@ class Table:
         self.connection: Optional[ManagedConnection] = None
         self.threads: List[threading.Thread] = []
 
+        # Per-table uploaded AI clients: ai_type ("upload:<id>") -> {cls, label}.
+        # Scoped here (not global) so an experiment stays inside this table.
+        self.uploaded_ais: Dict[str, dict] = {}
+
         # Public reconstructed state (guarded by _state_lock)
         self._state_lock = threading.Lock()
         self._player_order: List[str] = []
@@ -555,21 +610,67 @@ class Table:
         seat.owner_client_id = client_id
         return None
 
+    def ai_class_for(self, ai_type: str) -> Optional[type]:
+        """Resolve an ai_type to its Player class, from this table's uploaded
+        clients first, then the global discovered registry."""
+        if ai_type in self.uploaded_ais:
+            return self.uploaded_ais[ai_type]["cls"]
+        meta = AI_TYPES.get(ai_type)
+        return meta["cls"] if meta else None
+
+    def ai_label_for(self, ai_type: str) -> str:
+        if ai_type in self.uploaded_ais:
+            return self.uploaded_ais[ai_type]["label"]
+        meta = AI_TYPES.get(ai_type)
+        return meta["label"] if meta else ai_type
+
+    def register_upload(self, source: str, filename: str = "") -> dict:
+        """Validate an uploaded client and register it for this table. Returns
+        ``{value, label}`` for the seat picker. Raises ValueError on bad input."""
+        if self.status != "lobby":
+            raise ValueError("game already started")
+        if len(self.uploaded_ais) >= 16:
+            raise ValueError("too many uploaded clients for this table")
+        cls = load_uploaded_player(source)
+        ai_type = f"{UPLOAD_TAG_PREFIX}{uuid.uuid4().hex[:8]}"
+        stem = Path(filename).stem if filename else cls.__name__
+        label = f"⬆ {_label_for(stem) or cls.__name__}"
+        self.uploaded_ais[ai_type] = {"cls": cls, "label": label}
+        return {"value": ai_type, "label": label}
+
     def add_ai(self, seat_id: str, ai_type: str, name: str = "",
                client_id: Optional[str] = None) -> Optional[str]:
         if self.status != "lobby":
             return "Game already started"
-        if ai_type not in AI_TYPES:
+        if self.ai_class_for(ai_type) is None:
             return f"Unknown AI type '{ai_type}'"
         seat = self._seat(seat_id)
         if seat is None:
             return "No such seat"
         seat.kind = "ai"
         seat.ai_type = ai_type
-        seat.name = _sanitize(name) if name else f"{ai_type}-{seat.index}"
+        default = self.ai_label_for(ai_type).lstrip("⬆ ").strip() or ai_type
+        seat.name = _sanitize(name) if name else f"{default}-{seat.index}"
         # Track which browser hosted this bot so we can show *that* browser the
         # bot's activity log (it runs in this backend process either way).
         seat.owner_client_id = client_id
+        seat.log = []
+        return None
+
+    def add_open(self, seat_id: str, name: str = "") -> Optional[str]:
+        """Reserve a seat for an *external* client (e.g. a CLI player) that joins
+        this table's lobby code. The web spawns no SDK session for an open seat;
+        the C++ server's FIFO-by-lobby-code matcher fills it from whoever connects
+        with this table's ``lobby_code``."""
+        if self.status != "lobby":
+            return "Game already started"
+        seat = self._seat(seat_id)
+        if seat is None:
+            return "No such seat"
+        seat.kind = "open"
+        seat.ai_type = None
+        seat.name = _sanitize(name) if name else "Open (CLI)"
+        seat.owner_client_id = None
         seat.log = []
         return None
 
@@ -593,6 +694,13 @@ class Table:
             return "Game already started"
         if any(s.kind == "empty" for s in self.seats):
             return "All four seats must be filled before starting"
+        # Open seats are filled by external CLI clients via the shared lobby code,
+        # not by the web. We need at least one web-hosted seat to observe and
+        # narrate public state (the web reconstructs the game from its own seat
+        # threads' observer hooks).
+        local_seats = [s for s in self.seats if s.kind in ("human", "ai")]
+        if not local_seats:
+            return "At least one human or AI seat is required to start"
 
         _ensure_stdout_router()  # so bots' print() output is captured per seat
 
@@ -604,10 +712,14 @@ class Table:
         for seat in self.seats:
             seat.player_tag = f"{_sanitize(seat.name)}_{seat.index}_{self.code}"
             seat.response_queue = queue.Queue()
+            # Open seats are filled by an external client joining this lobby code;
+            # the web spawns no session for them.
+            if seat.kind == "open":
+                continue
             if seat.kind == "human":
                 player_cls = _make_human_cls(self, seat)
             else:
-                player_cls = _make_ai_cls(self, seat, AI_TYPES[seat.ai_type]["cls"])
+                player_cls = _make_ai_cls(self, seat, self.ai_class_for(seat.ai_type))
             try:
                 thread, _session = MakeSession(
                     self.connection, GameType.ANY, player_cls,
@@ -834,10 +946,33 @@ class Table:
             "table": {
                 "code": self.code,
                 "status": self.status,
+                "lobby_code": self.lobby_code,  # share with CLI clients to co-fill open seats
                 "seats": [s.public_view(client_id) for s in self.seats],
+                # Per-table AI options = uploaded clients for this table only
+                # (the global discovered list is fetched separately and cached).
+                "uploaded_ai_types": [
+                    {"value": tag, "label": meta["label"]}
+                    for tag, meta in self.uploaded_ais.items()
+                ],
             },
             "public": self._public_state() if self.status != "lobby" else None,
             "you": {"client_id": client_id, "seats": mine, "ai": ai},
+        }
+
+    def summary(self) -> dict:
+        """Compact public listing entry for the open-lobbies list."""
+        seats = [
+            {"kind": s.kind, "name": s.name if s.kind != "empty" else None}
+            for s in self.seats
+        ]
+        return {
+            "code": self.code,
+            "status": self.status,
+            "seats": seats,
+            "humans": sum(1 for s in self.seats if s.kind == "human"),
+            "ai": sum(1 for s in self.seats if s.kind == "ai"),
+            "open": sum(1 for s in self.seats if s.kind == "open"),
+            "empty": sum(1 for s in self.seats if s.kind == "empty"),
         }
 
     # -- broadcast (thread -> asyncio bridge) -------------------------------
@@ -899,6 +1034,22 @@ class TableManager:
 
     def get(self, code: str) -> Optional[Table]:
         return self._tables.get(code.upper())
+
+    def list_tables(self, include_finished: bool = False) -> List[dict]:
+        """Open/active tables for the join-or-observe list, newest activity first.
+
+        Lobby and in-progress tables are joinable/observable; finished tables are
+        omitted by default (their games live under Lobby games)."""
+        with self._lock:
+            tables = list(self._tables.values())
+        out = [
+            t.summary() for t in tables
+            if include_finished or t.status != "finished"
+        ]
+        # Lobby tables first (joinable), then in-progress (observable).
+        order = {"lobby": 0, "playing": 1, "finished": 2}
+        out.sort(key=lambda s: order.get(s["status"], 9))
+        return out
 
 
 manager = TableManager()

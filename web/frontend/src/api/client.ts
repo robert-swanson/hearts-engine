@@ -130,7 +130,8 @@ export type LiveStatus = 'lobby' | 'playing' | 'finished'
 export interface LiveSeat {
   index: number
   seat_id: string
-  kind: 'empty' | 'human' | 'ai'
+  // "open" = reserved for an external CLI client that joins via the lobby code.
+  kind: 'empty' | 'human' | 'ai' | 'open'
   name: string
   ai_type: string | null
   mine: boolean
@@ -218,9 +219,26 @@ export interface LiveAiSeat {
 export interface LiveSnapshot {
   type: 'state'
   server_now?: number  // server epoch seconds at send time (for clock-skew-free timers)
-  table: { code: string; status: LiveStatus; seats: LiveSeat[] }
+  table: {
+    code: string
+    status: LiveStatus
+    seats: LiveSeat[]
+    lobby_code?: string                      // share with CLI clients to fill open seats
+    uploaded_ai_types?: AiTypeOption[]       // per-table uploaded clients
+  }
   public: LivePublic | null
   you: { client_id: string; seats: LiveMySeat[]; ai?: LiveAiSeat[] }
+}
+
+// One open/active table for the join-or-observe list.
+export interface LiveTableSummary {
+  code: string
+  status: LiveStatus
+  seats: { kind: string; name: string | null }[]
+  humans: number
+  ai: number
+  open: number
+  empty: number
 }
 
 // --- Physical-table play (AI vs. real humans at a real table) ----------------
@@ -355,7 +373,26 @@ export const api = {
   },
   liveTable: (code: string) =>
     getJSON<{ code: string; status: LiveStatus }>(`/api/live/tables/${encodeURIComponent(code)}`),
+  liveTables: () => getJSON<{ tables: LiveTableSummary[] }>('/api/live/tables'),
   aiTypes: () => getJSON<{ ai_types: AiTypeOption[] }>('/api/live/ai-types'),
+  uploadLiveClient: async (code: string, filename: string, source: string): Promise<AiTypeOption> => {
+    const res = await fetch(`/api/live/tables/${encodeURIComponent(code)}/upload-client`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename, source }),
+    })
+    if (!res.ok) {
+      let detail = `${res.status} ${res.statusText}`
+      try {
+        const body = await res.json()
+        if (body?.detail) detail = body.detail
+      } catch {
+        // non-JSON error body; keep the status line
+      }
+      throw new Error(detail)
+    }
+    return res.json() as Promise<AiTypeOption>
+  },
   createTableSession: async (): Promise<{ code: string }> => {
     const res = await fetch('/api/table/sessions', { method: 'POST' })
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)

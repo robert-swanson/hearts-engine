@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api/client'
-import type { LiveSeat, LiveMySeat, LivePublic, LiveRound, AiTypeOption, LiveAiSeat, LiveLogEntry } from '../api/client'
+import type { LiveSeat, LiveMySeat, LivePublic, LiveRound, AiTypeOption, LiveAiSeat, LiveLogEntry, LiveTableSummary, LiveSnapshot } from '../api/client'
 import { useLiveTable, type SendAction } from '../lib/liveSocket'
 import { Card } from '../components/Card'
 import { TrickRow } from '../components/TrickRow'
@@ -101,6 +101,76 @@ export function LivePlayHome() {
       <div style={{ marginTop: 32 }}>
         <LobbyGamesSection />
       </div>
+
+      <OpenLobbies />
+    </div>
+  )
+}
+
+// --- Open lobbies: discover tables to join or observe -------------------------
+
+function OpenLobbies() {
+  const navigate = useNavigate()
+  const [tables, setTables] = useState<LiveTableSummary[] | null>(null)
+
+  useEffect(() => {
+    let alive = true
+    const load = () =>
+      api
+        .liveTables()
+        .then((r) => alive && setTables(r.tables))
+        .catch(() => alive && setTables([]))
+    load()
+    const id = setInterval(load, 3000) // keep the list fresh while people open/fill tables
+    return () => {
+      alive = false
+      clearInterval(id)
+    }
+  }, [])
+
+  if (!tables || tables.length === 0) {
+    return (
+      <div style={{ marginTop: 24 }}>
+        <h2>Open tables</h2>
+        <p className="muted" style={{ fontSize: 13 }}>
+          {tables == null ? 'Loading…' : 'No open tables right now — create one above.'}
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ marginTop: 24 }}>
+      <h2>Open tables</h2>
+      <div className="seat-grid">
+        {tables.map((t) => {
+          const joinable = t.status === 'lobby' && t.empty > 0
+          const parts = [
+            t.humans ? `${t.humans} human` : null,
+            t.ai ? `${t.ai} AI` : null,
+            t.open ? `${t.open} open` : null,
+            t.empty ? `${t.empty} empty` : null,
+          ].filter(Boolean)
+          return (
+            <div key={t.code} className="card-surface seat-card seat-card--filled">
+              <div className="seat-card__head">
+                <strong style={{ letterSpacing: 2 }}>{t.code}</strong>
+                <span className={`pill live-status live-status--${t.status}`}>{t.status}</span>
+              </div>
+              <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                {parts.join(' · ') || 'empty table'}
+              </div>
+              <button
+                className="btn"
+                style={{ marginTop: 10 }}
+                onClick={() => navigate(`/play/${t.code}`)}
+              >
+                {joinable ? 'Join' : 'Observe'}
+              </button>
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -139,7 +209,7 @@ export function LiveTable() {
       {error && <p className="live-error">{error}</p>}
 
       {status === 'lobby' ? (
-        <Lobby seats={table.seats} send={send} />
+        <Lobby table={table} send={send} />
       ) : (
         <PlayView pub={pub} mySeats={you.seats} aiSeats={you.ai ?? []} send={send} serverOffset={serverOffset} />
       )}
@@ -149,14 +219,21 @@ export function LiveTable() {
 
 // --- Lobby: seat management --------------------------------------------------
 
-function Lobby({ seats, send }: { seats: LiveSeat[]; send: (a: SendAction) => void }) {
+type LobbyTable = LiveSnapshot['table']
+
+function Lobby({ table, send }: { table: LobbyTable; send: (a: SendAction) => void }) {
+  const seats = table.seats
   const allFilled = seats.every((s) => s.kind !== 'empty')
-  const aiOptions = useAiTypes()
+  const builtInAi = useAiTypes()
+  // Per-table uploaded clients extend the built-in roster in the seat picker.
+  const aiOptions = [...builtInAi, ...(table.uploaded_ai_types ?? [])]
+  const hasOpen = seats.some((s) => s.kind === 'open')
+
   return (
     <>
       <div className="seat-grid">
         {seats.map((seat) => (
-          <SeatCard key={seat.seat_id} seat={seat} send={send} aiOptions={aiOptions} />
+          <SeatCard key={seat.seat_id} seat={seat} send={send} aiOptions={aiOptions} code={table.code} />
         ))}
       </div>
       <div className="row-actions" style={{ marginTop: 16 }}>
@@ -165,6 +242,23 @@ function Lobby({ seats, send }: { seats: LiveSeat[]; send: (a: SendAction) => vo
         </button>
         {!allFilled && <span className="muted" style={{ fontSize: 13 }}>Fill all four seats to start.</span>}
       </div>
+
+      {(hasOpen || table.lobby_code) && (
+        <div className="card-surface" style={{ marginTop: 16 }}>
+          <h3 style={{ margin: '0 0 6px' }}>Join from the command line</h3>
+          <p className="muted" style={{ fontSize: 13, marginTop: 0 }}>
+            Mark a seat <strong>Open (CLI)</strong>, then drop a bot from your terminal into the next
+            open seat with the table's lobby code:
+          </p>
+          <pre className="cli-hint">
+            python3 clients/python/lobby_client.py --player=random_player --lobby-code={table.lobby_code ?? table.code}
+          </pre>
+          <p className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+            Players fill open seats FIFO. Start the game once every seat is filled (open seats wait
+            for their CLI client to connect).
+          </p>
+        </div>
+      )}
     </>
   )
 }
@@ -173,16 +267,38 @@ function SeatCard({
   seat,
   send,
   aiOptions,
+  code,
 }: {
   seat: LiveSeat
   send: (a: SendAction) => void
   aiOptions: AiTypeOption[]
+  code: string
 }) {
   const [name, setName] = useState('')
   const [ai, setAi] = useState('')
+  const [uploadErr, setUploadErr] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
   // Until the user picks, default to Random when available, else the first option.
   const preferred = aiOptions.find((o) => o.value === 'random_player')?.value
   const selectedAi = ai || preferred || aiOptions[0]?.value || ''
+
+  const onUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = '' // allow re-selecting the same file after an edit
+    if (!file) return
+    setUploadErr(null)
+    setUploading(true)
+    try {
+      const source = await file.text()
+      const opt = await api.uploadLiveClient(code, file.name, source)
+      // Auto-select the freshly uploaded client so "Add AI" uses it immediately.
+      setAi(opt.value)
+    } catch (err) {
+      setUploadErr(err instanceof Error ? err.message : String(err))
+    } finally {
+      setUploading(false)
+    }
+  }
 
   return (
     <div className={`card-surface seat-card ${seat.kind !== 'empty' ? 'seat-card--filled' : ''}`}>
@@ -190,7 +306,7 @@ function SeatCard({
         <span className="muted" style={{ fontSize: 11, letterSpacing: 1 }}>SEAT {seat.index + 1}</span>
         {seat.kind !== 'empty' && (
           <span className={`pill seat-kind seat-kind--${seat.kind}`}>
-            {seat.kind === 'human' ? (seat.mine ? 'you' : 'human') : 'ai'}
+            {seat.kind === 'human' ? (seat.mine ? 'you' : 'human') : seat.kind === 'open' ? 'open' : 'ai'}
           </span>
         )}
       </div>
@@ -232,11 +348,34 @@ function SeatCard({
               Add AI
             </button>
           </div>
+          <div className="row-actions" style={{ gap: 6 }}>
+            <label className="btn" style={{ cursor: 'pointer' }}>
+              {uploading ? 'Uploading…' : 'Upload .py client'}
+              <input
+                type="file"
+                accept=".py,text/x-python,text/plain"
+                onChange={onUpload}
+                disabled={uploading}
+                style={{ display: 'none' }}
+              />
+            </label>
+            <button
+              className="btn"
+              onClick={() => send({ action: 'add_open', seat_id: seat.seat_id })}
+              title="Reserve this seat for a CLI client joining via the lobby code"
+            >
+              Open (CLI)
+            </button>
+          </div>
+          {uploadErr && <div className="live-error" style={{ fontSize: 12 }}>{uploadErr}</div>}
         </div>
       ) : (
         <div className="seat-card__filled">
           <div className="seat-card__name">{seat.name}</div>
           {seat.kind === 'ai' && <div className="muted" style={{ fontSize: 12 }}>{seat.ai_type} bot</div>}
+          {seat.kind === 'open' && (
+            <div className="muted" style={{ fontSize: 12 }}>waiting for a CLI client…</div>
+          )}
           <button
             className="btn"
             style={{ marginTop: 10 }}

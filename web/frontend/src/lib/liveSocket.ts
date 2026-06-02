@@ -29,6 +29,7 @@ function wsUrl(code: string): string {
 export type SendAction =
   | { action: 'add_human'; seat_id: string; name: string }
   | { action: 'add_ai'; seat_id: string; ai_type: string; name?: string }
+  | { action: 'add_open'; seat_id: string; name?: string }
   | { action: 'clear_seat'; seat_id: string }
   | { action: 'start' }
   | { action: 'decide'; seat_id: string; value: string | string[] }

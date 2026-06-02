@@ -142,7 +142,24 @@ class ManagedConnection(Connection):
         with self.receiver_thread_lock:
             try:
                 while True:
-                    message = self.receive()
+                    try:
+                        message = self.receive()
+                    except ConnectionError:
+                        # Server closed the connection — handled below (wake
+                        # waiters and stop the reader).
+                        raise
+                    except Exception as e:
+                        # A single unreadable frame (e.g. a multi-byte UTF-8 char
+                        # split across a recv boundary, or a malformed buffer) must
+                        # NOT kill the receiver: this socket is shared by every
+                        # session on the connection, so a dead reader wedges ALL of
+                        # them — the game appears to hang mid-trick with all players
+                        # idle until each session hits its own multi-minute timeout.
+                        # Log and keep reading; the partial buffer is retried on the
+                        # next recv.
+                        self.logger.log(f"Receiver thread skipped an unreadable frame: {type(e).__name__}: {e}")
+                        continue
+
                     if message is None:
                         # Only exit when nobody is waiting AND the connection has been
                         # idle long enough to be considered dead.  Exiting while
@@ -159,12 +176,24 @@ class ManagedConnection(Connection):
                     else:
                         self.last_msg_time = datetime.now()
 
-                    self._handle_msg(message)
+                    try:
+                        self._handle_msg(message)
+                    except Exception as e:
+                        # An unexpected message shape (e.g. one missing a
+                        # session_id) likewise must not tear down delivery for
+                        # every session — skip it rather than killing the reader.
+                        self.logger.log(f"Receiver thread could not dispatch a message: {type(e).__name__}: {e}")
             except ConnectionError:
                 # Server closed the connection — notify any waiting sessions so they
                 # see the disconnect promptly rather than waiting for their timeout.
                 self._wake_all_sessions()
-            self.receiver_thread = None
+            finally:
+                # ALWAYS clear the handle so the reader can be restarted. If an
+                # unexpected error ever escaped above, leaving a dead thread
+                # referenced here would permanently stop message delivery for the
+                # whole connection (_start_receiver_thread refuses to start a new
+                # one while this is non-None).
+                self.receiver_thread = None
         self.logger.log("Ending receiver thread")
         if len(self.waiting_sessions) > 0:
             self._start_receiver_thread()

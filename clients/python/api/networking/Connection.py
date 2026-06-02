@@ -49,7 +49,12 @@ class Connection:
                 raise ConnectionError("Server closed connection while waiting for data")
             try:
                 json_objects = self._get_json_objects(data.decode("utf-8"))
-            except json.decoder.JSONDecodeError:
+            except (json.decoder.JSONDecodeError, UnicodeDecodeError):
+                # Either a truncated JSON object OR a multi-byte UTF-8 character
+                # split across this 1024-byte recv boundary. Stash the *whole*
+                # buffer (old partial + bytes just read) and read more — decoding
+                # `data` directly here would drop the freshly-read bytes (they live
+                # only in this local), permanently desyncing the parser.
                 self.incomplete_message = data
                 # log(f"Received incomplete message, attempting to receive more data, current data: {data}")
                 return self.receive()

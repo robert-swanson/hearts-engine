@@ -104,12 +104,46 @@ def live_ai_types():
     return {"ai_types": live.ai_type_options()}
 
 
+@app.get("/api/live/tables")
+def list_live_tables():
+    """Open/active tables, so the UI can list lobbies to join or observe."""
+    return {"tables": live.manager.list_tables()}
+
+
 @app.post("/api/live/tables")
 def create_live_table():
     table = live.manager.create()
     if table is None:
         raise HTTPException(status_code=503, detail="server is at capacity; try again later")
     return {"code": table.code}
+
+
+class UploadClientRequest(BaseModel):
+    filename: Optional[str] = None
+    source: str
+
+
+@app.post("/api/live/tables/{code}/upload-client")
+def upload_live_client(code: str, req: UploadClientRequest):
+    """Register an uploaded Python Player for one table's seat picker.
+
+    SECURITY: the uploaded file is arbitrary code executed in this process. The
+    web UI is a trusted local/dev tool; do not expose this to untrusted users.
+    """
+    table = live.manager.get(code)
+    if table is None:
+        raise HTTPException(status_code=404, detail="table not found")
+    if len(req.source.encode("utf-8")) > live.MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="uploaded client is too large")
+    try:
+        option = table.register_upload(req.source, req.filename or "")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    # Push the updated roster to every connected client so the new option shows
+    # up in the seat picker immediately (otherwise it only appears on the next
+    # WS action, e.g. clicking Clear).
+    table.schedule_broadcast()
+    return option
 
 
 @app.get("/api/live/tables/{code}")
@@ -170,6 +204,8 @@ async def live_ws(websocket: WebSocket, code: str, client_id: Optional[str] = No
                     e = table.add_ai(str(msg.get("seat_id", "")),
                                      msg.get("ai_type") or live.default_ai_type(),
                                      str(msg.get("name", "")), client_id)
+                elif action == "add_open":
+                    e = table.add_open(str(msg.get("seat_id", "")), str(msg.get("name", "")))
                 elif action == "clear_seat":
                     e = table.clear_seat(str(msg.get("seat_id", "")))
                 elif action == "start":
