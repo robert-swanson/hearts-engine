@@ -16,7 +16,10 @@ class Matcher
 private:
     static Matcher instance;
 
-    Matcher(): sessionCounter(0)
+    // Start at 1 so session id 0 is never handed out: 0 is the reserved
+    // "no session created" sentinel that ConnectionListener uses to skip
+    // registering control messages (e.g. tournament heartbeats / auth rejects).
+    Matcher(): sessionCounter(1)
     {
 //        sessionCounter = std::chrono::duration_cast<std::chrono::milliseconds>(
 //                std::chrono::system_clock::now().time_since_epoch()).count();

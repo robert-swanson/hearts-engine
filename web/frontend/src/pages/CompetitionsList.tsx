@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
 import { useFetch } from '../lib/useFetch'
 import { LiveStatsPanel } from './LiveStats'
+import { NextTournamentBanner } from './NextTournament'
 
 function formatTime(iso: string | null): string {
   if (!iso) return '—'
@@ -15,6 +16,7 @@ export function CompetitionsList() {
 
   return (
     <div>
+      <NextTournamentBanner />
       <LiveStatsPanel />
       <h1>Competitions</h1>
       {loading ? (

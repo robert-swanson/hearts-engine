@@ -115,6 +115,7 @@ def write_config(path: str, cfg: dict, teams: Dict[str, str], filler_teams: Dict
         # Competition orchestration (read back as defaults next run)
         f.write(f"REGISTRATION_WINDOW={cfg.get('registration_window', 60)}\n")
         f.write(f"INTERVAL={cfg['interval']}\n")
+        f.write(f"ALIGN_FIRST_TO_INTERVAL={1 if cfg.get('align_first_to_interval') else 0}\n")
         # Tournament rules
         f.write(f"QUALIFYING_GAMES={cfg['qualifying_games']}\n")
         f.write(f"FINALS_GAMES={cfg['finals_games']}\n")
@@ -321,6 +322,7 @@ def configure_rules(non_interactive: bool = False,
             'client_window':         20,
             'interval':              interval if interval is not None
                                      else d_int('INTERVAL', 300),
+            'align_first_to_interval': d_bool('ALIGN_FIRST_TO_INTERVAL', False),
             'results_dir':           d_str('RESULTS_DIR', './results'),
             'log_dir':               d_str('LOG_DIR', './log'),
             'auto_move_after_timeouts': d_int('AUTO_MOVE_AFTER_TIMEOUTS', 2),
@@ -363,6 +365,8 @@ def configure_rules(non_interactive: bool = False,
         'registration_window': registration_window,
         'client_window':      30,
         'interval':           interval if interval is not None else int(prompt('Interval between tournaments (s)', d_int('INTERVAL', 300))),
+        'align_first_to_interval': prompt('Align first tournament to an interval-multiple wall-clock time? (y/n)',
+                                          'y' if d_bool('ALIGN_FIRST_TO_INTERVAL', False) else 'n').lower() == 'y',
         'results_dir':        prompt('Results directory',                d_str('RESULTS_DIR', './results')),
         'log_dir':            prompt('Log directory',                    d_str('LOG_DIR', './log')),
         'auto_move_after_timeouts': int(prompt('Auto-move after N timeouts (0=never)', d_int('AUTO_MOVE_AFTER_TIMEOUTS', 2))),
@@ -374,6 +378,48 @@ def configure_rules(non_interactive: bool = False,
         'num_filler_teams':   num_filler,
         'filler_team_ais':    filler_ais,
     }
+
+
+# ─── Scheduling ───────────────────────────────────────────────────────────────
+
+def _aligned_start(now: int, interval: int) -> int:
+    """Smallest wall-clock instant >= now that is an exact multiple of `interval`
+    in *local* time (so a 1-day interval lands on local midnight, a 5-minute
+    interval on :00/:05/:10, etc.). Returns a unix timestamp."""
+    now = int(now)
+    gmtoff = time.localtime(now).tm_gmtoff or 0
+    local = now + gmtoff
+    rem = local % interval
+    return now if rem == 0 else now + (interval - rem)
+
+
+def compute_next_start(now: float, interval: int, prev_start: Optional[int],
+                       align_first: bool, min_registration: int) -> int:
+    """Pick the unix start time of the next tournament.
+
+    - The interval is measured from the *start* of the preceding tournament, so
+      tournaments fire on a constant cadence regardless of how long each runs.
+    - The first tournament may optionally be aligned to an interval-multiple
+      wall-clock time (e.g. midnight for a 1-day interval).
+    - The registration window is `start - now`; it is always >= min_registration.
+      If the previous tournament overran its slot, we advance by whole intervals
+      (preserving the cadence phase) until the window is long enough.
+    """
+    now = int(now)
+    if prev_start is None:
+        if align_first:
+            start = _aligned_start(now, interval)
+            if start - now < min_registration:
+                start += interval
+        else:
+            start = now + min_registration
+        return start
+    start = prev_start + interval
+    if start - now < min_registration:
+        deficit = (now + min_registration) - prev_start
+        k = -(-deficit // interval)  # ceil division
+        start = prev_start + k * interval
+    return start
 
 
 # ─── Main loop ────────────────────────────────────────────────────────────────
@@ -422,23 +468,39 @@ def run_competition(cfg: dict, real_teams: Dict[str, str],
         filler_ais=cfg.get('filler_team_ais', ['random_player'] * filler_count),
         log_dir=cfg.get('log_dir', './log'))
 
+    # Registration window: opens the moment the previous tournament completes and
+    # is always at least 10s. `client_window` is the configured minimum.
+    align_first = cfg.get('align_first_to_interval', False)
+    min_registration = max(10, client_window)
+
     print(f'\n=== Starting competition loop ===')
     print(f'Teams: {list(real_teams.keys())}')
     if filler_teams:
         print(f'Fillers: {list(filler_teams.keys())} (stable across all tournaments)')
-    print(f'interval={interval}s  |  client_window={client_window}s')
+    print(f'interval={interval}s (from previous start)  |  min_registration={min_registration}s'
+          f'  |  align_first={align_first}')
     print()
 
     tournament_num = 0
+    prev_start: Optional[int] = None
     while True:
         tournament_num += 1
+        now = time.time()
+        # The interval is measured from the *previous tournament's start*, giving a
+        # constant cadence; the registration window for this tournament is the gap
+        # between now (the previous one just finished) and start_at (>= 10s).
+        start_at = compute_next_start(now, interval, prev_start, align_first, min_registration)
+        prev_start = start_at
+        reg_window = start_at - int(now)
         print(f'\n--- Tournament #{tournament_num} ---')
+        print(f'Registration open for {reg_window}s (start_at={start_at}).')
 
         # Re-write config each cycle (content is stable; ensures it's current on disk).
         write_config(config_path, round_cfg, real_teams, filler_teams, server_addr=public_addr)
 
-        # Start tournament server.
-        start_at = int(time.time()) + client_window
+        # Start tournament server. It publishes the live registration status
+        # (<results>/<competition_id>/live.json) itself, since it owns the
+        # authoritative per-player registration state during its window.
         server_proc = subprocess.Popen(
             ['./bazel-bin/server/tournament_server', config_path,
              f'--start-at={start_at}',
@@ -455,7 +517,7 @@ def run_competition(cfg: dict, real_teams: Dict[str, str],
             except OSError:
                 time.sleep(0.5)
 
-        print(f'Tournament server up. Clients have {client_window}s to connect to {host}:{port}')
+        print(f'Tournament server up. Clients have {reg_window}s to connect to {host}:{port}')
 
         # Stream server output until it exits.
         for line in server_proc.stdout:
@@ -473,8 +535,9 @@ def run_competition(cfg: dict, real_teams: Dict[str, str],
         if server_proc.returncode != 0:
             print(f'WARNING: tournament server exited with code {server_proc.returncode}')
 
-        print(f'Tournament #{tournament_num} finished. Next in {interval}s.')
-        time.sleep(interval)
+        # Registration for the next tournament opens immediately (no sleep): the
+        # cadence is governed by start_at relative to the previous start.
+        print(f'Tournament #{tournament_num} finished.')
 
 
 # ─── Entry point ─────────────────────────────────────────────────────────────
