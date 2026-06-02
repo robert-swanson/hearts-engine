@@ -312,6 +312,7 @@ export interface LiveStats {
   games_executed: number
   games_waiting: number
   standings: Record<string, number>
+  games_won: Record<string, number>
   note: string
 }
 
