@@ -10,6 +10,7 @@ import { GameDetail } from './pages/GameDetail'
 import { RoundDetail } from './pages/RoundDetail'
 import { LobbyGamesList } from './pages/LobbyGamesList'
 import { LivePlayHome, LiveTable } from './pages/LivePlay'
+import { TablePlayHome, TableView } from './pages/TablePlay'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -26,6 +27,8 @@ createRoot(document.getElementById('root')!).render(
           <Route path="lobby/g/:gameId/r/:roundIdx" element={<RoundDetail lobby />} />
           <Route path="play" element={<LivePlayHome />} />
           <Route path="play/:code" element={<LiveTable />} />
+          <Route path="table" element={<TablePlayHome />} />
+          <Route path="table/:code" element={<TableView />} />
         </Route>
       </Routes>
     </BrowserRouter>
