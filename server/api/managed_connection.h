@@ -74,7 +74,11 @@ public:
                 auto message = this->receive();
                 if (is_new_session(message)) {
                     PlayerGameSessionID sessionID = new_session_callback(*this, message);
-                    {
+                    // A callback may return 0 to signal "no session created" — e.g. an
+                    // auth rejection, or a control message (tournament heartbeat) that
+                    // updates state without opening a session. Don't register a bogus
+                    // session 0 in that case.
+                    if (sessionID != 0) {
                         auto parts = std::make_unique<SessionParts>();
                         parts->autoMoveThreshold = mNewSessionAutoMoveThreshold;
                         std::lock_guard<std::mutex> lock(mSessionsMtx);
@@ -155,6 +159,21 @@ public:
             p->disconnected = true;
             p->waitCondition.notify_all();
         }
+    }
+
+    // True if any session on this connection has been marked disconnected (the
+    // ConnectionListener sets this when the client's socket hits EOF / reset).
+    // Used by the tournament lobby to drop players whose clients have dropped.
+    bool anySessionDisconnected()
+    {
+        std::lock_guard<std::mutex> mapLock(mSessionsMtx);
+        for (auto& [id, p] : playerGameSessions)
+        {
+            std::lock_guard<std::mutex> lock(p->mutex);
+            if (p->disconnected)
+                return true;
+        }
+        return false;
     }
 
     static void CleanConnections(std::vector<std::unique_ptr<ManagedConnection>> &connections) {

@@ -57,6 +57,7 @@ class ClientMsgTypes:
     DONATED_CARDS = "donated_cards"
     DECIDED_MOVE = "decided_move"
     TOURNAMENT_REGISTER = "tournament_register"
+    TOURNAMENT_HEARTBEAT = "tournament_heartbeat"
 
 
 class TournamentMsgTypes:

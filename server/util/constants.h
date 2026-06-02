@@ -65,6 +65,7 @@ namespace Common::Server::ClientMsgTypes
     constexpr auto DONATED_CARDS = "donated_cards";
     constexpr auto DECIDED_MOVE = "decided_move";
     constexpr auto TOURNAMENT_REGISTER = "tournament_register";
+    constexpr auto TOURNAMENT_HEARTBEAT = "tournament_heartbeat";
 }
 
 namespace Common::Server::ServerMsgTypes::Tournament

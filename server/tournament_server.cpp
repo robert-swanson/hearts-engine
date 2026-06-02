@@ -136,12 +136,56 @@ static TournamentConfig loadConfig(int64_t startAt)
 
 // ─── Registration ─────────────────────────────────────────────────────────────
 
+static int64_t nowUnix()
+{
+    return std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+}
+
+// Publish the live registration/countdown status the web UI polls. Written to
+// <resultsDir>/<competitionId>/live.json (or <resultsDir>/live.json in the legacy
+// flat layout). `state` is "registering" while the window is open and "running"
+// once it closes; the frontend derives a countdown from `startAt`.
+static void writeLiveStatus(
+    const std::string& resultsDir, const std::string& competitionId,
+    const std::string& tournamentIndex, const std::string& state, int64_t startAt,
+    const std::vector<std::pair<std::string, std::string>>& registered)
+{
+    try
+    {
+        namespace fs = std::filesystem;
+        fs::path dir = competitionId.empty() ? fs::path(resultsDir)
+                                             : fs::path(resultsDir) / competitionId;
+        fs::create_directories(dir);
+
+        nlohmann::json j;
+        j["competition_id"]   = competitionId;
+        j["tournament_index"] = tournamentIndex;
+        j["state"]            = state;
+        j["start_at"]         = startAt;
+        j["updated_at"]       = nowUnix();
+        nlohmann::json arr = nlohmann::json::array();
+        for (const auto& [team, tag] : registered)
+            arr.push_back({{"team", team}, {"tag", tag}});
+        j["registered"] = arr;
+
+        // Write to a temp file then rename so a polling reader never sees a partial file.
+        fs::path tmp = dir / "live.json.tmp";
+        { std::ofstream out(tmp); out << j.dump(); }
+        fs::rename(tmp, dir / "live.json");
+    }
+    catch (const std::exception& e)
+    {
+        LOG("Could not write live status: %s", e.what());
+    }
+}
+
 struct RegisteredPlayer {
     std::string teamName;
     std::string playerTag;
     int priorityScore;
     std::shared_ptr<PlayerGameSession> controlSession;
     ManagedConnection* connection;
+    int64_t lastSeen;   // unix ts of last register/heartbeat; drives the 15s timeout
 };
 
 struct TournamentLobby {
@@ -186,16 +230,76 @@ struct TournamentLobby {
         }});
 
         std::lock_guard<std::mutex> lock(mtx);
-        players.push_back({team, tag, score, session, &conn});
+        players.push_back({team, tag, score, session, &conn, nowUnix()});
         LOG("Registered %s/%s/%lld — %s:%d (score=%d)",
             team.c_str(), tag.c_str(), (long long)sid,
             conn.clientIP(), conn.clientPort(), score);
         return sid;
     }
 
-    bool isRegistrationMessage(const Message::Message& m)
+    // A queued client sends these periodically; refresh its liveness timestamp so
+    // the reaper doesn't drop it. Matched by (team, tag) — the same identity the
+    // client registered with.
+    void handleHeartbeat(const Message::Message& msg)
     {
-        return m.getJson().value(Tags::TYPE, "") == ClientMsgTypes::TOURNAMENT_REGISTER;
+        auto j = msg.getJson();
+        std::string team = j.value(Tags::Tournament::TEAM_NAME, "");
+        std::string tag  = j.value(Tags::PLAYER_TAG, "");
+        int64_t now = nowUnix();
+        std::lock_guard<std::mutex> lock(mtx);
+        for (auto& p : players)
+            if (p.teamName == team && p.playerTag == tag)
+                p.lastSeen = now;
+    }
+
+    // Single entry point for the connection listener: dispatches register vs
+    // heartbeat. Returns the new control-session id for a registration, or 0 for a
+    // heartbeat / auth failure (no session created).
+    PlayerGameSessionID handleLobbyMessage(ManagedConnection& conn, const Message::Message& msg)
+    {
+        if (msg.getJson().value(Tags::TYPE, "") == ClientMsgTypes::TOURNAMENT_HEARTBEAT)
+        {
+            handleHeartbeat(msg);
+            return 0;
+        }
+        return handleRegister(conn, msg);
+    }
+
+    bool isLobbyMessage(const Message::Message& m)
+    {
+        auto t = m.getJson().value(Tags::TYPE, "");
+        return t == ClientMsgTypes::TOURNAMENT_REGISTER
+            || t == ClientMsgTypes::TOURNAMENT_HEARTBEAT;
+    }
+
+    // Drop players whose client has disconnected or has not sent a heartbeat within
+    // `timeoutSec`. Returns the number removed.
+    int pruneDeadPlayers(int64_t timeoutSec)
+    {
+        int64_t now = nowUnix();
+        std::lock_guard<std::mutex> lock(mtx);
+        size_t before = players.size();
+        players.erase(std::remove_if(players.begin(), players.end(),
+            [&](RegisteredPlayer& p) {
+                bool disconnected = p.connection->anySessionDisconnected();
+                bool timedOut = (now - p.lastSeen) > timeoutSec;
+                if (disconnected || timedOut)
+                    LOG("Unregistered %s/%s (%s)", p.teamName.c_str(), p.playerTag.c_str(),
+                        disconnected ? "disconnected" : "heartbeat timeout");
+                return disconnected || timedOut;
+            }), players.end());
+        return (int)(before - players.size());
+    }
+
+    // (team, tag) of every currently-registered player, for the live status feed.
+    std::vector<std::pair<std::string, std::string>> snapshotRegistered()
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        std::vector<std::pair<std::string, std::string>> out;
+        out.reserve(players.size());
+        for (auto& p : players)
+            out.emplace_back(p.teamName, p.playerTag);
+        return out;
     }
 };
 
@@ -956,15 +1060,32 @@ int main(int argc, char** argv)
                     listenerThreads.emplace_back([conn_ptr, &lobby]() {
                         conn_ptr->ConnectionListener(
                             [&lobby](ManagedConnection& mc, Message::Message msg) -> PlayerGameSessionID {
-                                return lobby.handleRegister(mc, msg);
+                                return lobby.handleLobbyMessage(mc, msg);
                             },
-                            [](const Message::Message& m) {
-                                return m.getJson().value(Tags::TYPE, "") == ClientMsgTypes::TOURNAMENT_REGISTER;
+                            [&lobby](const Message::Message& m) {
+                                return lobby.isLobbyMessage(m);
                             });
                     });
                 }
             }
             catch (...) { break; }
+        }
+    });
+
+    // Reaper: while the registration window is open, periodically drop players whose
+    // client has disconnected or missed its 15s heartbeat, and republish the live
+    // status (countdown + currently-registered players) for the web UI to poll.
+    constexpr int64_t kHeartbeatTimeoutSec = 15;
+    std::atomic<bool> stopReaper{false};
+    std::thread reaperThread([&]() {
+        while (!stopReaper.load())
+        {
+            lobby.pruneDeadPlayers(kHeartbeatTimeoutSec);
+            writeLiveStatus(cfg.resultsDir, competitionId, tournamentDirName,
+                            "registering", startAt, lobby.snapshotRegistered());
+            // Sleep ~1s in short slices so we exit promptly when registration closes.
+            for (int i = 0; i < 10 && !stopReaper.load(); ++i)
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
     });
 
@@ -981,6 +1102,14 @@ int main(int argc, char** argv)
     try { acceptor.close(); } catch (...) {}
     ioContext.stop();
     acceptThread.join();
+
+    // Stop the reaper and do a final prune so the roster reflects only live clients,
+    // then flip the published status to "running".
+    stopReaper.store(true);
+    reaperThread.join();
+    lobby.pruneDeadPlayers(kHeartbeatTimeoutSec);
+    writeLiveStatus(cfg.resultsDir, competitionId, tournamentDirName,
+                    "running", startAt, lobby.snapshotRegistered());
 
     LOG("Tournament starting. %d players registered.", (int)lobby.players.size());
 

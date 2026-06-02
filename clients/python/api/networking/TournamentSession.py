@@ -81,6 +81,7 @@ class TournamentSession:
         self.game_results: List = []
         self._game_threads: List[threading.Thread] = []
         self._control_session_id: Optional[SessionID] = None
+        self._hb_stop = threading.Event()
 
         # Route tournament control messages to our special queue
         self._patch_handle_msg()
@@ -130,8 +131,34 @@ class TournamentSession:
                 now = datetime.now(timezone.utc).timestamp()
                 wait = max(0, start_at - now)
                 print(f"[{self.team_name}/{self.player_cls.player_tag}] Tournament starts in {wait:.0f}s")
+                # Send heartbeats until the tournament starts so the server knows
+                # we're still here; if our client dies the server unregisters us.
+                self._start_heartbeats(start_at)
                 return msg
             # else: skip (e.g. game_session_response from Setup)
+
+    def _start_heartbeats(self, start_at: float):
+        """Periodically send tournament_heartbeat until `start_at`, so the server's
+        15s liveness reaper keeps this player registered."""
+        self._hb_stop.clear()
+
+        def beat():
+            while not self._hb_stop.is_set():
+                if datetime.now(timezone.utc).timestamp() >= start_at:
+                    break
+                try:
+                    self.connection.send({
+                        Tags.TYPE:                ClientMsgTypes.TOURNAMENT_HEARTBEAT,
+                        TournamentTags.TEAM_NAME: self.team_name,
+                        Tags.PLAYER_TAG:          self.player_cls.player_tag,
+                        Tags.SEQ_NUM:             0,
+                    })
+                except Exception:
+                    break
+                # Beat every 5s — comfortably inside the server's 15s timeout.
+                self._hb_stop.wait(5)
+
+        threading.Thread(target=beat, daemon=True).start()
 
     def _run_game(self, session_id: SessionID, game_id: str, stage: str):
         """Run a single server-initiated game session."""

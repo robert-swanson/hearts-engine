@@ -422,32 +422,6 @@ def compute_next_start(now: float, interval: int, prev_start: Optional[int],
     return start
 
 
-def write_live_status(cfg: dict, competition_id: str, tournament_index: int,
-                      start_at: int, registered_teams: List[str], state: str):
-    """Publish the live registration/countdown status the web UI polls.
-
-    Written to <results_dir>/<competition_id>/live.json. `state` is
-    'registering' while the window is open and 'running' once it closes; the
-    frontend also derives a countdown from `start_at`.
-    """
-    try:
-        out_dir = Path(cfg['results_dir']) / competition_id
-        out_dir.mkdir(parents=True, exist_ok=True)
-        payload = {
-            'competition_id': competition_id,
-            'tournament_index': tournament_index,
-            'start_at': int(start_at),
-            'state': state,
-            'registered_teams': list(registered_teams),
-            'updated_at': int(time.time()),
-        }
-        tmp = out_dir / 'live.json.tmp'
-        tmp.write_text(json.dumps(payload))
-        tmp.replace(out_dir / 'live.json')
-    except Exception as e:
-        print(f'  WARN: could not write live status: {e}')
-
-
 # ─── Main loop ────────────────────────────────────────────────────────────────
 
 def run_competition(cfg: dict, real_teams: Dict[str, str],
@@ -523,11 +497,10 @@ def run_competition(cfg: dict, real_teams: Dict[str, str],
 
         # Re-write config each cycle (content is stable; ensures it's current on disk).
         write_config(config_path, round_cfg, real_teams, filler_teams, server_addr=public_addr)
-        # Publish live status so the web UI can show the countdown + registrants.
-        write_live_status(round_cfg, competition_id, tournament_num, start_at,
-                          list(real_teams.keys()), 'registering')
 
-        # Start tournament server.
+        # Start tournament server. It publishes the live registration status
+        # (<results>/<competition_id>/live.json) itself, since it owns the
+        # authoritative per-player registration state during its window.
         server_proc = subprocess.Popen(
             ['./bazel-bin/server/tournament_server', config_path,
              f'--start-at={start_at}',
@@ -545,16 +518,6 @@ def run_competition(cfg: dict, real_teams: Dict[str, str],
                 time.sleep(0.5)
 
         print(f'Tournament server up. Clients have {reg_window}s to connect to {host}:{port}')
-
-        # Once the registration window closes the tournament is under way; flip the
-        # published status to 'running' in a side thread (start_at is in the future).
-        def _mark_running(target=start_at):
-            delay = target - time.time()
-            if delay > 0:
-                time.sleep(delay)
-            write_live_status(round_cfg, competition_id, tournament_num, target,
-                              list(real_teams.keys()), 'running')
-        threading.Thread(target=_mark_running, daemon=True).start()
 
         # Stream server output until it exits.
         for line in server_proc.stdout:
