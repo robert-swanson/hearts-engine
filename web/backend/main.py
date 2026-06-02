@@ -122,7 +122,12 @@ def get_live_table(code: str):
 async def live_ws(websocket: WebSocket, code: str, client_id: str):
     table = live.manager.get(code)
     if table is None:
-        await websocket.close(code=4404)
+        # Accept first, *then* close with an application code. Closing before
+        # accept makes the ASGI layer reject the handshake with HTTP 403, which
+        # (a) spams the logs and (b) hides the reason from the client, whose
+        # onclose only sees a generic abnormal close and reconnects forever.
+        await websocket.accept()
+        await websocket.close(code=4404, reason="table not found")
         return
     await websocket.accept()
     table.loop = asyncio.get_running_loop()
@@ -185,7 +190,10 @@ def get_table_session(code: str):
 async def table_ws(websocket: WebSocket, code: str):
     session = table.manager.get(code)
     if session is None:
-        await websocket.close(code=4404)
+        # See live_ws: accept before closing so the client receives a real
+        # 4404 close code instead of a handshake-level 403 it can't interpret.
+        await websocket.accept()
+        await websocket.close(code=4404, reason="table session not found")
         return
     await websocket.accept()
     session.loop = asyncio.get_running_loop()

@@ -40,15 +40,26 @@ export function useTableSocket(code: string | undefined): TableConnection {
     if (!code) return
     let closed = false
     let retry: ReturnType<typeof setTimeout> | undefined
+    let backoff = 1000
 
     const connect = () => {
       if (closed) return
       const ws = new WebSocket(wsUrl(code))
       wsRef.current = ws
-      ws.onopen = () => setConnected(true)
-      ws.onclose = () => {
+      ws.onopen = () => {
+        setConnected(true)
+        backoff = 1000 // reset backoff once a connection succeeds
+      }
+      ws.onclose = (ev) => {
         setConnected(false)
-        if (!closed) retry = setTimeout(connect, 1000)
+        if (closed) return
+        if (ev.code === 4404) {
+          // Table session no longer exists — stop reconnecting.
+          setError('Table session not found — it may have ended.')
+          return
+        }
+        retry = setTimeout(connect, backoff)
+        backoff = Math.min(backoff * 2, 30000) // exponential backoff, cap 30s
       }
       ws.onerror = () => ws.close()
       ws.onmessage = (ev) => {
