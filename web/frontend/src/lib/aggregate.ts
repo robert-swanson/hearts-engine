@@ -9,15 +9,25 @@ export interface TeamPlayer {
 }
 
 export interface GameFilter {
-  // Game must include ALL of these teams among its players.
+  // Game must include ALL of these teams among its players (inclusion).
   teams: string[]
-  // Game must include each of these (team, player) pairs (any slot).
+  // Game must include NONE of these teams (exclusion).
+  excludeTeams: string[]
+  // Game must include each of these (team, player) pairs (any slot) (inclusion).
   teamPlayers: TeamPlayer[]
+  // Game must include NONE of these (team, player) pairs (exclusion).
+  excludeTeamPlayers: TeamPlayer[]
   // Game must have at least this many total moon shots.
   minMoonShots: number
 }
 
-export const EMPTY_FILTER: GameFilter = { teams: [], teamPlayers: [], minMoonShots: 0 }
+export const EMPTY_FILTER: GameFilter = {
+  teams: [],
+  excludeTeams: [],
+  teamPlayers: [],
+  excludeTeamPlayers: [],
+  minMoonShots: 0,
+}
 
 export interface Aggregate {
   numGames: number
@@ -58,13 +68,17 @@ function totalMoonShots(g: GameSummary): number {
 
 export function filterGames(games: GameSummary[], filter: GameFilter): GameSummary[] {
   return games.filter((g) => {
-    if (filter.teams.length) {
+    if (filter.teams.length || filter.excludeTeams.length) {
       const teams = gameTeams(g)
+      // Inclusion: must contain every included team.
       if (!filter.teams.every((t) => teams.has(t))) return false
+      // Exclusion: must contain none of the excluded teams.
+      if (filter.excludeTeams.some((t) => teams.has(t))) return false
     }
-    if (filter.teamPlayers.length) {
+    if (filter.teamPlayers.length || filter.excludeTeamPlayers.length) {
       const tps = gameTeamPlayers(g)
       if (!filter.teamPlayers.every((tp) => tps.has(teamPlayerId(tp)))) return false
+      if (filter.excludeTeamPlayers.some((tp) => tps.has(teamPlayerId(tp)))) return false
     }
     if (totalMoonShots(g) < filter.minMoonShots) return false
     return true
