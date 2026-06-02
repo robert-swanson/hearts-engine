@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import queue
 import random
+import secrets
 import string
 import threading
 import time
@@ -646,20 +647,36 @@ class TableSession:
 # --- Registry ----------------------------------------------------------------
 
 
+# Ceiling on concurrent table sessions (created by unauthenticated POST and
+# held until process exit) so a script can't exhaust memory. See live.MAX_TABLES.
+MAX_SESSIONS = 500
+
+
 class TableSessionManager:
     def __init__(self):
         self._sessions: Dict[str, TableSession] = {}
         self._lock = threading.Lock()
 
-    def create(self) -> TableSession:
+    def create(self) -> Optional[TableSession]:
+        """Allocate a new session, or None if at capacity / no free code."""
         with self._lock:
-            for _ in range(20):
-                code = "".join(random.choices(string.ascii_uppercase + string.digits, k=4))
-                if code not in self._sessions:
-                    break
+            if len(self._sessions) >= MAX_SESSIONS:
+                return None
+            code = self._fresh_code()
+            if code is None:
+                return None
             session = TableSession(code)
             self._sessions[code] = session
             return session
+
+    def _fresh_code(self) -> Optional[str]:
+        # secrets (not random) for unpredictable codes; never reuse a colliding
+        # code, which would silently evict the existing session.
+        for _ in range(100):
+            code = "".join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(4))
+            if code not in self._sessions:
+                return code
+        return None
 
     def get(self, code: str) -> Optional[TableSession]:
         return self._sessions.get(code.upper())
