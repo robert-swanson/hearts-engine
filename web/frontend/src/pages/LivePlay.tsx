@@ -8,6 +8,7 @@ import { TrickRow } from '../components/TrickRow'
 import { SUIT_ORDER, sortBySuitThenRank, type Suit } from '../lib/cards'
 import { columnSeats, CENTER, passRecipient, passSource } from '../lib/seating'
 import { useColumnSlide } from '../lib/useColumnSlide'
+import { LobbyGamesSection } from './LobbyGamesList'
 import './LivePlay.css'
 
 /** Split a hand into suit groups (suit-then-rank sorted) for gapped rendering. */
@@ -70,7 +71,7 @@ export function LivePlayHome() {
       <h1>Live play</h1>
       <p className="muted" style={{ marginTop: -8 }}>
         Create a table, add human seats (controlled from your browser) and AI opponents, then play a
-        real game on the server. Finished games show up under Lobby games.
+        real game on the server. Finished games show up under Lobby games below.
       </p>
       <div className="card-surface live-home">
         <div>
@@ -96,6 +97,10 @@ export function LivePlayHome() {
         </div>
       </div>
       {error && <p className="muted">Error: {error}</p>}
+
+      <div style={{ marginTop: 32 }}>
+        <LobbyGamesSection />
+      </div>
     </div>
   )
 }

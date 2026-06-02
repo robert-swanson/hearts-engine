@@ -6,7 +6,6 @@ import './theme-spacex.css'
 
 const NAV_LINKS = [
   { to: '/', label: 'Competitions' },
-  { to: '/lobby', label: 'Lobby games' },
   { to: '/play', label: 'Live play' },
   { to: '/table', label: 'Table game' },
 ]
