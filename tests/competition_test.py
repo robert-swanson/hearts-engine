@@ -154,6 +154,28 @@ def validate_result(data: dict, result_dir: Optional[Path], label: str) -> list:
             except Exception as e:
                 errors.append(f"{label} game {gid}: could not read detail file: {e}")
 
+    # Fairness (issue #69): every slot must play the *exact* same number of
+    # qualifying games. Count games per slot (team/tag/index, dropping the
+    # per-game session suffix) and require a single uniform value.
+    qgames_per_slot: dict = {}
+    for game in qualifying:
+        for entry in game.get('players', []):
+            for full_id in entry:                      # {full_id: {...}}
+                slot = '/'.join(full_id.split('/')[:3])
+                qgames_per_slot[slot] = qgames_per_slot.get(slot, 0) + 1
+    if qgames_per_slot:
+        counts = set(qgames_per_slot.values())
+        if len(counts) != 1:
+            # Show the few extremes to make a failure actionable.
+            lo = min(qgames_per_slot.values())
+            hi = max(qgames_per_slot.values())
+            offenders = {s: n for s, n in qgames_per_slot.items() if n in (lo, hi)}
+            errors.append(
+                f"{label}: unequal qualifying participation — slots played "
+                f"{sorted(counts)} games each (expected all equal). "
+                f"min/max examples: {offenders}"
+            )
+
     return errors
 
 

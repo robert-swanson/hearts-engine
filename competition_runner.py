@@ -351,7 +351,11 @@ def configure_rules(non_interactive: bool = False,
             print(f'    Invalid AI "{choice}". Choose from: {", ".join(modules)}')
     return {
         'port':               port,
-        'qualifying_games':   int(prompt('Qualifying games',             d_int('QUALIFYING_GAMES', 20))),
+        # Seed only — the real qualifying-game count is asked after registration
+        # (in main), once the full roster is known, so the prompt can show the
+        # exact multiple it must be rounded up to for fair, equal participation.
+        'qualifying_games':   qualifying_games if qualifying_games is not None
+                              else d_int('QUALIFYING_GAMES', 20),
         'finals_games':       int(prompt('Finals games',                 d_int('FINALS_GAMES', 7))),
         'max_players':        int(prompt('Max players per team (mult. of 4)', d_int('MAX_PLAYERS_PER_TEAM', 4))),
         'qualifying_points':  prompt('Qualifying points (1st,2nd,3rd,4th)', d_str('QUALIFYING_POINTS', '10,5,3,1')),
@@ -590,6 +594,32 @@ def main():
         print('No teams registered — running with filler bots only.')
     else:
         print(f'{len(real_teams)} team(s) registered: {list(real_teams.keys())}')
+
+    # ── Qualifying-game count (now that the roster is known) ────────────────
+    # Every game seats 4 players, so for every player to play the *exact* same
+    # number of games the count must be a multiple of (total slots / 4). Ask
+    # for it here — the only point where the full roster size is known — showing
+    # that multiple, and round any answer up to the nearest multiple.
+    num_filler  = cfg.get('num_filler_teams', 4)
+    total_slots = (len(real_teams) + num_filler) * cfg['max_players']
+    required_mult = max(1, total_slots // 4)
+
+    def _round_up(n: int) -> int:
+        return ((n + required_mult - 1) // required_mult) * required_mult
+
+    if non_interactive:
+        cfg['qualifying_games'] = _round_up(cfg['qualifying_games'])
+    else:
+        default_q = _round_up(cfg['qualifying_games'])
+        raw = int(prompt(
+            f'Qualifying games ({total_slots} players, must be a multiple of '
+            f'{required_mult})', default_q))
+        cfg['qualifying_games'] = _round_up(max(required_mult, raw))
+        if cfg['qualifying_games'] != raw:
+            print(f'  → rounded up to {cfg["qualifying_games"]} '
+                  f'(nearest multiple of {required_mult})')
+    print(f'Qualifying games: {cfg["qualifying_games"]} '
+          f'({cfg["qualifying_games"] // required_mult} game(s) per player)')
 
     # ── Run competition loop ───────────────────────────────────────────────
 
