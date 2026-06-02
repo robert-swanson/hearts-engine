@@ -8,7 +8,7 @@ import { aggregate, allPlayers, filterGames } from '../lib/aggregate'
 
 const PAGE_SIZE = 50
 
-type SortKey = 'team' | 'player' | 'gamesCount' | 'game' | 'tournament' | 'moon'
+type SortKey = 'team' | 'player' | 'gamesCount' | 'gamesWon' | 'game' | 'tournament' | 'moon'
 const TEXT_SORTS: SortKey[] = ['team', 'player']
 
 export function TournamentDetail() {
@@ -89,6 +89,7 @@ export function TournamentDetail() {
       if (sortKey === 'team') cmp = (nameOf(a).team ?? '').localeCompare(nameOf(b).team ?? '')
       else if (sortKey === 'player') cmp = playerSortKey(nameOf(a)).localeCompare(playerSortKey(nameOf(b)))
       else if (sortKey === 'gamesCount') cmp = (agg.gamesByPlayer[a] ?? 0) - (agg.gamesByPlayer[b] ?? 0)
+      else if (sortKey === 'gamesWon') cmp = (agg.gamesWonByPlayer[a] ?? 0) - (agg.gamesWonByPlayer[b] ?? 0)
       else if (sortKey === 'game') cmp = (agg.gamePointsByPlayer[a] ?? 0) - (agg.gamePointsByPlayer[b] ?? 0)
       else if (sortKey === 'tournament')
         cmp = (agg.tournamentPointsByPlayer[a] ?? 0) - (agg.tournamentPointsByPlayer[b] ?? 0)
@@ -160,6 +161,7 @@ export function TournamentDetail() {
               <SortTh label="Team" col="team" sortKey={sortKey} sortAsc={sortAsc} onSort={toggleSort} />
               <SortTh label="Player" col="player" sortKey={sortKey} sortAsc={sortAsc} onSort={toggleSort} />
               <SortTh label="Total games" col="gamesCount" sortKey={sortKey} sortAsc={sortAsc} onSort={toggleSort} />
+              <SortTh label="Games won" col="gamesWon" sortKey={sortKey} sortAsc={sortAsc} onSort={toggleSort} />
               <SortTh label="Total game points" col="game" sortKey={sortKey} sortAsc={sortAsc} onSort={toggleSort} />
               <SortTh
                 label="Total tournament points"
@@ -179,6 +181,7 @@ export function TournamentDetail() {
                   <td style={{ color: d.color, fontWeight: 600 }}>{d.team ?? '—'}</td>
                   <td><PlayerName d={d} /></td>
                   <td>{agg.gamesByPlayer[p] ?? 0}</td>
+                  <td>{agg.gamesWonByPlayer[p] ?? 0}</td>
                   <td>{agg.gamePointsByPlayer[p] ?? 0}</td>
                   <td>{agg.tournamentPointsByPlayer[p] ?? 0}</td>
                   <td>{agg.moonShotsByPlayer[p] ?? 0}</td>

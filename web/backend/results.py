@@ -414,6 +414,7 @@ def get_live_stats() -> dict:
     qualifying_executed = 0
     finals_executed = 0
     standings: dict[str, int] = {}
+    games_won: dict[str, int] = {}
     began_at = None
     competition_id = None
     tournament_index = None
@@ -424,6 +425,16 @@ def get_live_stats() -> dict:
         qualifying_executed = len(summary.get("qualifying", []))
         finals_executed = len(summary.get("finals", []))
         standings = summary.get("finals_totals") or summary.get("qualifying_totals") or {}
+        # Count game wins over the same stage the standings reflect (finals once
+        # they begin, otherwise qualifying), so wins line up with the points shown.
+        # The winner id carries a per-game session suffix; the standings totals are
+        # keyed by slot id (team/tag/index), so collapse to that to match.
+        stage_games = summary.get("finals") if summary.get("finals_totals") else summary.get("qualifying")
+        for entry in stage_games or []:
+            winner = entry.get("winner") if isinstance(entry, dict) else None
+            if winner:
+                slot = "/".join(winner.split("/")[:3])
+                games_won[slot] = games_won.get(slot, 0) + 1
 
     executed = qualifying_executed + finals_executed
     planned_total = planned_qualifying + planned_finals
@@ -442,5 +453,6 @@ def get_live_stats() -> dict:
         "games_executed": executed,
         "games_waiting": waiting,
         "standings": standings,
+        "games_won": games_won,
         "note": "in-progress/waiting counts are approximated from completed result files vs configured totals; the game server does not expose live per-game state.",
     }

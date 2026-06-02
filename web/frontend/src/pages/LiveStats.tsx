@@ -80,6 +80,7 @@ export function LiveStatsPanel() {
               <th>#</th>
               <th>Player</th>
               <th>Tournament points</th>
+              <th>Games won</th>
             </tr>
           </thead>
           <tbody>
@@ -88,6 +89,7 @@ export function LiveStatsPanel() {
                 <td>{i + 1}</td>
                 <td><PlayerName d={nameOf(player)} /></td>
                 <td>{pts}</td>
+                <td>{data.games_won?.[player] ?? 0}</td>
               </tr>
             ))}
           </tbody>
