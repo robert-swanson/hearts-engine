@@ -19,6 +19,7 @@
 #include <nlohmann/json.hpp>
 
 #include "game_observer.h"
+#include "../util/constants.h"  // Common::Server::MoveSource
 
 namespace Common::Game {
 
@@ -30,6 +31,7 @@ struct TrickRecord {
     std::string firstPlayer;
     std::vector<std::string> playerTags; // play order (playerTags[i] played cards[i])
     std::vector<std::string> cards;
+    std::vector<std::string> moveSources; // play order: "player" | "timeout" | "give_up"
     std::string winner;
     int points;
 };
@@ -62,6 +64,15 @@ struct GameResult {
     std::map<std::string, long> maxC2SMs;         // per-player max c2s
     std::map<std::string, long> maxMoveLatencyMs; // per-player max total move time (server wall clock)
     std::map<std::string, int>  latencyCount;     // number of moves with latency data
+
+    // End-to-end move-time histogram, per player. moveTimeoutMs is divided into
+    // 100ms buckets; bucket i (0..numBuckets-2) counts moves whose total latency
+    // fell in [i*100, (i+1)*100) ms. The final bucket (index numBuckets-1) is the
+    // "timeout" bucket: every auto/timed-out move lands here (rendered red in the
+    // UI). numBuckets = moveTimeoutMs/100 + 1. Empty when moveTimeoutMs <= 0.
+    long moveTimeoutMs = 0;
+    std::map<std::string, std::vector<long>> latencyHistogram;
+
     std::vector<RoundRecord> rounds;
 
     // Placement points awarded in qualifying (tournament only)
@@ -75,10 +86,12 @@ class RecordingObserver : public GameObserver {
 public:
     GameResult result;
 
-    explicit RecordingObserver(const std::string& gameId, const std::string& stage = "lobby")
+    explicit RecordingObserver(const std::string& gameId, const std::string& stage = "lobby",
+                               long moveTimeoutMs = 0)
     {
-        result.gameId = gameId;
-        result.stage  = stage;
+        result.gameId        = gameId;
+        result.stage         = stage;
+        result.moveTimeoutMs = moveTimeoutMs;
     }
 
     void onStartRound(int roundIdx, const std::string& passDir) override
@@ -103,11 +116,13 @@ public:
 
     void onTrickComplete(const std::vector<std::string>& playerOrder,
                           const std::vector<std::string>& cards,
+                          const std::vector<std::string>& moveSources,
                           const std::string& winner, int points) override
     {
         std::string firstPlayer = playerOrder.empty() ? "" : playerOrder[0];
         if (!result.rounds.empty())
-            result.rounds.back().tricks.push_back({firstPlayer, playerOrder, cards, winner, points});
+            result.rounds.back().tricks.push_back(
+                {firstPlayer, playerOrder, cards, moveSources, winner, points});
     }
 
     void onRoundComplete(int /*roundIdx*/, const std::map<std::string, int>& scores) override
@@ -122,6 +137,28 @@ public:
     {
         result.totalMoveLatencyMs[playerTag] += latencyMs;
         result.maxMoveLatencyMs[playerTag]    = std::max(result.maxMoveLatencyMs[playerTag], latencyMs);
+
+        // Histogram: 100ms buckets across [0, moveTimeoutMs), plus a final "timeout"
+        // bucket for auto-moves (and the rare completed move at/over the timeout).
+        if (result.moveTimeoutMs > 0)
+        {
+            int numBuckets = (int)(result.moveTimeoutMs / 100) + 1; // last = timeout bucket
+            auto& hist = result.latencyHistogram[playerTag];
+            if ((int)hist.size() != numBuckets) hist.assign(numBuckets, 0);
+            int idx;
+            if (autoMoved || latencyMs >= result.moveTimeoutMs)
+            {
+                idx = numBuckets - 1; // timeout bucket
+            }
+            else
+            {
+                idx = (int)(latencyMs / 100);
+                if (idx > numBuckets - 2) idx = numBuckets - 2;
+                if (idx < 0) idx = 0;
+            }
+            hist[idx]++;
+        }
+
         if (autoMoved)
         {
             result.autoMoveCount[playerTag]++;
@@ -215,6 +252,11 @@ inline json gameResultToDetailJson(const GameResult& gr)
             json tj;
             tj["first_player"] = toFullId(t.firstPlayer, gr.playerTagToSlotId);
             tj["moves"]        = t.cards; // in play order starting from first_player
+            // Per-move provenance aligned with moves[]: "player" | "timeout" | "give_up".
+            // Omitted when every move was a normal player move, to keep typical games lean.
+            if (std::any_of(t.moveSources.begin(), t.moveSources.end(),
+                            [](const std::string& s){ return s != Common::Server::MoveSource::PLAYER; }))
+                tj["move_sources"] = t.moveSources;
             tj["winner"]       = toFullId(t.winner, gr.playerTagToSlotId);
             tj["points"]       = t.points;
             tricks.push_back(tj);

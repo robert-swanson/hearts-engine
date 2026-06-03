@@ -49,8 +49,13 @@ public:
             EnvLoader->has("RESULTS_DIR") ? std::filesystem::path(ENV_STRING("RESULTS_DIR"))
                                           : std::filesystem::path("results");
 
-        std::thread([players, logger, gameId, playedAt, resultsDir]() {
-            Common::Game::RecordingObserver recorder(gameId);
+        // Match the move timeout the Matcher assigns to lobby sessions, so the
+        // recorded move-time histogram buckets the right way (see matcher.h).
+        long moveTimeoutMs = (EnvLoader && EnvLoader->has("MOVE_TIMEOUT_MS"))
+            ? (long)std::stoi(ENV_STRING("MOVE_TIMEOUT_MS")) : 15000;
+
+        std::thread([players, logger, gameId, playedAt, resultsDir, moveTimeoutMs]() {
+            Common::Game::RecordingObserver recorder(gameId, "lobby", moveTimeoutMs);
             // Seating order = the order players were dealt into the game.
             for (const auto& p : players)
                 recorder.result.playerOrder.push_back(p->getTagSession());
