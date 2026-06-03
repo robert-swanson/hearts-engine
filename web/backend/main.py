@@ -318,6 +318,21 @@ async def table_ws(websocket: WebSocket, code: str):
         session.clients.pop(conn_key, None)
 
 
+# Catch-all WebSocket route. MUST be declared after every specific @app.websocket
+# route above so those still win (FastAPI matches in registration order). Any WS
+# path that matches nothing else — an empty table code (/api/live/ws/), a stale
+# path from an old cached frontend, a typo — would otherwise be rejected by
+# Starlette *before* the handshake. uvicorn logs that as a bare "403 Forbidden"
+# and the browser only sees an uninterpretable 1006 close, so the client can't
+# tell it should stop and reconnects forever, spamming the logs (issue #50).
+# Accept the handshake first, then close with the application code 4404 that the
+# live/table socket clients already treat as "gone — stop reconnecting".
+@app.websocket("/{_ws_path:path}")
+async def websocket_catch_all(websocket: WebSocket, _ws_path: str):
+    await websocket.accept()
+    await websocket.close(code=4404, reason="unknown websocket endpoint")
+
+
 # Serve the built frontend (web/frontend/dist) when present, so prod is a single process.
 _dist = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 if _dist.is_dir():
