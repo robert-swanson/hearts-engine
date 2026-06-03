@@ -302,6 +302,124 @@ button.btn.btn--active:hover {
   text-decoration: none;
 }
 
+/* "Live" badge next to an in-progress competition / tournament. */
+.badge-live {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: #e8f7f0;
+  color: #1c9c7c;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  vertical-align: middle;
+  animation: badge-live-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes badge-live-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+/* A row of stage-toggle / control buttons that can sit beside a heading. */
+.chart-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.chart-controls__spacer {
+  flex: 1;
+}
+
+/* ---- TV-cast competition view -------------------------------------------- */
+/* Larger type + a dark, glanceable layout so the competition page can be cast
+   to a TV and read passively from across the room. */
+.cast-mode {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  overflow-y: auto;
+  background: #0f1722;
+  color: #e8edf3;
+  padding: 28px 40px 48px;
+}
+
+.cast-mode h1 {
+  font-size: 34px;
+  margin-bottom: 6px;
+}
+
+.cast-mode h2 {
+  font-size: 22px;
+  color: #aeb9c7;
+}
+
+.cast-mode .card-surface {
+  background: #18222f;
+  box-shadow: none;
+  border: 1px solid #243042;
+}
+
+.cast-mode table.data th {
+  color: #8493a6;
+}
+
+.cast-mode table.data td {
+  font-size: 18px;
+  border-bottom-color: #243042;
+}
+
+.cast-mode table.data th {
+  border-bottom-color: #243042;
+}
+
+.cast-mode table.data tbody tr:hover {
+  background: transparent;
+}
+
+.cast-mode .muted {
+  color: #8493a6;
+}
+
+.cast-mode .line-chart__grid {
+  stroke: #243042;
+}
+.cast-mode .line-chart__axis {
+  stroke: #3a4a60;
+}
+.cast-mode .line-chart__tick {
+  fill: #8493a6;
+}
+.cast-mode .line-chart__axis-label {
+  fill: #aeb9c7;
+}
+.cast-mode .line-chart__legend-item {
+  color: #cdd6e2;
+}
+
+.cast-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cast-grid {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .cast-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 600px) {
   h1 {
     font-size: 19px;

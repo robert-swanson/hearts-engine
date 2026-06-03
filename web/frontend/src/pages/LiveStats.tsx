@@ -18,11 +18,13 @@ function elapsedSince(iso: string | null): string {
 }
 
 // Embeddable live panel. Renders nothing until there is an in-progress
-// tournament, so it can sit quietly at the top of the Competitions page.
-export function LiveStatsPanel() {
+// tournament. Pass `cid` to scope it to a single competition — it then renders
+// only when that competition is the one currently running.
+export function LiveStatsPanel({ cid }: { cid?: string } = {}) {
   const { data, error } = usePoll(() => api.live(), REFRESH_MS, [])
 
   if (!data || !data.competition_id || !data.tournament_index) return null
+  if (cid && data.competition_id !== cid) return null
 
   const standings = Object.entries(data.standings).sort((a, b) => b[1] - a[1])
   const nameOf = nameResolver(standings.map(([p]) => p))

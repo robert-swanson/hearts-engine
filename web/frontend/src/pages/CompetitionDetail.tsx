@@ -1,9 +1,14 @@
 import { useMemo } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
-import { api, type TournamentRow } from '../api/client'
-import { useFetch } from '../lib/useFetch'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { api, type TournamentRow, type TournamentSummary } from '../api/client'
+import { useFetch, usePoll } from '../lib/useFetch'
 import { nameResolver } from '../lib/playerId'
 import { PlayerName } from '../components/PlayerName'
+import { LineChart } from '../components/LineChart'
+import { competitionSeries } from '../lib/chartData'
+import { LiveStatsPanel } from './LiveStats'
+
+const SUMMARY_REFRESH_MS = 15000
 
 function formatTime(iso: string | null): string {
   if (!iso) return '—'
@@ -24,8 +29,20 @@ function formatLength(seconds: number | null): string {
 
 export function CompetitionDetail() {
   const { cid = '' } = useParams()
-  const { data, loading, error } = useFetch(() => api.competition(cid), [cid])
+  // Poll so a live competition's placements/standings refresh on their own,
+  // which also keeps the TV-cast view current without interaction.
+  const { data, loading, error } = usePoll(() => api.competition(cid), SUMMARY_REFRESH_MS, [cid])
   const navigate = useNavigate()
+
+  const [params, setParams] = useSearchParams()
+  const stage: 'qualifying' | 'finals' = params.get('cstage') === 'qualifying' ? 'qualifying' : 'finals'
+  const castMode = params.get('cast') === '1'
+  const setParam = (key: string, value: string | null) => {
+    const next = new URLSearchParams(params)
+    if (value == null) next.delete(key)
+    else next.set(key, value)
+    setParams(next, { replace: false })
+  }
 
   const nameOf = useMemo(() => {
     const ids: string[] = []
@@ -48,20 +65,83 @@ export function CompetitionDetail() {
     [cid, rulesIndex],
   )
 
-  if (loading) return <p className="muted">Loading…</p>
-  if (error) return <p className="muted">Error: {error}</p>
+  // Fetch every tournament's per-game summary so we can chart the competition
+  // arc. Polls alongside the detail so the in-progress tournament's points keep
+  // climbing on screen.
+  const indexKey = tournaments.map((t) => t.index).join(',')
+  const { data: summaries } = usePoll<TournamentSummary[]>(
+    () =>
+      tournaments.length
+        ? Promise.all(tournaments.map((t) => api.tournament(cid, t.index)))
+        : Promise.resolve([]),
+    SUMMARY_REFRESH_MS,
+    [cid, indexKey],
+  )
+
+  const series = useMemo(() => {
+    if (!summaries || !summaries.length) return []
+    const perTournament = summaries.map((s, i) => ({
+      index: Number(tournaments[i]?.index ?? i + 1),
+      games: stage === 'finals' ? s.finals : s.qualifying,
+    }))
+    return competitionSeries(perTournament)
+  }, [summaries, indexKey, stage])
+
+  const xTicks = useMemo(() => tournaments.map((t) => Number(t.index)), [indexKey])
+
+  if (loading && !data) return <p className="muted">Loading…</p>
+  if (error && !data) return <p className="muted">Error: {error}</p>
   if (!data) return <p className="muted">Not found.</p>
 
   const title = data.is_legacy ? 'Ungrouped tournaments (legacy)' : `Competition ${data.competition_id}`
+  const hasChart = series.length > 0
+
+  const chartCard = (
+    <div className="card-surface">
+      <div className="chart-controls">
+        <strong style={{ fontSize: 14 }}>Top player per team, by tournament</strong>
+        <span className="chart-controls__spacer" />
+        <button
+          className={`btn${stage === 'qualifying' ? ' btn--active' : ''}`}
+          onClick={() => setParam('cstage', 'qualifying')}
+        >
+          Qualifying
+        </button>
+        <button
+          className={`btn${stage === 'finals' ? ' btn--active' : ''}`}
+          onClick={() => setParam('cstage', null)}
+        >
+          Finals
+        </button>
+      </div>
+      <LineChart
+        series={series}
+        big={castMode}
+        height={castMode ? 380 : 320}
+        xLabel="Tournament"
+        yLabel="Avg tournament points"
+        xTicks={xTicks}
+        xTickFormat={(x) => `#${x}`}
+      />
+    </div>
+  )
 
   return (
-    <div>
-      <div className="crumbs">
-        <Link to="/">Competitions</Link> / {data.is_legacy ? 'legacy' : data.competition_id}
-      </div>
-      <h1>{title}</h1>
+    <div className={castMode ? 'cast-mode' : undefined}>
+      {!castMode && (
+        <div className="crumbs">
+          <Link to="/">Competitions</Link> / {data.is_legacy ? 'legacy' : data.competition_id}
+        </div>
+      )}
 
-      <div className="muted" style={{ marginTop: -8, marginBottom: 12, fontSize: 13 }}>
+      <div className="cast-toggle-row" style={{ justifyContent: 'space-between', marginBottom: 8 }}>
+        <h1 style={{ margin: 0 }}>{title}</h1>
+        <button className={`btn${castMode ? ' btn--active' : ''}`} onClick={() => setParam('cast', castMode ? null : '1')}>
+          {castMode ? 'Exit TV view' : 'TV view'}
+        </button>
+      </div>
+
+      <div className="muted" style={{ marginBottom: 12, fontSize: 13 }}>
         {!data.is_legacy && <>Started {formatTime(data.started_at)} · </>}
         {data.qualifying_games != null && (
           <>
@@ -69,9 +149,21 @@ export function CompetitionDetail() {
           </>
         )}
         Teams: {data.teams.length > 0 ? data.teams.join(', ') : '—'}
+        {castMode && <> · auto-refreshing every {SUMMARY_REFRESH_MS / 1000}s</>}
       </div>
 
-      {rules && (
+      {/* Live standings for THIS competition (only when it's the one running). */}
+      <LiveStatsPanel cid={data.competition_id} />
+
+      {/* Competition arc chart. */}
+      {hasChart && (
+        <>
+          <h2>Competition overview</h2>
+          {chartCard}
+        </>
+      )}
+
+      {rules && !castMode && (
         <>
           <h2>Rules</h2>
           <div className="card-surface">
@@ -152,7 +244,7 @@ function TournamentRowView({
     >
       <td>
         #{t.index}
-        {!t.complete && <span className="muted" style={{ fontSize: 11 }}> (in progress)</span>}
+        {!t.complete && <span className="badge-live">● Live</span>}
       </td>
       <td>{t.began_at ? new Date(t.began_at).toLocaleString() : '—'}</td>
       <td className="muted">{formatLength(t.length_seconds)}</td>

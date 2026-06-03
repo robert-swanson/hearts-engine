@@ -1,0 +1,71 @@
+.line-chart {
+  width: 100%;
+  /* Cap so the fixed aspect ratio doesn't make the chart absurdly tall on very
+     wide screens (e.g. a TV-cast view). */
+  max-width: 1080px;
+}
+
+.line-chart svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.line-chart__empty {
+  padding: 24px 0;
+  text-align: center;
+  font-size: 13px;
+}
+
+.line-chart__grid {
+  stroke: #eef0f3;
+  stroke-width: 1;
+}
+
+.line-chart__axis {
+  stroke: #c7ccd3;
+  stroke-width: 1;
+}
+
+.line-chart__tick {
+  fill: #8a93a0;
+}
+
+.line-chart__axis-label {
+  fill: #5a6472;
+  font-weight: 600;
+}
+
+.line-chart__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-top: 10px;
+  font-size: 13px;
+}
+
+.line-chart__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #3a4452;
+}
+
+.line-chart__swatch {
+  width: 14px;
+  height: 4px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+/* TV-cast mode — bigger legend so it reads from across the room. */
+.line-chart--big .line-chart__legend {
+  font-size: 18px;
+  gap: 8px 24px;
+  margin-top: 14px;
+}
+
+.line-chart--big .line-chart__swatch {
+  width: 20px;
+  height: 6px;
+}

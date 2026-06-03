@@ -4,6 +4,8 @@ import { api, gamePlayers, type GameSummary } from '../api/client'
 import { useFetch } from '../lib/useFetch'
 import { nameResolver, playerSortKey, teamColor } from '../lib/playerId'
 import { PlayerName } from '../components/PlayerName'
+import { LineChart } from '../components/LineChart'
+import { tournamentCumulativeSeries } from '../lib/chartData'
 import {
   aggregate,
   allTeams,
@@ -74,6 +76,7 @@ export function TournamentDetail() {
 
   const teams = useMemo(() => allTeams(games), [games])
   const teamPlayers = useMemo(() => allTeamPlayers(games), [games])
+  const chartSeries = useMemo(() => tournamentCumulativeSeries(games), [games])
 
   const keysToTPs = (keys: string[]): TeamPlayer[] =>
     keys.map((k) => {
@@ -265,6 +268,21 @@ export function TournamentDetail() {
           Finals ({data.finals.length})
         </button>
       </div>
+
+      {chartSeries.length > 0 && (
+        <>
+          <h2>Cumulative tournament points by team</h2>
+          <div className="card-surface">
+            <LineChart
+              series={chartSeries}
+              height={300}
+              xLabel="Game index"
+              yLabel="Cumulative avg tournament points"
+              xTickFormat={(x) => String(x)}
+            />
+          </div>
+        </>
+      )}
 
       <h2>Filter &amp; aggregate</h2>
       <div className="card-surface">
