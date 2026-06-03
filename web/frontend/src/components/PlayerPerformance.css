@@ -141,12 +141,17 @@
 
 @media (max-width: 600px) {
   .perf-detail-row > td {
-    padding: 10px 8px;
+    padding: 10px 6px;
   }
-  /* Fill the phone width and stay pinned to the left while the table scrolls. */
+  /* Pin to the left and size to the phone viewport. The box lives in a colspan
+     cell of a table that is far wider than the screen, so it is sized relative
+     to the viewport (not the cell). The subtracted constant covers the app +
+     card + cell padding to its left plus a margin on the right, so the panel
+     never forces horizontal overflow off the screen. */
   .perf-detail-box {
-    left: 8px;
-    width: calc(100vw - 32px);
+    left: 6px;
+    width: calc(100vw - 56px);
+    max-width: calc(100vw - 56px);
     padding: 10px 12px;
   }
   .perf-hist {
