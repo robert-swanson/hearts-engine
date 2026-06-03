@@ -7,19 +7,33 @@
   font-size: 11px;
 }
 
-/* The expanded detail row sits flush under its player row. */
+/* The expanded detail row sits flush under its player row. Dark so the colored
+   histogram bars and the latency figures stand out clearly. */
 .perf-detail-row > td {
-  background: #fafafa;
-  padding: 8px 12px;
+  background: #0f1722;
+  padding: 12px;
 }
 
-/* Inline performance detail shown in an expanded aggregate-table row. */
+/* Inline performance detail shown in an expanded aggregate-table row. A dark
+   card; pinned to the viewport's left edge so it stays readable while the wide
+   aggregate table scrolls horizontally on a phone. */
 .perf-detail-box {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-width: 360px;
-  padding: 4px 0 8px;
+  position: sticky;
+  left: 12px;
+  width: min(420px, calc(100vw - 48px));
+  color: #e6ebf2;
+  background: #18222f;
+  border: 1px solid #243042;
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+
+/* Keep muted sub-labels legible on the dark card. */
+.perf-detail-box .muted {
+  color: #9aa6b4;
 }
 
 .perf-summary {
@@ -27,7 +41,7 @@
 }
 
 .perf-card__timeouts {
-  color: #d11a2a;
+  color: #ff6b78;
   font-weight: 600;
 }
 
@@ -38,7 +52,7 @@
   gap: 1px;
   height: 90px;
   padding: 0;
-  border-bottom: 1px solid #d8d8d8;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.18);
 }
 
 .perf-bar {
@@ -57,31 +71,31 @@
   display: block;
   width: 100%;
   min-height: 1px;
-  background: #4a86e8;
+  background: #5b9bff;
   border-radius: 2px 2px 0 0;
   transition: background 0.08s ease;
 }
 
 .perf-bar:hover .perf-bar__fill {
-  background: #2a5bd7;
+  background: #8fbcff;
 }
 
 .perf-bar--timeout .perf-bar__fill {
-  background: #e23b3b;
+  background: #ff5b5b;
 }
 
 .perf-bar--timeout:hover .perf-bar__fill {
-  background: #c12222;
+  background: #ff8585;
 }
 
 .perf-bar--sel .perf-bar__fill {
-  background: #1a3f9e;
-  box-shadow: 0 0 0 1px #1a3f9e;
+  background: #cfe0ff;
+  box-shadow: 0 0 0 1px #cfe0ff;
 }
 
 .perf-bar--timeout.perf-bar--sel .perf-bar__fill {
-  background: #8c1212;
-  box-shadow: 0 0 0 1px #8c1212;
+  background: #ffd0d0;
+  box-shadow: 0 0 0 1px #ffd0d0;
 }
 
 .perf-pct {
@@ -105,16 +119,37 @@
 .perf-latency td {
   text-align: right;
   padding: 2px 6px;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  color: #d4dbe4;
+}
+
+.perf-latency th {
+  color: #9aa6b4;
 }
 
 .perf-latency th:first-child,
 .perf-latency td:first-child {
   text-align: left;
-  color: #555;
+  color: #aab4c0;
 }
 
 .perf-latency__total td {
   font-weight: 600;
   border-bottom: none;
+  color: #f0f3f7;
+}
+
+@media (max-width: 600px) {
+  .perf-detail-row > td {
+    padding: 10px 8px;
+  }
+  /* Fill the phone width and stay pinned to the left while the table scrolls. */
+  .perf-detail-box {
+    left: 8px;
+    width: calc(100vw - 32px);
+    padding: 10px 12px;
+  }
+  .perf-hist {
+    height: 76px;
+  }
 }
