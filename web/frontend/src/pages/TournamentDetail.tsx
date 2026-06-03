@@ -1,10 +1,10 @@
-import { useMemo, type ReactNode } from 'react'
+import { Fragment, useMemo, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api, gamePlayers, type GameSummary } from '../api/client'
 import { useFetch } from '../lib/useFetch'
 import { nameResolver, playerSortKey, teamColor } from '../lib/playerId'
 import { PlayerName } from '../components/PlayerName'
-import { PlayerPerformance } from '../components/PlayerPerformance'
+import { PlayerMetrics } from '../components/PlayerPerformance'
 import {
   aggregate,
   allTeams,
@@ -39,6 +39,17 @@ export function TournamentDetail() {
   const { cid = '', index = '' } = useParams()
   const { data, loading, error } = useFetch(() => api.tournament(cid, index), [cid, index])
   const navigate = useNavigate()
+
+  // Which aggregate rows have their performance detail (histogram + latency)
+  // expanded. Ephemeral UI state — not persisted to the URL.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const toggleExpand = (slot: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(slot)) next.delete(slot)
+      else next.add(slot)
+      return next
+    })
 
   // Filter / stage / sort / page selections all live in the URL so the view is
   // shareable and survives back/forward navigation.
@@ -328,6 +339,12 @@ export function TournamentDetail() {
         />
 
         <h2>Aggregate over {agg.numGames} matching game(s)</h2>
+        {data.player_stats && (
+          <p className="muted" style={{ fontSize: 12, marginTop: 0 }}>
+            Click a player to expand their move-time histogram and latency breakdown. Those
+            performance metrics cover every game in this stage — the filters above don't affect them.
+          </p>
+        )}
         <table className="data">
           <thead>
             <tr>
@@ -364,19 +381,40 @@ export function TournamentDetail() {
           <tbody>
             {aggRows.map((p) => {
               const d = nameOf(p)
+              const stats = data.player_stats?.[stage]?.[p]
+              const isOpen = expanded.has(p)
               return (
-                <tr key={p}>
-                  <td>{rankByPlayer[p] ?? '—'}</td>
-                  <td style={{ color: d.color, fontWeight: 600 }}>{d.team ?? '—'}</td>
-                  <td><PlayerName d={d} /></td>
-                  <td>{avgOf(agg.tournamentPointsByPlayer, p).toFixed(2)}</td>
-                  <td>{agg.gamesByPlayer[p] ?? 0}</td>
-                  <td>{agg.gamesWonByPlayer[p] ?? 0}</td>
-                  <td>{agg.tournamentPointsByPlayer[p] ?? 0}</td>
-                  <td>{avgOf(agg.gamePointsByPlayer, p).toFixed(2)}</td>
-                  <td>{agg.moonShotsByPlayer[p] ?? 0}</td>
-                  <td>{agg.timeoutGamesByPlayer[p] ?? 0}</td>
-                </tr>
+                <Fragment key={p}>
+                  <tr
+                    className={stats ? 'row-link' : undefined}
+                    onClick={stats ? () => toggleExpand(p) : undefined}
+                  >
+                    <td>{rankByPlayer[p] ?? '—'}</td>
+                    <td style={{ color: d.color, fontWeight: 600 }}>{d.team ?? '—'}</td>
+                    <td>
+                      {stats && <span className="perf-caret">{isOpen ? '▾' : '▸'}</span>}
+                      <PlayerName d={d} />
+                    </td>
+                    <td>{avgOf(agg.tournamentPointsByPlayer, p).toFixed(2)}</td>
+                    <td>{agg.gamesByPlayer[p] ?? 0}</td>
+                    <td>{agg.gamesWonByPlayer[p] ?? 0}</td>
+                    <td>{agg.tournamentPointsByPlayer[p] ?? 0}</td>
+                    <td>{avgOf(agg.gamePointsByPlayer, p).toFixed(2)}</td>
+                    <td>{agg.moonShotsByPlayer[p] ?? 0}</td>
+                    <td>{agg.timeoutGamesByPlayer[p] ?? 0}</td>
+                  </tr>
+                  {stats && isOpen && (
+                    <tr className="perf-detail-row">
+                      <td colSpan={10}>
+                        <PlayerMetrics
+                          stats={stats}
+                          moveTimeoutMs={data.move_timeout_ms ?? 0}
+                          bucketMs={data.bucket_ms ?? 100}
+                        />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               )
             })}
           </tbody>
@@ -446,18 +484,6 @@ export function TournamentDetail() {
           </div>
         )}
       </div>
-
-      {data.player_stats && (
-        <>
-          <h2>Performance</h2>
-          <PlayerPerformance
-            stats={data.player_stats[stage]}
-            moveTimeoutMs={data.move_timeout_ms ?? 0}
-            bucketMs={data.bucket_ms ?? 100}
-            nameOf={nameOf}
-          />
-        </>
-      )}
     </div>
   )
 }

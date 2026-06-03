@@ -102,6 +102,7 @@ export interface PlayerLatencyBreakdown {
   avg_s2c_ms: number
   avg_c2s_ms: number
   avg_think_ms: number
+  avg_total_ms: number
   max_s2c_ms: number
   max_c2s_ms: number
   max_think_ms: number

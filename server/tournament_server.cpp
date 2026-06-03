@@ -534,6 +534,7 @@ static json aggregatePlayerStats(const std::vector<GameResult>& games)
         long timeoutCount = 0;
         int  timeoutGames = 0;
         long totalS2C = 0, totalC2S = 0, totalThink = 0;
+        long totalTotal = 0; // sum of end-to-end move times, over every move
         long maxS2C = 0, maxC2S = 0, maxThink = 0, maxTotal = 0;
         int  latencySamples = 0;
     };
@@ -548,6 +549,12 @@ static json aggregatePlayerStats(const std::vector<GameResult>& games)
             auto& s = bySlot[slotId];
             if (s.hist.size() < hist.size()) s.hist.resize(hist.size(), 0);
             for (size_t i = 0; i < hist.size(); ++i) s.hist[i] += hist[i];
+        }
+        for (const auto& [tagSession, t] : gr.totalMoveLatencyMs)
+        {
+            auto it = gr.playerTagToSlotId.find(tagSession);
+            std::string slotId = (it != gr.playerTagToSlotId.end()) ? it->second : tagSession;
+            bySlot[slotId].totalTotal += t;
         }
         for (const auto& [tagSession, n] : gr.autoMoveCount)
         {
@@ -588,6 +595,7 @@ static json aggregatePlayerStats(const std::vector<GameResult>& games)
         lat["avg_s2c_ms"]   = s.latencySamples ? s.totalS2C   / s.latencySamples : -1;
         lat["avg_c2s_ms"]   = s.latencySamples ? s.totalC2S   / s.latencySamples : -1;
         lat["avg_think_ms"] = s.latencySamples ? s.totalThink / s.latencySamples : -1;
+        lat["avg_total_ms"] = moveCount ? s.totalTotal / moveCount : -1;
         lat["max_s2c_ms"]   = s.maxS2C;
         lat["max_c2s_ms"]   = s.maxC2S;
         lat["max_think_ms"] = s.maxThink;

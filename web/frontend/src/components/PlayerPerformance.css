@@ -1,24 +1,29 @@
-.perf-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 12px;
+/* Caret in the player cell of an expandable aggregate row. */
+.perf-caret {
+  display: inline-block;
+  width: 1em;
+  margin-right: 4px;
+  color: #888;
+  font-size: 11px;
 }
 
-.perf-card {
-  padding: 12px;
+/* The expanded detail row sits flush under its player row. */
+.perf-detail-row > td {
+  background: #fafafa;
+  padding: 8px 12px;
 }
 
-.perf-card__head {
+/* Inline performance detail shown in an expanded aggregate-table row. */
+.perf-detail-box {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+  flex-direction: column;
   gap: 8px;
-  margin-bottom: 10px;
+  max-width: 360px;
+  padding: 4px 0 8px;
 }
 
-.perf-card__sub {
+.perf-summary {
   font-size: 12px;
-  white-space: nowrap;
 }
 
 .perf-card__timeouts {
@@ -79,13 +84,12 @@
   box-shadow: 0 0 0 1px #8c1212;
 }
 
-.perf-detail {
+.perf-pct {
   font-size: 12px;
-  margin: 8px 0;
   min-height: 32px;
 }
 
-.perf-detail--hint {
+.perf-pct--hint {
   display: flex;
   align-items: center;
 }
