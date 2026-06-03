@@ -41,35 +41,82 @@ function setCuePref(k: CueKind, on: boolean) {
 }
 
 let _audioCtx: AudioContext | null = null
-function playTurnTone() {
+function getAudioCtx(): AudioContext | null {
   try {
-    const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+    const Ctor =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+    if (!Ctor) return null
     _audioCtx = _audioCtx ?? new Ctor()
-    const ctx = _audioCtx
-    if (ctx.state === 'suspended') void ctx.resume()
-    const osc = ctx.createOscillator()
-    const gain = ctx.createGain()
-    osc.type = 'sine'
-    osc.frequency.setValueAtTime(880, ctx.currentTime)
-    osc.frequency.setValueAtTime(1320, ctx.currentTime + 0.12)
-    gain.gain.setValueAtTime(0.0001, ctx.currentTime)
-    gain.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + 0.02)
-    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.3)
-    osc.connect(gain)
-    gain.connect(ctx.destination)
-    osc.start()
-    osc.stop(ctx.currentTime + 0.32)
+    return _audioCtx
   } catch {
-    /* audio unavailable — ignore */
+    return null
   }
 }
 
-/** Fire haptic/sound cues on the rising edge of `active` (it becoming my turn). */
+/** Resume the audio context. iOS Safari starts it 'suspended' and 'interrupts'
+ *  it whenever the tab backgrounds (which is why sound "worked for a while then
+ *  stopped"); resuming must happen from a user gesture or on returning to the
+ *  foreground. Safe to call repeatedly. */
+function unlockAudio() {
+  const ctx = getAudioCtx()
+  if (ctx && ctx.state !== 'running') void ctx.resume()
+}
+
+function emitTone(ctx: AudioContext) {
+  const osc = ctx.createOscillator()
+  const gain = ctx.createGain()
+  osc.type = 'sine'
+  osc.frequency.setValueAtTime(880, ctx.currentTime)
+  osc.frequency.setValueAtTime(1320, ctx.currentTime + 0.12)
+  gain.gain.setValueAtTime(0.0001, ctx.currentTime)
+  gain.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + 0.02)
+  gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.3)
+  osc.connect(gain)
+  gain.connect(ctx.destination)
+  osc.start()
+  osc.stop(ctx.currentTime + 0.32)
+}
+
+function playTurnTone() {
+  const ctx = getAudioCtx()
+  if (!ctx) return
+  // If the context was suspended/interrupted (backgrounded tab), resume first
+  // and emit only once it's actually running so the tone isn't silently dropped.
+  if (ctx.state === 'running') {
+    try {
+      emitTone(ctx)
+    } catch {
+      /* ignore */
+    }
+  } else {
+    ctx
+      .resume()
+      .then(() => {
+        try {
+          emitTone(ctx)
+        } catch {
+          /* ignore */
+        }
+      })
+      .catch(() => {})
+  }
+}
+
+/** Whether the Vibration API is actually usable. iOS Safari exposes no
+ *  navigator.vibrate, so the buzz cue can't work there — we surface that with a
+ *  disabled toggle instead of a control that silently does nothing. */
+function vibrationSupported(): boolean {
+  return typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function'
+}
+
+/** Fire haptic/sound cues on the rising edge of `active` (it becoming my turn,
+ *  or my needing to collect). */
 function useTurnCue(active: boolean, vibrate: boolean, sound: boolean) {
   const wasActive = useRef(false)
   useEffect(() => {
     if (active && !wasActive.current) {
-      if (vibrate) navigator.vibrate?.([55, 40, 55])
+      if (vibrate && vibrationSupported()) navigator.vibrate?.([55, 40, 55])
       if (sound) playTurnTone()
     }
     wasActive.current = active
@@ -329,6 +376,21 @@ function Lobby({ table, send }: { table: LobbyTable; send: (a: SendAction) => vo
 function TableSettings({ table, send }: { table: LobbyTable; send: (a: SendAction) => void }) {
   const slow = !!table.slow_mode
   const hide = !!table.hide_prev_tricks
+  // Editable decision timeout. Kept in local state while typing, committed on
+  // blur/Enter (the backend clamps to 10–600s). Re-sync if another lobby client
+  // changes it.
+  const serverTimeout = Math.round(table.timeout_s ?? 115)
+  const [timeoutInput, setTimeoutInput] = useState(String(serverTimeout))
+  const [lastServer, setLastServer] = useState(serverTimeout)
+  if (serverTimeout !== lastServer) {
+    setLastServer(serverTimeout)
+    setTimeoutInput(String(serverTimeout))
+  }
+  const commitTimeout = () => {
+    const v = Number(timeoutInput)
+    if (Number.isFinite(v) && timeoutInput.trim() !== '') send({ action: 'set_options', timeout_s: v })
+    else setTimeoutInput(String(serverTimeout))
+  }
   return (
     <div className="card-surface table-settings" style={{ marginTop: 16 }}>
       <h3 style={{ margin: '0 0 8px' }}>Table options</h3>
@@ -354,9 +416,32 @@ function TableSettings({ table, send }: { table: LobbyTable; send: (a: SendActio
         <span>
           <strong>Hide previous tricks until the round ends</strong>
           <span className="muted"> — earlier tricks of the current round stay hidden until the
-            round finishes scoring.</span>
+            round finishes scoring. AI activity logs are redacted too, so they can't be used to
+            peek.</span>
         </span>
       </label>
+      <div className="table-settings__opt table-settings__opt--inline">
+        <span>
+          <strong>Decision timeout</strong>
+          <span className="muted"> — how long a human seat has to pass or play before the server
+            auto-decides for them.</span>
+        </span>
+        <span className="table-settings__timeout">
+          <input
+            type="number"
+            min={10}
+            max={600}
+            step={5}
+            value={timeoutInput}
+            onChange={(e) => setTimeoutInput(e.target.value)}
+            onBlur={commitTimeout}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+            }}
+          />
+          <span className="muted">s</span>
+        </span>
+      </div>
     </div>
   )
 }
@@ -524,22 +609,28 @@ function CollectBar({
   send: (a: SendAction) => void
   nameOf: (pid: string) => string
 }) {
+  const points = collecting.trick?.points ?? 0
+  const ptsLabel = `${points} ${points === 1 ? 'point' : 'points'}`
   if (mySeat) {
     return (
       <div className="collect-bar collect-bar--mine">
-        <span className="collect-bar__label">You won the trick.</span>
+        <span className="collect-bar__label">
+          You won the trick{points > 0 ? ` — ${ptsLabel}` : ''}.
+        </span>
         <button
           className="btn collect-bar__btn"
           onClick={() => send({ action: 'collect', seat_id: mySeat.seat_id })}
         >
-          Collect cards →
+          {points > 0 ? `Collect ${ptsLabel} →` : 'Collect cards →'}
         </button>
       </div>
     )
   }
   return (
     <div className="collect-bar collect-bar--auto">
-      <span className="collect-bar__label">{nameOf(collecting.winner)} won the trick — collecting…</span>
+      <span className="collect-bar__label">
+        {nameOf(collecting.winner)} won the trick{points > 0 ? ` (+${points})` : ''} — collecting…
+      </span>
     </div>
   )
 }
@@ -561,13 +652,34 @@ function PlayView({
   // return, so they live at the top regardless of whether the game has begun.
   const [vibrate, setVibrate] = useState(() => cuePref('vibrate'))
   const [sound, setSound] = useState(() => cuePref('sound'))
+  const canVibrate = vibrationSupported()
   const myTurn = mySeats.some((s) => s.pending != null)
   useTurnCue(myTurn, vibrate, sound)
+  // Also cue when it's my turn to collect a finished trick (slow mode). Computed
+  // here (before the early return below) so the hook order stays stable.
+  const collectingTop = pub?.collecting ?? null
+  const myCollectTop = !!(
+    collectingTop?.human && mySeats.some((s) => s.pid === collectingTop.winner)
+  )
+  useTurnCue(myCollectTop, vibrate, sound)
   const toggleCue = (k: CueKind, on: boolean) => {
     setCuePref(k, on)
     if (k === 'vibrate') setVibrate(on)
-    else setSound(on)
+    else {
+      setSound(on)
+      if (on) unlockAudio() // grant audio within this user gesture (iOS)
+    }
   }
+  // Re-unlock audio when returning to the foreground — iOS interrupts the
+  // context on backgrounding, which is why sound would stop after a while.
+  useEffect(() => {
+    if (!sound) return
+    const onVis = () => {
+      if (document.visibilityState === 'visible') unlockAudio()
+    }
+    document.addEventListener('visibilitychange', onVis)
+    return () => document.removeEventListener('visibilitychange', onVis)
+  }, [sound])
 
   if (!pub) return <p className="muted">Waiting for the game to begin…</p>
   const nameOf = (pid: string) => pub.players[pid]?.name ?? pid
@@ -616,9 +728,21 @@ function PlayView({
           <div className="live-cues">
             <span className="muted" style={{ fontSize: 11, letterSpacing: 1 }}>MY-TURN CUES</span>
             <div className="live-cues__toggles">
-              <label title="Vibrate when it's your turn (supported devices only)">
-                <input type="checkbox" checked={vibrate} onChange={(e) => toggleCue('vibrate', e.target.checked)} />
-                <span>Buzz</span>
+              <label
+                className={canVibrate ? '' : 'live-cues__opt--off'}
+                title={
+                  canVibrate
+                    ? "Vibrate when it's your turn"
+                    : 'Vibration is not supported on this device/browser (e.g. Safari on iPhone)'
+                }
+              >
+                <input
+                  type="checkbox"
+                  checked={vibrate && canVibrate}
+                  disabled={!canVibrate}
+                  onChange={(e) => toggleCue('vibrate', e.target.checked)}
+                />
+                <span>Buzz{canVibrate ? '' : ' (n/a)'}</span>
               </label>
               <label title="Play a tone when it's your turn">
                 <input type="checkbox" checked={sound} onChange={(e) => toggleCue('sound', e.target.checked)} />
@@ -628,11 +752,6 @@ function PlayView({
           </div>
         )}
       </div>
-
-      {/* Slow-mode collect gate: the finished trick is held until collected. */}
-      {collecting && (
-        <CollectBar collecting={collecting} mySeat={myCollectSeat} send={send} nameOf={nameOf} />
-      )}
 
       {/* This round so far: passing + completed tricks, same UI as tournaments. */}
       <RoundHistory pub={pub} mySeats={mySeats} />
@@ -670,6 +789,12 @@ function PlayView({
           </div>
         </div>
       </div>
+
+      {/* Slow-mode collect gate: the finished trick is held until collected. Sits
+          beneath the table so the prompt is right under the cards just played. */}
+      {collecting && (
+        <CollectBar collecting={collecting} mySeat={myCollectSeat} send={send} nameOf={nameOf} />
+      )}
 
       {pub.winner && (
         <div className="card-surface live-winner">
@@ -772,16 +897,10 @@ function RoundHistory({ pub, mySeats }: { pub: LivePublic; mySeats: LiveMySeat[]
 
   const nameOf = (pid: string) => pub.players[pid]?.name ?? pid
 
-  const byIdx = (idx: number) => rounds.find((r) => r.round_idx === idx)
-  const playStarted = (r: LiveRound) =>
-    r.tricks.length > 0 || (pub.round_idx === r.round_idx && pub.current_trick.trick_idx != null)
-  // Auto-collapse: round finished AND the next round's passing stage is done
-  // (its play has started). The latest/live round never auto-collapses.
-  const autoCollapsed = (r: LiveRound) => {
-    if (!r.complete) return false
-    const next = byIdx(r.round_idx + 1)
-    return !!next && playStarted(next)
-  }
+  // Only the live (current, not-yet-complete) round is expanded by default; a
+  // round collapses as soon as it completes, so attention stays on live play.
+  // Either way the user can toggle any row open/closed manually.
+  const isLiveRound = (r: LiveRound) => pub.round_idx === r.round_idx && !r.complete
 
   // Shared grid: round | pass | one fractional column per player.
   const gridStyle = { ['--player-cols' as string]: String(pub.player_order.length) } as React.CSSProperties
@@ -799,7 +918,7 @@ function RoundHistory({ pub, mySeats }: { pub: LivePublic; mySeats: LiveMySeat[]
       </div>
 
       {rounds.map((r) => {
-        const expanded = overrides[r.round_idx] ?? !autoCollapsed(r)
+        const expanded = overrides[r.round_idx] ?? isLiveRound(r)
         const toggle = () =>
           setOverrides((prev) => ({ ...prev, [r.round_idx]: !expanded }))
         return (
@@ -978,6 +1097,10 @@ function DecisionTimer({ deadline, timeoutS, serverOffset }: { deadline: number;
 
 function MySeatPanel({ seat, send, serverOffset }: { seat: LiveMySeat; send: (a: SendAction) => void; serverOffset: number }) {
   const [picked, setPicked] = useState<string[]>([])
+  // A single card "pre-selected" while it isn't my turn — lets me plan my play
+  // ahead. Cleared automatically if it's no longer legal once my move prompt
+  // arrives, or if it leaves my hand.
+  const [selected, setSelected] = useState<string | null>(null)
   const pending = seat.pending
 
   // Clear the pass selection whenever the prompt changes (e.g. a new round's
@@ -991,14 +1114,25 @@ function MySeatPanel({ seat, send, serverOffset }: { seat: LiveMySeat; send: (a:
     setPicked([])
   }
 
-  const hand = pending?.hand ?? []
+  // The hand is always available (backend keeps seat.hand fresh), so the cards
+  // stay visible even when it isn't my turn; fall back to the prompt's hand.
+  const hand = seat.hand ?? pending?.hand ?? []
   const legal = new Set(pending?.legal_moves ?? [])
+
+  // Drop a pre-selection that's become invalid: not legal now that it's my move
+  // turn, or no longer in my hand at all. Done during render (guarded so it
+  // can't loop) per React's "adjust state on prop change" pattern.
+  if (selected != null && (!hand.includes(selected) || (pending?.kind === 'move' && !legal.has(selected)))) {
+    setSelected(null)
+  }
 
   const togglePass = (card: string) => {
     setPicked((prev) =>
       prev.includes(card) ? prev.filter((c) => c !== card) : prev.length < 3 ? [...prev, card] : prev,
     )
   }
+
+  const toggleSelect = (card: string) => setSelected((prev) => (prev === card ? null : card))
 
   // Render the hand grouped by suit (suit-then-rank sorted) with a gap between
   // suits, matching the tournament hand layout.
@@ -1077,23 +1211,41 @@ function MySeatPanel({ seat, send, serverOffset }: { seat: LiveMySeat; send: (a:
             </button>
           </div>
         </>
-      ) : pending?.kind === 'move' ? (
+      ) : (
+        // Move turn OR idle: the hand is always shown and tappable. On my move
+        // turn, legal cards play on click; off-turn (or for illegal cards) a tap
+        // just pre-selects/highlights the card so I can plan ahead.
         groupedHand((c) => {
-          const ok = legal.has(c)
+          const isMove = pending?.kind === 'move'
+          const legalNow = isMove && legal.has(c)
+          const illegalNow = isMove && !legal.has(c)
           return (
             <Card
               key={c}
               code={c}
               size="md"
-              legal={ok}
-              dim={!ok}
-              onClick={ok ? () => send({ action: 'decide', seat_id: seat.seat_id, value: c }) : undefined}
-              title={ok ? 'Click to play' : 'Not legal to play now'}
+              legal={legalNow}
+              dim={illegalNow}
+              selected={selected === c}
+              onClick={
+                legalNow
+                  ? () => send({ action: 'decide', seat_id: seat.seat_id, value: c })
+                  : illegalNow
+                    ? undefined
+                    : () => toggleSelect(c)
+              }
+              title={
+                legalNow
+                  ? 'Click to play'
+                  : illegalNow
+                    ? 'Not legal to play now'
+                    : selected === c
+                      ? 'Tap to deselect'
+                      : 'Tap to pre-select for your turn'
+              }
             />
           )
         })
-      ) : (
-        groupedHand((c) => <Card key={c} code={c} size="md" />)
       )}
     </div>
   )

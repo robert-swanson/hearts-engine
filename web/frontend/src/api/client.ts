@@ -203,6 +203,7 @@ export interface LiveCollecting {
     trick_idx: number
     winner: string
     moves: LiveMove[]     // the four cards, in play order
+    points?: number       // points in the trick (label the Collect button)
   }
 }
 
@@ -223,6 +224,7 @@ export interface LiveMySeat {
   pid: string
   name: string
   pending: LivePending | null
+  hand?: string[]      // my current hand, always present (even when not my turn)
   passed?: string[]    // cards I passed this round
   received?: string[]  // cards passed to me this round
   passed_by_round?: Record<string, string[]>    // round_idx -> cards I passed
@@ -257,6 +259,7 @@ export interface LiveSnapshot {
     uploaded_ai_types?: AiTypeOption[]       // per-table uploaded clients
     slow_mode?: boolean                      // pace AI moves + gate trick collection
     hide_prev_tricks?: boolean               // hide a round's tricks until it ends
+    timeout_s?: number                       // human decision budget (configurable)
   }
   public: LivePublic | null
   you: { client_id: string; seats: LiveMySeat[]; ai?: LiveAiSeat[] }

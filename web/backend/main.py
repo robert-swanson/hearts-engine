@@ -223,7 +223,8 @@ async def live_ws(websocket: WebSocket, code: str, client_id: Optional[str] = No
                     e = table.clear_seat(str(msg.get("seat_id", "")))
                 elif action == "set_options":
                     e = table.set_options(slow_mode=msg.get("slow_mode"),
-                                          hide_prev_tricks=msg.get("hide_prev_tricks"))
+                                          hide_prev_tricks=msg.get("hide_prev_tricks"),
+                                          timeout_s=msg.get("timeout_s"))
                 elif action == "collect":
                     e = table.collect(str(msg.get("seat_id", "")), client_id)
                 elif action == "start":

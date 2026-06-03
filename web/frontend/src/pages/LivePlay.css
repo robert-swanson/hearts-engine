@@ -177,9 +177,11 @@
   display: flex;
   align-items: center;
 }
+/* Same footprint as a played md card (.card--md) so the seat doesn't resize when
+   a card lands in / leaves the slot. */
 .live-seat__empty {
-  width: 64px;
-  height: 90px;
+  width: 48px;
+  height: 66px;
   border: 1px dashed var(--sx-hairline, #444);
   border-radius: 6px;
   opacity: 0.4;
@@ -519,6 +521,22 @@
   margin-top: 3px;
   flex: 0 0 auto;
 }
+/* A non-checkbox option row (label text + an inline control on the right). */
+.table-settings__opt--inline {
+  justify-content: space-between;
+  gap: 16px;
+}
+.table-settings__timeout {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+.table-settings__timeout input[type='number'] {
+  width: 72px;
+  padding: 6px 8px;
+  font: inherit;
+}
 
 /* --- My-turn cue toggles (sit at the end of the info bar) ------------------ */
 .live-cues {
@@ -537,6 +555,11 @@
   gap: 5px;
   font-size: 13px;
   cursor: pointer;
+}
+/* An unavailable cue (e.g. vibration on iOS Safari): dim + not-allowed. */
+.live-cues__opt--off {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* --- Slow-mode collect gate ----------------------------------------------- */
@@ -617,6 +640,11 @@
   }
   .live-seat__card {
     min-height: 74px;
+  }
+  .live-seat__empty {
+    /* Match the phone .card--md size (34x48) so the slot stays a constant size. */
+    width: 34px;
+    height: 48px;
   }
   .live-seat__score {
     font-size: 11px;
