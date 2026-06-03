@@ -1,0 +1,116 @@
+.perf-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.perf-card {
+  padding: 12px;
+}
+
+.perf-card__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.perf-card__sub {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.perf-card__timeouts {
+  color: #d11a2a;
+  font-weight: 600;
+}
+
+/* Histogram: a row of clickable bars growing from a shared baseline. */
+.perf-hist {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  height: 90px;
+  padding: 0;
+  border-bottom: 1px solid #d8d8d8;
+}
+
+.perf-bar {
+  flex: 1 1 0;
+  min-width: 2px;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.perf-bar__fill {
+  display: block;
+  width: 100%;
+  min-height: 1px;
+  background: #4a86e8;
+  border-radius: 2px 2px 0 0;
+  transition: background 0.08s ease;
+}
+
+.perf-bar:hover .perf-bar__fill {
+  background: #2a5bd7;
+}
+
+.perf-bar--timeout .perf-bar__fill {
+  background: #e23b3b;
+}
+
+.perf-bar--timeout:hover .perf-bar__fill {
+  background: #c12222;
+}
+
+.perf-bar--sel .perf-bar__fill {
+  background: #1a3f9e;
+  box-shadow: 0 0 0 1px #1a3f9e;
+}
+
+.perf-bar--timeout.perf-bar--sel .perf-bar__fill {
+  background: #8c1212;
+  box-shadow: 0 0 0 1px #8c1212;
+}
+
+.perf-detail {
+  font-size: 12px;
+  margin: 8px 0;
+  min-height: 32px;
+}
+
+.perf-detail--hint {
+  display: flex;
+  align-items: center;
+}
+
+.perf-latency {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.perf-latency th,
+.perf-latency td {
+  text-align: right;
+  padding: 2px 6px;
+  border-bottom: 1px solid #eee;
+}
+
+.perf-latency th:first-child,
+.perf-latency td:first-child {
+  text-align: left;
+  color: #555;
+}
+
+.perf-latency__total td {
+  font-weight: 600;
+  border-bottom: none;
+}

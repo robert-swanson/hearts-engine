@@ -4,6 +4,7 @@ import { api, gamePlayers, type GameSummary } from '../api/client'
 import { useFetch } from '../lib/useFetch'
 import { nameResolver, playerSortKey, teamColor } from '../lib/playerId'
 import { PlayerName } from '../components/PlayerName'
+import { PlayerPerformance } from '../components/PlayerPerformance'
 import {
   aggregate,
   allTeams,
@@ -28,6 +29,7 @@ type SortKey =
   | 'tournament'
   | 'avgGame'
   | 'moon'
+  | 'timeoutGames'
 // Columns that compare as text (localeCompare).
 const TEXT_SORTS: SortKey[] = ['team', 'player']
 // Columns whose natural/default direction is ascending (smallest/best first).
@@ -236,7 +238,8 @@ export function TournamentDetail() {
         cmp = (agg.tournamentPointsByPlayer[a] ?? 0) - (agg.tournamentPointsByPlayer[b] ?? 0)
       else if (sortKey === 'avgGame')
         cmp = avgOf(agg.gamePointsByPlayer, a) - avgOf(agg.gamePointsByPlayer, b)
-      else cmp = (agg.moonShotsByPlayer[a] ?? 0) - (agg.moonShotsByPlayer[b] ?? 0)
+      else if (sortKey === 'moon') cmp = (agg.moonShotsByPlayer[a] ?? 0) - (agg.moonShotsByPlayer[b] ?? 0)
+      else cmp = (agg.timeoutGamesByPlayer[a] ?? 0) - (agg.timeoutGamesByPlayer[b] ?? 0)
       if (cmp === 0) cmp = playerSortKey(nameOf(a)).localeCompare(playerSortKey(nameOf(b)))
       return sortAsc ? cmp : -cmp
     })
@@ -349,6 +352,13 @@ export function TournamentDetail() {
               />
               <SortTh label="Avg game score" col="avgGame" sortKey={sortKey} sortAsc={sortAsc} onSort={toggleSort} />
               <SortTh label="Moon shots" col="moon" sortKey={sortKey} sortAsc={sortAsc} onSort={toggleSort} />
+              <SortTh
+                label="Timeout games"
+                col="timeoutGames"
+                sortKey={sortKey}
+                sortAsc={sortAsc}
+                onSort={toggleSort}
+              />
             </tr>
           </thead>
           <tbody>
@@ -365,6 +375,7 @@ export function TournamentDetail() {
                   <td>{agg.tournamentPointsByPlayer[p] ?? 0}</td>
                   <td>{avgOf(agg.gamePointsByPlayer, p).toFixed(2)}</td>
                   <td>{agg.moonShotsByPlayer[p] ?? 0}</td>
+                  <td>{agg.timeoutGamesByPlayer[p] ?? 0}</td>
                 </tr>
               )
             })}
@@ -435,6 +446,18 @@ export function TournamentDetail() {
           </div>
         )}
       </div>
+
+      {data.player_stats && (
+        <>
+          <h2>Performance</h2>
+          <PlayerPerformance
+            stats={data.player_stats[stage]}
+            moveTimeoutMs={data.move_timeout_ms ?? 0}
+            bucketMs={data.bucket_ms ?? 100}
+            nameOf={nameOf}
+          />
+        </>
+      )}
     </div>
   )
 }
