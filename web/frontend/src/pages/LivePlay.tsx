@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api/client'
-import type { LiveSeat, LiveMySeat, LivePublic, LiveRound, AiTypeOption, LiveAiSeat, LiveLogEntry, LiveTableSummary, LiveSnapshot } from '../api/client'
+import type { LiveSeat, LiveMySeat, LivePublic, LiveRound, AiTypeOption, LiveAiSeat, LiveLogEntry, LiveTableSummary, LiveSnapshot, LiveCollecting } from '../api/client'
 import { useLiveTable, type SendAction } from '../lib/liveSocket'
 import { Card } from '../components/Card'
 import { TrickRow } from '../components/TrickRow'
@@ -15,6 +15,65 @@ import './LivePlay.css'
 function suitGroups(hand: string[]): string[][] {
   const sorted = sortBySuitThenRank(hand)
   return SUIT_ORDER.map((s) => sorted.filter((c) => (c[1] as Suit) === s)).filter((g) => g.length > 0)
+}
+
+// --- Sensory turn cues (haptic + sound) --------------------------------------
+// When it becomes the player's turn, optionally buzz (Vibration API) and/or play
+// a short tone (Web Audio). Both are off by default and toggled per-browser
+// (localStorage) — phones throttle background tabs and some browsers gate audio
+// behind a user gesture, so we keep it opt-in and fail silently.
+
+type CueKind = 'vibrate' | 'sound'
+const cueKey = (k: CueKind) => `hearts-cue-${k}`
+function cuePref(k: CueKind): boolean {
+  try {
+    return localStorage.getItem(cueKey(k)) === '1'
+  } catch {
+    return false
+  }
+}
+function setCuePref(k: CueKind, on: boolean) {
+  try {
+    localStorage.setItem(cueKey(k), on ? '1' : '0')
+  } catch {
+    /* private mode / disabled storage — cue just won't persist */
+  }
+}
+
+let _audioCtx: AudioContext | null = null
+function playTurnTone() {
+  try {
+    const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+    _audioCtx = _audioCtx ?? new Ctor()
+    const ctx = _audioCtx
+    if (ctx.state === 'suspended') void ctx.resume()
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.type = 'sine'
+    osc.frequency.setValueAtTime(880, ctx.currentTime)
+    osc.frequency.setValueAtTime(1320, ctx.currentTime + 0.12)
+    gain.gain.setValueAtTime(0.0001, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + 0.02)
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.3)
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.start()
+    osc.stop(ctx.currentTime + 0.32)
+  } catch {
+    /* audio unavailable — ignore */
+  }
+}
+
+/** Fire haptic/sound cues on the rising edge of `active` (it becoming my turn). */
+function useTurnCue(active: boolean, vibrate: boolean, sound: boolean) {
+  const wasActive = useRef(false)
+  useEffect(() => {
+    if (active && !wasActive.current) {
+      if (vibrate) navigator.vibrate?.([55, 40, 55])
+      if (sound) playTurnTone()
+    }
+    wasActive.current = active
+  }, [active, vibrate, sound])
 }
 
 // AI seat options are discovered by the backend (every Player subclass under
@@ -236,6 +295,8 @@ function Lobby({ table, send }: { table: LobbyTable; send: (a: SendAction) => vo
           <SeatCard key={seat.seat_id} seat={seat} send={send} aiOptions={aiOptions} code={table.code} />
         ))}
       </div>
+      <TableSettings table={table} send={send} />
+
       <div className="row-actions" style={{ marginTop: 16 }}>
         <button className="btn" disabled={!allFilled} onClick={() => send({ action: 'start' })}>
           Start game
@@ -260,6 +321,43 @@ function Lobby({ table, send }: { table: LobbyTable; send: (a: SendAction) => vo
         </div>
       )}
     </>
+  )
+}
+
+// Pacing options, chosen in the lobby and frozen at start. Backend mirrors the
+// state in the snapshot so every connected client sees the same toggles.
+function TableSettings({ table, send }: { table: LobbyTable; send: (a: SendAction) => void }) {
+  const slow = !!table.slow_mode
+  const hide = !!table.hide_prev_tricks
+  return (
+    <div className="card-surface table-settings" style={{ marginTop: 16 }}>
+      <h3 style={{ margin: '0 0 8px' }}>Table options</h3>
+      <label className="table-settings__opt">
+        <input
+          type="checkbox"
+          checked={slow}
+          onChange={(e) => send({ action: 'set_options', slow_mode: e.target.checked })}
+        />
+        <span>
+          <strong>Slow down for interactivity</strong>
+          <span className="muted"> — AI players pause before each move, and a finished trick
+            stays on the table until it's collected (you tap “Collect cards” when you win;
+            AI-won tricks clear after a beat).</span>
+        </span>
+      </label>
+      <label className="table-settings__opt">
+        <input
+          type="checkbox"
+          checked={hide}
+          onChange={(e) => send({ action: 'set_options', hide_prev_tricks: e.target.checked })}
+        />
+        <span>
+          <strong>Hide previous tricks until the round ends</strong>
+          <span className="muted"> — earlier tricks of the current round stay hidden until the
+            round finishes scoring.</span>
+        </span>
+      </label>
+    </div>
   )
 }
 
@@ -413,6 +511,39 @@ function PlayDirectionRing() {
   )
 }
 
+/** Slow-mode collect gate: prompt the human winner to collect, or show a passive
+ *  "collecting…" notice while an AI-won trick clears on its own. */
+function CollectBar({
+  collecting,
+  mySeat,
+  send,
+  nameOf,
+}: {
+  collecting: LiveCollecting
+  mySeat: LiveMySeat | undefined
+  send: (a: SendAction) => void
+  nameOf: (pid: string) => string
+}) {
+  if (mySeat) {
+    return (
+      <div className="collect-bar collect-bar--mine">
+        <span className="collect-bar__label">You won the trick.</span>
+        <button
+          className="btn collect-bar__btn"
+          onClick={() => send({ action: 'collect', seat_id: mySeat.seat_id })}
+        >
+          Collect cards →
+        </button>
+      </div>
+    )
+  }
+  return (
+    <div className="collect-bar collect-bar--auto">
+      <span className="collect-bar__label">{nameOf(collecting.winner)} won the trick — collecting…</span>
+    </div>
+  )
+}
+
 function PlayView({
   pub,
   mySeats,
@@ -426,10 +557,31 @@ function PlayView({
   send: (a: SendAction) => void
   serverOffset: number
 }) {
+  // Sensory turn cues (opt-in, per-browser). Hooks must run before any early
+  // return, so they live at the top regardless of whether the game has begun.
+  const [vibrate, setVibrate] = useState(() => cuePref('vibrate'))
+  const [sound, setSound] = useState(() => cuePref('sound'))
+  const myTurn = mySeats.some((s) => s.pending != null)
+  useTurnCue(myTurn, vibrate, sound)
+  const toggleCue = (k: CueKind, on: boolean) => {
+    setCuePref(k, on)
+    if (k === 'vibrate') setVibrate(on)
+    else setSound(on)
+  }
+
   if (!pub) return <p className="muted">Waiting for the game to begin…</p>
   const nameOf = (pid: string) => pub.players[pid]?.name ?? pid
+  // While a finished trick is being collected (slow mode), keep its cards on the
+  // table — they travel inside `collecting.trick` so this survives the shared
+  // current_trick advancing and the hide-previous-tricks option.
+  const collecting = pub.collecting ?? null
+  const activeMoves = collecting?.trick?.moves ?? pub.current_trick.moves
   const trickCard: Record<string, string> = {}
-  for (const m of pub.current_trick.moves) trickCard[m.player] = m.card
+  for (const m of activeMoves) trickCard[m.player] = m.card
+  // I'm the human collector when I own the winning seat of the held trick.
+  const myCollectSeat = collecting?.human
+    ? mySeats.find((s) => s.pid === collecting.winner)
+    : undefined
 
   // Arrange the 4 players in the quadrants of a 2x2 grid in game (seating)
   // order, with "me" (or the first seat) bottom-left and the rest going
@@ -460,7 +612,27 @@ function PlayView({
           <span className="muted" style={{ fontSize: 11, letterSpacing: 1 }}>TRICK</span>
           <div className="live-stat">{pub.completed_trick_count + 1} / 13</div>
         </div>
+        {mySeats.length > 0 && (
+          <div className="live-cues">
+            <span className="muted" style={{ fontSize: 11, letterSpacing: 1 }}>MY-TURN CUES</span>
+            <div className="live-cues__toggles">
+              <label title="Vibrate when it's your turn (supported devices only)">
+                <input type="checkbox" checked={vibrate} onChange={(e) => toggleCue('vibrate', e.target.checked)} />
+                <span>Buzz</span>
+              </label>
+              <label title="Play a tone when it's your turn">
+                <input type="checkbox" checked={sound} onChange={(e) => toggleCue('sound', e.target.checked)} />
+                <span>Sound</span>
+              </label>
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* Slow-mode collect gate: the finished trick is held until collected. */}
+      {collecting && (
+        <CollectBar collecting={collecting} mySeat={myCollectSeat} send={send} nameOf={nameOf} />
+      )}
 
       {/* This round so far: passing + completed tricks, same UI as tournaments. */}
       <RoundHistory pub={pub} mySeats={mySeats} />
@@ -472,13 +644,12 @@ function PlayView({
         {tablePos.map((pos) => {
           const pid = seatAt[pos]
           if (!pid) return <div key={pos} className={`live-seat-slot live-seat-slot--${pos}`} />
-          const isTurn = pub.turn === pid
+          const isTurn = pub.turn === pid || collecting?.winner === pid
           return (
             <div key={pos} className={`live-seat-slot live-seat-slot--${pos}`}>
               <div className={`live-seat ${isTurn ? 'live-seat--turn' : ''}`}>
                 <div className="live-seat__name">
                   {nameOf(pid)}
-                  {isTurn && <span className="pill live-seat__turn">to play</span>}
                 </div>
                 <div className="live-seat__card">
                   {trickCard[pid] ? <Card code={trickCard[pid]} size="md" /> : <div className="live-seat__empty" />}

@@ -188,6 +188,22 @@ export interface LivePublic {
   turn: string | null
   winner: string | null
   final_points: Record<string, number>
+  // Slow-mode inter-trick collect gate: the just-finished trick is held on the
+  // table until collected (a human taps "Collect cards"; an AI auto-collects).
+  collecting?: LiveCollecting | null
+}
+
+// The finished trick being held during a slow-mode collect pause.
+export interface LiveCollecting {
+  winner: string          // pid of the trick winner (who collects + leads next)
+  human: boolean          // true => a human must tap "Collect cards"
+  deadline?: number       // server epoch seconds when it auto-advances
+  delay_s?: number        // auto-collect delay (for sizing a countdown)
+  trick: {
+    trick_idx: number
+    winner: string
+    moves: LiveMove[]     // the four cards, in play order
+  }
 }
 
 export interface LivePending {
@@ -239,6 +255,8 @@ export interface LiveSnapshot {
     seats: LiveSeat[]
     lobby_code?: string                      // share with CLI clients to fill open seats
     uploaded_ai_types?: AiTypeOption[]       // per-table uploaded clients
+    slow_mode?: boolean                      // pace AI moves + gate trick collection
+    hide_prev_tricks?: boolean               // hide a round's tricks until it ends
   }
   public: LivePublic | null
   you: { client_id: string; seats: LiveMySeat[]; ai?: LiveAiSeat[] }

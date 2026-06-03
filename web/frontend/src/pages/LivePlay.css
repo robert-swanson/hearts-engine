@@ -502,7 +502,84 @@
   font-weight: 700;
 }
 
+/* --- Lobby table options (slow mode / hide previous tricks) ---------------- */
+.table-settings__opt {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 0;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1.4;
+}
+.table-settings__opt + .table-settings__opt {
+  border-top: 1px solid var(--sx-hairline, #2a2a2a);
+}
+.table-settings__opt input[type='checkbox'] {
+  margin-top: 3px;
+  flex: 0 0 auto;
+}
+
+/* --- My-turn cue toggles (sit at the end of the info bar) ------------------ */
+.live-cues {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-left: auto;
+}
+.live-cues__toggles {
+  display: flex;
+  gap: 14px;
+}
+.live-cues__toggles label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* --- Slow-mode collect gate ----------------------------------------------- */
+.collect-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0 0 14px;
+  padding: 12px 18px;
+  border-radius: 10px;
+  border: 1px solid var(--sx-hairline, #333);
+  background: var(--sx-card, rgba(255, 255, 255, 0.03));
+}
+.collect-bar--mine {
+  border-color: #4caf50;
+  background: rgba(76, 175, 80, 0.12);
+}
+.collect-bar__label {
+  font-weight: 600;
+}
+.collect-bar__btn {
+  margin-left: auto;
+  background: #4caf50;
+  border-color: #4caf50;
+  color: #0c2912;
+  font-weight: 700;
+  padding: 10px 20px;
+}
+.collect-bar--auto .collect-bar__label {
+  color: var(--sx-muted, #9aa);
+  font-weight: 500;
+}
+
 @media (max-width: 600px) {
+  .live-cues {
+    margin-left: 0;
+    flex-basis: 100%;
+  }
+  .collect-bar {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+  }
   .live-table-info {
     gap: 20px;
     padding: 12px 14px;
