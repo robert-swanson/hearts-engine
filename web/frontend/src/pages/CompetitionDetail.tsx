@@ -1,14 +1,18 @@
-import { useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { api, type TournamentRow, type TournamentSummary } from '../api/client'
+import { api, type GameSummary, type TournamentRow, type TournamentSummary } from '../api/client'
 import { useFetch, usePoll } from '../lib/useFetch'
-import { nameResolver } from '../lib/playerId'
+import { nameResolver, teamColor } from '../lib/playerId'
 import { PlayerName } from '../components/PlayerName'
 import { LineChart } from '../components/LineChart'
-import { competitionSeries } from '../lib/chartData'
+import { competitionSeries, playerAvgsForGames } from '../lib/chartData'
 import { LiveStatsPanel } from './LiveStats'
+import { NextTournamentBanner } from './NextTournament'
 
 const SUMMARY_REFRESH_MS = 15000
+// The competition arc chart refreshes every second so an in-progress tournament's
+// points climb live (per PR #86 review).
+const CHART_REFRESH_MS = 1000
 
 function formatTime(iso: string | null): string {
   if (!iso) return '—'
@@ -36,6 +40,8 @@ export function CompetitionDetail() {
 
   const [params, setParams] = useSearchParams()
   const stage: 'qualifying' | 'finals' = params.get('cstage') === 'qualifying' ? 'qualifying' : 'finals'
+  // Averaging window for the chart: full tournament, or a rolling 10-game window.
+  const windowSize = params.get('cwin') === '10' ? 10 : undefined
   const castMode = params.get('cast') === '1'
   const setParam = (key: string, value: string | null) => {
     const next = new URLSearchParams(params)
@@ -74,18 +80,43 @@ export function CompetitionDetail() {
       tournaments.length
         ? Promise.all(tournaments.map((t) => api.tournament(cid, t.index)))
         : Promise.resolve([]),
-    SUMMARY_REFRESH_MS,
+    CHART_REFRESH_MS,
     [cid, indexKey],
   )
 
-  const series = useMemo(() => {
+  // Is THIS competition the one currently running? Used to scope the next-up
+  // registration banner to the competition it belongs to.
+  const { data: live } = usePoll(() => api.live(), SUMMARY_REFRESH_MS, [])
+  const isLiveCompetition = !!live?.competition_id && live.competition_id === data?.competition_id
+
+  const perTournament = useMemo(() => {
     if (!summaries || !summaries.length) return []
-    const perTournament = summaries.map((s, i) => ({
+    return summaries.map((s, i) => ({
       index: Number(tournaments[i]?.index ?? i + 1),
       games: stage === 'finals' ? s.finals : s.qualifying,
     }))
-    return competitionSeries(perTournament)
   }, [summaries, indexKey, stage])
+
+  const series = useMemo(() => competitionSeries(perTournament, windowSize), [perTournament, windowSize])
+
+  // Lookup of a tournament index -> its (stage-filtered) games, so clicking a
+  // chart point can list every player's average in that tournament.
+  const gamesByIndex = useMemo(() => {
+    const m = new Map<number, GameSummary[]>()
+    for (const t of perTournament) m.set(t.index, t.games)
+    return m
+  }, [perTournament])
+
+  const pointDetails = useCallback(
+    (x: number) =>
+      playerAvgsForGames(gamesByIndex.get(x) ?? [], windowSize).map((pa) => ({
+        id: pa.key,
+        label: `${pa.team} / ${pa.tag}`,
+        color: teamColor(pa.team),
+        value: pa.avg,
+      })),
+    [gamesByIndex, windowSize],
+  )
 
   const xTicks = useMemo(() => tournaments.map((t) => Number(t.index)), [indexKey])
 
@@ -113,6 +144,19 @@ export function CompetitionDetail() {
         >
           Finals
         </button>
+        <span style={{ width: 12 }} />
+        <button
+          className={`btn${windowSize === undefined ? ' btn--active' : ''}`}
+          onClick={() => setParam('cwin', null)}
+        >
+          Full avg
+        </button>
+        <button
+          className={`btn${windowSize === 10 ? ' btn--active' : ''}`}
+          onClick={() => setParam('cwin', '10')}
+        >
+          Last 10
+        </button>
       </div>
       <LineChart
         series={series}
@@ -122,6 +166,8 @@ export function CompetitionDetail() {
         yLabel="Avg tournament points"
         xTicks={xTicks}
         xTickFormat={(x) => `#${x}`}
+        pointDetails={pointDetails}
+        detailTitle={(x) => `Tournament #${x} — players by avg`}
       />
     </div>
   )
@@ -151,6 +197,10 @@ export function CompetitionDetail() {
         Teams: {data.teams.length > 0 ? data.teams.join(', ') : '—'}
         {castMode && <> · auto-refreshing every {SUMMARY_REFRESH_MS / 1000}s</>}
       </div>
+
+      {/* Registration countdown for the next tournament — only while THIS
+          competition is the one currently running. */}
+      {isLiveCompetition && <NextTournamentBanner />}
 
       {/* Live standings for THIS competition (only when it's the one running). */}
       <LiveStatsPanel cid={data.competition_id} />

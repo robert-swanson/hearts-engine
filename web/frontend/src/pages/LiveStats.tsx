@@ -1,10 +1,15 @@
+import { useCallback, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api } from '../api/client'
+import { api, type GameSummary } from '../api/client'
 import { usePoll } from '../lib/useFetch'
-import { nameResolver } from '../lib/playerId'
+import { nameResolver, teamColor } from '../lib/playerId'
 import { PlayerName } from '../components/PlayerName'
+import { LineChart } from '../components/LineChart'
+import { tournamentCumulativeSeries, playerAvgsThroughGame } from '../lib/chartData'
 
 const REFRESH_MS = 5000
+// The live cumulative chart refreshes every second (per PR #86 review).
+const CHART_REFRESH_MS = 1000
 
 function elapsedSince(iso: string | null): string {
   if (!iso) return '—'
@@ -22,6 +27,36 @@ function elapsedSince(iso: string | null): string {
 // only when that competition is the one currently running.
 export function LiveStatsPanel({ cid }: { cid?: string } = {}) {
   const { data, error } = usePoll(() => api.live(), REFRESH_MS, [])
+
+  // The live tournament's per-game cumulative chart. Hooks must run every render
+  // (before the early returns), so they tolerate a not-yet-loaded `data`.
+  const [chartStage, setChartStage] = useState<'qualifying' | 'finals'>('qualifying')
+  const [chartWindow, setChartWindow] = useState<number | undefined>(undefined)
+  const liveCid = data?.competition_id ?? ''
+  const liveIdx = data?.tournament_index ?? ''
+  const { data: summary } = usePoll(
+    () => (liveCid && liveIdx ? api.tournament(liveCid, liveIdx) : Promise.resolve(null)),
+    CHART_REFRESH_MS,
+    [liveCid, liveIdx],
+  )
+  const chartGames: GameSummary[] = useMemo(
+    () => (!summary ? [] : chartStage === 'finals' ? summary.finals : summary.qualifying),
+    [summary, chartStage],
+  )
+  const chartSeries = useMemo(
+    () => tournamentCumulativeSeries(chartGames, chartWindow),
+    [chartGames, chartWindow],
+  )
+  const chartDetails = useCallback(
+    (x: number) =>
+      playerAvgsThroughGame(chartGames, x, chartWindow).map((pa) => ({
+        id: pa.key,
+        label: `${pa.team} / ${pa.tag}`,
+        color: teamColor(pa.team),
+        value: pa.avg,
+      })),
+    [chartGames, chartWindow],
+  )
 
   if (!data || !data.competition_id || !data.tournament_index) return null
   if (cid && data.competition_id !== cid) return null
@@ -48,6 +83,50 @@ export function LiveStatsPanel({ cid }: { cid?: string } = {}) {
         <Stat label="Began" value={elapsedSince(data.began_at)} />
         <Stat label="Teams" value={String(data.num_teams)} />
       </div>
+
+      {chartSeries.length > 0 && (
+        <>
+          <h2>Cumulative tournament points by team (live)</h2>
+          <div className="card-surface">
+            <div className="chart-controls">
+              <button
+                className={`btn${chartStage === 'qualifying' ? ' btn--active' : ''}`}
+                onClick={() => setChartStage('qualifying')}
+              >
+                Qualifying
+              </button>
+              <button
+                className={`btn${chartStage === 'finals' ? ' btn--active' : ''}`}
+                onClick={() => setChartStage('finals')}
+              >
+                Finals
+              </button>
+              <span className="chart-controls__spacer" />
+              <button
+                className={`btn${chartWindow === undefined ? ' btn--active' : ''}`}
+                onClick={() => setChartWindow(undefined)}
+              >
+                Full avg
+              </button>
+              <button
+                className={`btn${chartWindow === 10 ? ' btn--active' : ''}`}
+                onClick={() => setChartWindow(10)}
+              >
+                Last 10
+              </button>
+            </div>
+            <LineChart
+              series={chartSeries}
+              height={300}
+              xLabel="Game index"
+              yLabel="Avg tournament points"
+              xTickFormat={(x) => String(x)}
+              pointDetails={chartDetails}
+              detailTitle={(x) => `Through game ${x} — players by avg`}
+            />
+          </div>
+        </>
+      )}
 
       <h2>Games progress</h2>
       <div className="card-surface">

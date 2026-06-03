@@ -1,7 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
 import { useFetch, usePoll } from '../lib/useFetch'
-import { NextTournamentBanner } from './NextTournament'
 
 function formatTime(iso: string | null): string {
   if (!iso) return '—'
@@ -21,7 +20,6 @@ export function CompetitionsList() {
 
   return (
     <div>
-      <NextTournamentBanner />
       <h1>Competitions</h1>
       {loading ? (
         <p className="muted">Loading competitions…</p>

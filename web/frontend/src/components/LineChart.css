@@ -58,6 +58,82 @@
   display: inline-block;
 }
 
+/* Clickable data points (when a details callback is wired up). */
+.line-chart__dot--clickable {
+  cursor: pointer;
+}
+.line-chart__dot--clickable:hover {
+  stroke: #1b2330;
+  stroke-width: 2;
+}
+
+/* Click-to-inspect detail panel: players ranked at the chosen x value. */
+.line-chart__details {
+  margin-top: 10px;
+  border: 1px solid #e2e6ec;
+  border-radius: 8px;
+  background: #fafbfc;
+  padding: 8px 10px;
+}
+
+.line-chart__details-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+
+.line-chart__details-close {
+  background: none;
+  border: none;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  color: #8a93a0;
+  padding: 0 4px;
+}
+.line-chart__details-close:hover {
+  color: #3a4452;
+}
+
+.line-chart__details-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.line-chart__details-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.line-chart__details-rank {
+  width: 20px;
+  text-align: right;
+  color: #8a93a0;
+  font-variant-numeric: tabular-nums;
+}
+
+.line-chart__details-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.line-chart__details-value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
 /* TV-cast mode — bigger legend so it reads from across the room. */
 .line-chart--big .line-chart__legend {
   font-size: 18px;

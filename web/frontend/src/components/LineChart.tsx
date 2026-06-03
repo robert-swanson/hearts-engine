@@ -1,4 +1,4 @@
-import { useId } from 'react'
+import { useId, useState } from 'react'
 import './LineChart.css'
 
 export interface ChartPoint {
@@ -10,6 +10,14 @@ export interface ChartSeries {
   label: string
   color: string
   points: ChartPoint[]
+}
+
+/** One row in the click-to-inspect detail panel for a given x value. */
+export interface PointDetailRow {
+  id: string
+  label: string
+  color: string
+  value: number
 }
 
 export interface LineChartProps {
@@ -29,6 +37,13 @@ export interface LineChartProps {
   yMin?: number
   /** Larger fonts / thicker strokes for TV-cast readability. */
   big?: boolean
+  /** When set, data points become clickable: clicking one opens a panel listing
+   *  these rows (already sorted) for that x value. */
+  pointDetails?: (x: number) => PointDetailRow[]
+  /** Title for the detail panel header (defaults to the formatted x value). */
+  detailTitle?: (x: number) => string
+  /** Format a detail row's value (defaults to 2 decimal places). */
+  detailValueFormat?: (v: number) => string
 }
 
 // A "nice" axis: round the domain outward to pleasant tick boundaries and return
@@ -65,8 +80,12 @@ export function LineChart({
   xTicks,
   yMin,
   big = false,
+  pointDetails,
+  detailTitle,
+  detailValueFormat,
 }: LineChartProps) {
   const clipId = useId()
+  const [selectedX, setSelectedX] = useState<number | null>(null)
   const allPoints = series.flatMap((s) => s.points)
   if (allPoints.length === 0) {
     return <div className="muted line-chart__empty">No data to chart yet.</div>
@@ -152,7 +171,15 @@ export function LineChart({
               <g key={s.label}>
                 {pts.length > 1 && <path d={d} fill="none" stroke={s.color} strokeWidth={stroke} strokeLinejoin="round" strokeLinecap="round" />}
                 {pts.map((p) => (
-                  <circle key={p.x} cx={sx(p.x)} cy={sy(p.y)} r={dot} fill={s.color}>
+                  <circle
+                    key={p.x}
+                    cx={sx(p.x)}
+                    cy={sy(p.y)}
+                    r={pointDetails ? dot + 3 : dot}
+                    fill={s.color}
+                    className={pointDetails ? 'line-chart__dot--clickable' : undefined}
+                    onClick={pointDetails ? () => setSelectedX((cur) => (cur === p.x ? null : p.x)) : undefined}
+                  >
                     <title>{`${s.label} · ${xTickFormat(p.x)}: ${yTickFormat(p.y)}`}</title>
                   </circle>
                 ))}
@@ -181,6 +208,16 @@ export function LineChart({
         )}
       </svg>
 
+      {pointDetails && selectedX != null && (
+        <PointDetailPanel
+          x={selectedX}
+          rows={pointDetails(selectedX)}
+          title={detailTitle ? detailTitle(selectedX) : xTickFormat(selectedX)}
+          valueFormat={detailValueFormat ?? ((v) => v.toFixed(2))}
+          onClose={() => setSelectedX(null)}
+        />
+      )}
+
       <div className="line-chart__legend">
         {series.map((s) => (
           <span key={s.label} className="line-chart__legend-item">
@@ -189,6 +226,45 @@ export function LineChart({
           </span>
         ))}
       </div>
+    </div>
+  )
+}
+
+/** Click-to-inspect panel: ranks every player at a chosen x value, highest first. */
+function PointDetailPanel({
+  rows,
+  title,
+  valueFormat,
+  onClose,
+}: {
+  x: number
+  rows: PointDetailRow[]
+  title: string
+  valueFormat: (v: number) => string
+  onClose: () => void
+}) {
+  return (
+    <div className="line-chart__details">
+      <div className="line-chart__details-head">
+        <strong>{title}</strong>
+        <button type="button" className="line-chart__details-close" onClick={onClose} aria-label="Close">
+          ×
+        </button>
+      </div>
+      {rows.length === 0 ? (
+        <div className="muted" style={{ fontSize: 12 }}>No data at this point.</div>
+      ) : (
+        <ol className="line-chart__details-list">
+          {rows.map((r, i) => (
+            <li key={r.id}>
+              <span className="line-chart__details-rank">{i + 1}</span>
+              <span className="line-chart__swatch" style={{ background: r.color }} />
+              <span className="line-chart__details-label">{r.label}</span>
+              <span className="line-chart__details-value">{valueFormat(r.value)}</span>
+            </li>
+          ))}
+        </ol>
+      )}
     </div>
   )
 }

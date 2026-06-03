@@ -1,11 +1,11 @@
-import { useMemo, type ReactNode } from 'react'
+import { useCallback, useMemo, type ReactNode } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api, gamePlayers, type GameSummary } from '../api/client'
 import { useFetch } from '../lib/useFetch'
 import { nameResolver, playerSortKey, teamColor } from '../lib/playerId'
 import { PlayerName } from '../components/PlayerName'
 import { LineChart } from '../components/LineChart'
-import { tournamentCumulativeSeries } from '../lib/chartData'
+import { tournamentCumulativeSeries, playerAvgsThroughGame } from '../lib/chartData'
 import {
   aggregate,
   allTeams,
@@ -52,6 +52,8 @@ export function TournamentDetail() {
   // an inclusion. Only affects not-yet-applied chips, so include and exclude
   // filters can coexist.
   const excludeMode = params.get('mode') === 'exclude'
+  // Averaging window for the cumulative chart: full tournament, or rolling 10.
+  const windowSize = params.get('win') === '10' ? 10 : undefined
   const minMoon = Number(params.get('minMoon')) || 0
   const page = Math.max(0, Number(params.get('page')) || 0)
   const sortKey = (params.get('sort') as SortKey) || 'rank'
@@ -76,7 +78,17 @@ export function TournamentDetail() {
 
   const teams = useMemo(() => allTeams(games), [games])
   const teamPlayers = useMemo(() => allTeamPlayers(games), [games])
-  const chartSeries = useMemo(() => tournamentCumulativeSeries(games), [games])
+  const chartSeries = useMemo(() => tournamentCumulativeSeries(games, windowSize), [games, windowSize])
+  const chartDetails = useCallback(
+    (x: number) =>
+      playerAvgsThroughGame(games, x, windowSize).map((pa) => ({
+        id: pa.key,
+        label: `${pa.team} / ${pa.tag}`,
+        color: teamColor(pa.team),
+        value: pa.avg,
+      })),
+    [games, windowSize],
+  )
 
   const keysToTPs = (keys: string[]): TeamPlayer[] =>
     keys.map((k) => {
@@ -273,12 +285,29 @@ export function TournamentDetail() {
         <>
           <h2>Cumulative tournament points by team</h2>
           <div className="card-surface">
+            <div className="chart-controls">
+              <span style={{ fontSize: 13 }} className="muted">Average window:</span>
+              <button
+                className={`btn${windowSize === undefined ? ' btn--active' : ''}`}
+                onClick={() => patch({ win: null })}
+              >
+                Full avg
+              </button>
+              <button
+                className={`btn${windowSize === 10 ? ' btn--active' : ''}`}
+                onClick={() => patch({ win: '10' })}
+              >
+                Last 10
+              </button>
+            </div>
             <LineChart
               series={chartSeries}
               height={300}
               xLabel="Game index"
-              yLabel="Cumulative avg tournament points"
+              yLabel={windowSize ? 'Rolling avg tournament points' : 'Cumulative avg tournament points'}
               xTickFormat={(x) => String(x)}
+              pointDetails={chartDetails}
+              detailTitle={(x) => `Through game ${x} — players by avg`}
             />
           </div>
         </>
