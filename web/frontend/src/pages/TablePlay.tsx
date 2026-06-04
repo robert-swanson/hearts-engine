@@ -344,6 +344,7 @@ function PromptPanel({
           onUndo={() => respond({ undo: true })}
           onSubmit={(codes) => respond({ card: codes[0] })}
           error={pending.error}
+          defaultSuit={lead}
         />
       </div>
     )
@@ -381,6 +382,7 @@ function CardPicker({
   allowUndo,
   onUndo,
   error,
+  defaultSuit,
 }: {
   cards: TableCardState[]
   count: number
@@ -389,9 +391,18 @@ function CardPicker({
   allowUndo?: boolean
   onUndo?: () => void
   error?: string | null
+  defaultSuit?: Suit | null
 }) {
   const byCode = useMemo(() => new Map(cards.map((c) => [c.code, c])), [cards])
-  const [activeSuit, setActiveSuit] = useState<Suit>('C')
+  // When following to a trick, open on the led suit so the player goes straight
+  // to their legal cards. If void in that suit, fall back to a suit they hold.
+  const initialSuit = (): Suit => {
+    if (!defaultSuit) return 'C'
+    const has = (s: Suit) => cards.some((c) => (c.code[1] as Suit) === s && !c.disabled)
+    if (has(defaultSuit)) return defaultSuit
+    return SUIT_ORDER.find((s) => has(s)) ?? defaultSuit
+  }
+  const [activeSuit, setActiveSuit] = useState<Suit>(initialSuit)
   const [selected, setSelected] = useState<string[]>([])
   const [reason, setReason] = useState<string | null>(null)
 
