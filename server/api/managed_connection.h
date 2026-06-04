@@ -32,6 +32,11 @@ struct SessionParts
     bool disconnected;
     int consecutiveTimeouts = 0;
     int autoMoveThreshold = 2;  // 0 = never auto-move
+    // Set by receiveOnSession on every return: true iff the call gave up
+    // immediately (zero wait) because consecutiveTimeouts had already reached
+    // autoMoveThreshold. Lets the move recorder distinguish a give-up auto ("#")
+    // from a single move that timed out after the full wait ("*").
+    bool lastReceiveWasGiveUp = false;
     std::optional<std::shared_ptr<Common::MessageLogger>> messageLogger;
 };
 
@@ -176,6 +181,19 @@ public:
         return false;
     }
 
+    // Whether the most recent receiveOnSession on this session gave up immediately
+    // (give-up mode) rather than waiting the full timeout. Read right after a
+    // timed-out move to tell a "#" (give-up) auto-play from a "*" (timeout) one.
+    bool sessionLastReceiveWasGiveUp(PlayerGameSessionID sessionId)
+    {
+        std::lock_guard<std::mutex> mapLock(mSessionsMtx);
+        auto it = playerGameSessions.find(sessionId);
+        if (it == playerGameSessions.end())
+            return false;
+        std::lock_guard<std::mutex> lock(it->second->mutex);
+        return it->second->lastReceiveWasGiveUp;
+    }
+
     static void CleanConnections(std::vector<std::unique_ptr<ManagedConnection>> &connections) {
         connections.erase(
                 std::remove_if(connections.begin(), connections.end(),
@@ -215,8 +233,8 @@ public:
         SessionParts& parts = *rawParts;
 
         std::unique_lock<std::mutex> lock(parts.mutex);
-        auto effectiveTimeout = (parts.autoMoveThreshold > 0 && parts.consecutiveTimeouts >= parts.autoMoveThreshold)
-            ? std::chrono::milliseconds(0) : timeout;
+        bool giveUpMode = (parts.autoMoveThreshold > 0 && parts.consecutiveTimeouts >= parts.autoMoveThreshold);
+        auto effectiveTimeout = giveUpMode ? std::chrono::milliseconds(0) : timeout;
         bool gotMessage = parts.waitCondition.wait_for(lock, effectiveTimeout, [&parts] {
             return !parts.unprocessedReceivedMessages.empty()
                    || parts.disconnected;
@@ -226,10 +244,14 @@ public:
             || parts.unprocessedReceivedMessages.empty())
         {
             parts.consecutiveTimeouts++;
+            // Remember whether this was an immediate give-up (we'd already blown
+            // the threshold) vs. a move that exhausted its full timeout.
+            parts.lastReceiveWasGiveUp = giveUpMode;
             return std::nullopt;
         }
 
         parts.consecutiveTimeouts = 0;
+        parts.lastReceiveWasGiveUp = false;
         auto message = parts.unprocessedReceivedMessages[0];
         parts.unprocessedReceivedMessages.erase(parts.unprocessedReceivedMessages.begin());
 

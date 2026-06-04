@@ -40,6 +40,9 @@ export interface PlacedCard {
   card: string
   player: string
   isWinner: boolean
+  // How this card was chosen: "player" | "timeout" | "give_up" (undefined when
+  // the trick carries no move_sources, i.e. all normal player moves).
+  source?: string
 }
 
 /**
@@ -60,7 +63,12 @@ export function placeTrickCards(
   const cells: (PlacedCard | null)[] = Array(NUM_COLS).fill(null)
   trick.moves.forEach((card, i) => {
     const player = playerOrder[(firstSeat + i) % n]
-    cells[startCol + i] = { card, player, isWinner: player === trick.winner }
+    cells[startCol + i] = {
+      card,
+      player,
+      isWinner: player === trick.winner,
+      source: trick.move_sources?.[i],
+    }
   })
   return cells
 }

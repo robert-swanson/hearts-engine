@@ -522,6 +522,91 @@ static json gameResultToSummaryJson(const GameResult& gr)
     return j;
 }
 
+// Aggregate per-player performance across a set of games, keyed by slotId. Produces
+// the tournament-view "performance" section: a summed move-time histogram, total
+// move/timeout counts, how many games the player timed out in, and a latency
+// breakdown (avg/max s2c, c2s, think). Histograms are summed element-wise; all
+// games in one tournament share the same bucket layout (moveTimeoutMs/100 + 1).
+static json aggregatePlayerStats(const std::vector<GameResult>& games)
+{
+    struct Stat {
+        std::vector<long> hist;
+        long timeoutCount = 0;
+        int  timeoutGames = 0;
+        long totalS2C = 0, totalC2S = 0, totalThink = 0;
+        long totalTotal = 0; // sum of end-to-end move times, over every move
+        long maxS2C = 0, maxC2S = 0, maxThink = 0, maxTotal = 0;
+        int  latencySamples = 0;
+    };
+    std::map<std::string, Stat> bySlot;
+
+    for (const auto& gr : games)
+    {
+        for (const auto& [tagSession, hist] : gr.latencyHistogram)
+        {
+            auto it = gr.playerTagToSlotId.find(tagSession);
+            std::string slotId = (it != gr.playerTagToSlotId.end()) ? it->second : tagSession;
+            auto& s = bySlot[slotId];
+            if (s.hist.size() < hist.size()) s.hist.resize(hist.size(), 0);
+            for (size_t i = 0; i < hist.size(); ++i) s.hist[i] += hist[i];
+        }
+        for (const auto& [tagSession, t] : gr.totalMoveLatencyMs)
+        {
+            auto it = gr.playerTagToSlotId.find(tagSession);
+            std::string slotId = (it != gr.playerTagToSlotId.end()) ? it->second : tagSession;
+            bySlot[slotId].totalTotal += t;
+        }
+        for (const auto& [tagSession, n] : gr.autoMoveCount)
+        {
+            auto it = gr.playerTagToSlotId.find(tagSession);
+            std::string slotId = (it != gr.playerTagToSlotId.end()) ? it->second : tagSession;
+            auto& s = bySlot[slotId];
+            s.timeoutCount += n;
+            if (n > 0) s.timeoutGames += 1;
+        }
+        for (const auto& [tagSession, n] : gr.latencyCount)
+        {
+            if (n == 0) continue;
+            auto it = gr.playerTagToSlotId.find(tagSession);
+            std::string slotId = (it != gr.playerTagToSlotId.end()) ? it->second : tagSession;
+            auto& s = bySlot[slotId];
+            s.latencySamples += n;
+            if (gr.totalS2CMs.count(tagSession))       s.totalS2C   += gr.totalS2CMs.at(tagSession);
+            if (gr.totalC2SMs.count(tagSession))       s.totalC2S   += gr.totalC2SMs.at(tagSession);
+            if (gr.totalThinkMs.count(tagSession))     s.totalThink += gr.totalThinkMs.at(tagSession);
+            if (gr.maxThinkMs.count(tagSession))       s.maxThink   = std::max(s.maxThink, gr.maxThinkMs.at(tagSession));
+            if (gr.maxS2CMs.count(tagSession))         s.maxS2C     = std::max(s.maxS2C,   gr.maxS2CMs.at(tagSession));
+            if (gr.maxC2SMs.count(tagSession))         s.maxC2S     = std::max(s.maxC2S,   gr.maxC2SMs.at(tagSession));
+            if (gr.maxMoveLatencyMs.count(tagSession)) s.maxTotal   = std::max(s.maxTotal, gr.maxMoveLatencyMs.at(tagSession));
+        }
+    }
+
+    json out = json::object();
+    for (const auto& [slotId, s] : bySlot)
+    {
+        long moveCount = 0;
+        for (long c : s.hist) moveCount += c;
+        json entry;
+        entry["histogram"]     = s.hist;
+        entry["move_count"]    = moveCount;
+        entry["timeout_count"] = s.timeoutCount;
+        entry["timeout_games"] = s.timeoutGames;
+        json lat;
+        lat["avg_s2c_ms"]   = s.latencySamples ? s.totalS2C   / s.latencySamples : -1;
+        lat["avg_c2s_ms"]   = s.latencySamples ? s.totalC2S   / s.latencySamples : -1;
+        lat["avg_think_ms"] = s.latencySamples ? s.totalThink / s.latencySamples : -1;
+        lat["avg_total_ms"] = moveCount ? s.totalTotal / moveCount : -1;
+        lat["max_s2c_ms"]   = s.maxS2C;
+        lat["max_c2s_ms"]   = s.maxC2S;
+        lat["max_think_ms"] = s.maxThink;
+        lat["max_total_ms"] = s.maxTotal;
+        lat["sample_count"] = s.latencySamples;
+        entry["latency"] = lat;
+        out[slotId] = entry;
+    }
+    return out;
+}
+
 // Forward declaration (defined after writeResults)
 static GameResult runOneGame(const GameAssignment&, const std::string&,
     std::atomic<PlayerGameSessionID>&, const std::shared_ptr<Common::GameLogger>&,
@@ -775,6 +860,17 @@ static void writeResults(
     summary["finals_totals"]    = finalTotals;
     summary["complete"]         = complete;
 
+    // Per-player performance aggregates for the tournament view: move-time
+    // histograms (100ms buckets up to the timeout, with a final red "timeout"
+    // bucket), timeout-game counts, and the latency breakdown. Bucket width and
+    // the timeout duration let the UI label the x-axis and find the timeout bucket.
+    summary["move_timeout_ms"]  = cfg.moveTimeoutMs;
+    summary["bucket_ms"]        = 100;
+    summary["player_stats"]     = {
+        {"qualifying", aggregatePlayerStats(qualifying)},
+        {"finals",     aggregatePlayerStats(finals)},
+    };
+
     std::ofstream sf(tDir / "summary.json");
     sf << summary.dump(2);
 
@@ -850,7 +946,8 @@ static GameResult runOneGame(
     int autoMoveAfterTimeouts,
     std::chrono::milliseconds moveTimeout)
 {
-    auto observer = std::make_shared<RecordingObserver>(assignment.gameId, assignment.stage);
+    auto observer = std::make_shared<RecordingObserver>(
+        assignment.gameId, assignment.stage, (long)moveTimeout.count());
 
     // Create a game session per player-slot
     std::vector<std::shared_ptr<PlayerGameSession>> sessions;

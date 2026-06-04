@@ -95,6 +95,29 @@ export function gamePlayers(g: GameSummary): { id: string; game_score: number; t
   })
 }
 
+// Per-player performance aggregate over one stage of a tournament (see the C++
+// aggregatePlayerStats). `histogram` buckets end-to-end move time into bucket_ms
+// slices; the final bucket is the "timeout" bucket (auto-played moves).
+export interface PlayerLatencyBreakdown {
+  avg_s2c_ms: number
+  avg_c2s_ms: number
+  avg_think_ms: number
+  avg_total_ms: number
+  max_s2c_ms: number
+  max_c2s_ms: number
+  max_think_ms: number
+  max_total_ms: number
+  sample_count: number
+}
+
+export interface PlayerStats {
+  histogram: number[]      // length = move_timeout_ms/100 + 1; last entry = timeout bucket
+  move_count: number       // total moves (sum of histogram)
+  timeout_count: number    // moves that landed in the timeout bucket (auto-played)
+  timeout_games: number    // games in which this player timed out at least one move
+  latency: PlayerLatencyBreakdown
+}
+
 export interface TournamentSummary {
   tournament_id: string
   competition_id?: string
@@ -104,11 +127,22 @@ export interface TournamentSummary {
   finals: GameSummary[]
   qualifying_totals: Record<string, number>
   finals_totals: Record<string, number>
+  // Performance aggregates (present on tournaments recorded after #78). Keyed by
+  // stage -> slotId -> stats. move_timeout_ms / bucket_ms describe the histogram axis.
+  move_timeout_ms?: number
+  bucket_ms?: number
+  player_stats?: {
+    qualifying: Record<string, PlayerStats>
+    finals: Record<string, PlayerStats>
+  }
 }
 
 export interface TrickRecord {
   first_player: string
   moves: string[] // play order, parallel to nothing else; first_player played moves[0]
+  // Per-move provenance aligned with moves[]: "player" | "timeout" | "give_up".
+  // Absent when every move was a normal player move (the common case).
+  move_sources?: string[]
   winner: string
   points: number
 }
@@ -188,6 +222,23 @@ export interface LivePublic {
   turn: string | null
   winner: string | null
   final_points: Record<string, number>
+  // Slow-mode inter-trick collect gate: the just-finished trick is held on the
+  // table until collected (a human taps "Collect cards"; an AI auto-collects).
+  collecting?: LiveCollecting | null
+}
+
+// The finished trick being held during a slow-mode collect pause.
+export interface LiveCollecting {
+  winner: string          // pid of the trick winner (who collects + leads next)
+  human: boolean          // true => a human must tap "Collect cards"
+  deadline?: number       // server epoch seconds when it auto-advances
+  delay_s?: number        // auto-collect delay (for sizing a countdown)
+  trick: {
+    trick_idx: number
+    winner: string
+    moves: LiveMove[]     // the four cards, in play order
+    points?: number       // points in the trick (label the Collect button)
+  }
 }
 
 export interface LivePending {
@@ -207,6 +258,7 @@ export interface LiveMySeat {
   pid: string
   name: string
   pending: LivePending | null
+  hand?: string[]      // my current hand, always present (even when not my turn)
   passed?: string[]    // cards I passed this round
   received?: string[]  // cards passed to me this round
   passed_by_round?: Record<string, string[]>    // round_idx -> cards I passed
@@ -239,6 +291,9 @@ export interface LiveSnapshot {
     seats: LiveSeat[]
     lobby_code?: string                      // share with CLI clients to fill open seats
     uploaded_ai_types?: AiTypeOption[]       // per-table uploaded clients
+    slow_mode?: boolean                      // pace AI moves + gate trick collection
+    hide_prev_tricks?: boolean               // hide a round's tricks until it ends
+    timeout_s?: number                       // human decision budget (configurable)
   }
   public: LivePublic | null
   you: { client_id: string; seats: LiveMySeat[]; ai?: LiveAiSeat[] }

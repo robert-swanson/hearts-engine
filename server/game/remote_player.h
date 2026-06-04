@@ -109,6 +109,7 @@ public:
         }});
 
         mLastMoveWasAuto    = false;
+        mLastMoveWasGiveUp  = false;
         mLastS2CLatencyMs   = -1;
         mLastC2SLatencyMs   = -1;
         mLastThinkTimeMs    = -1;
@@ -147,7 +148,8 @@ public:
         }
         else { LOG("Client %s timed out or disconnected during move", mPlayerTagSession.c_str()); }
 
-        mLastMoveWasAuto = true;
+        mLastMoveWasAuto   = true;
+        mLastMoveWasGiveUp = mGameSession->lastReceiveWasGiveUp();
         return autoMoveCard(legalPlays);
     }
 
@@ -169,6 +171,7 @@ public:
     long lastThinkTimeMs()  const override { return mLastThinkTimeMs;  }
 
     bool wasLastMoveAuto() const override { return mLastMoveWasAuto; }
+    bool wasLastMoveGiveUp() const override { return mLastMoveWasGiveUp; }
 
     void notifyEndTrick(PlayerTagSession winningPlayer) override
     {
@@ -233,6 +236,7 @@ private:
     std::shared_ptr<PlayerGameSession> mGameSession;
     PlayerTagSession mPlayerTagSession;
     bool mLastMoveWasAuto;
+    bool mLastMoveWasGiveUp = false;  // auto-played immediately due to give-up mode ("#")
     long mLastS2CLatencyMs = -1;  // server→client latency of last move_request
     long mLastC2SLatencyMs = -1;  // client→server latency of last decided_move
     long mLastThinkTimeMs  = -1;  // client think time for last move

@@ -88,6 +88,13 @@ public:
         return mGameSessionID;
     }
 
+    // True if the last receive() returned nullopt because the connection gave up
+    // immediately (give-up mode) rather than waiting the full move timeout. Used
+    // by RemotePlayer to mark an auto-move as give-up ("#") vs. timeout ("*").
+    bool lastReceiveWasGiveUp() {
+        return mConnection.sessionLastReceiveWasGiveUp(mGameSessionID);
+    }
+
 
 private:
     uint16_t getSeqNumAndIncrement()

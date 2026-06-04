@@ -31,8 +31,10 @@ export type SendAction =
   | { action: 'add_ai'; seat_id: string; ai_type: string; name?: string }
   | { action: 'add_open'; seat_id: string; name?: string }
   | { action: 'clear_seat'; seat_id: string }
+  | { action: 'set_options'; slow_mode?: boolean; hide_prev_tricks?: boolean; timeout_s?: number }
   | { action: 'start' }
   | { action: 'decide'; seat_id: string; value: string | string[] }
+  | { action: 'collect'; seat_id: string }
 
 export interface LiveConnection {
   snapshot: LiveSnapshot | null

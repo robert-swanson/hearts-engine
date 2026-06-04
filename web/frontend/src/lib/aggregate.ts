@@ -37,6 +37,9 @@ export interface Aggregate {
   gamePointsByPlayer: Record<string, number>
   tournamentPointsByPlayer: Record<string, number>
   moonShotsByPlayer: Record<string, number>
+  // slotId -> number of games in which this player timed out at least one move
+  // (i.e. their auto_move_count for that game was > 0).
+  timeoutGamesByPlayer: Record<string, number>
 }
 
 /** team of a full/slot id (first path component). */
@@ -95,6 +98,7 @@ export function aggregate(games: GameSummary[]): Aggregate {
   const gamePointsByPlayer: Record<string, number> = {}
   const tournamentPointsByPlayer: Record<string, number> = {}
   const moonShotsByPlayer: Record<string, number> = {}
+  const timeoutGamesByPlayer: Record<string, number> = {}
   for (const g of games) {
     for (const p of gamePlayers(g)) {
       const key = slotId(p.id)
@@ -104,6 +108,10 @@ export function aggregate(games: GameSummary[]): Aggregate {
     }
     if (g.winner) add(gamesWonByPlayer, slotId(g.winner), 1)
     for (const [id, v] of Object.entries(g.moon_shots ?? {})) add(moonShotsByPlayer, slotId(id), v)
+    // Count this as a "timeout game" for any player who auto-played >= 1 move.
+    for (const [id, v] of Object.entries(g.auto_move_count ?? {})) {
+      if (v > 0) add(timeoutGamesByPlayer, slotId(id), 1)
+    }
   }
   return {
     numGames: games.length,
@@ -112,6 +120,7 @@ export function aggregate(games: GameSummary[]): Aggregate {
     gamePointsByPlayer,
     tournamentPointsByPlayer,
     moonShotsByPlayer,
+    timeoutGamesByPlayer,
   }
 }
 

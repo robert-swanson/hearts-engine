@@ -24,6 +24,11 @@ public:
     virtual Card getMove(const CardCollection& legalPlays) = 0;
     virtual void notifyMove(PlayerID playerID, Card card, bool autoMoved) = 0;
     virtual bool wasLastMoveAuto() const { return false; }
+    // True only when the last move was auto-played *immediately* because the client
+    // had already exceeded the consecutive-timeout threshold (give-up mode), as
+    // opposed to a single move that simply ran out its timeout. Distinguishes the
+    // "#" (give-up) marker from the "*" (timeout) marker in the recorded game.
+    virtual bool wasLastMoveGiveUp() const { return false; }
     // Latency data from the most recent move exchange (-1 if unavailable or auto-moved).
     virtual long lastS2CLatencyMs() const { return -1; }  // server→client (move_request delivery)
     virtual long lastC2SLatencyMs() const { return -1; }  // client→server (decided_move delivery)
