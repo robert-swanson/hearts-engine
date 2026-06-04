@@ -57,7 +57,7 @@ export function GameDetail({ lobby = false }: { lobby?: boolean }) {
           <thead>
             <tr>
               <th>Round</th>
-              <th>Pass</th>
+              <th className="hide-sm">Pass</th>
               {seating.map((p) => (
                 <th key={p}>
                   <div><PlayerName d={nameOf(p)} /></div>
@@ -74,7 +74,7 @@ export function GameDetail({ lobby = false }: { lobby?: boolean }) {
                 <td>
                   <Link to={roundHref(r.round_idx)}>#{r.round_idx + 1}</Link>
                 </td>
-                <td className="muted">{r.pass_direction}</td>
+                <td className="muted hide-sm">{r.pass_direction}</td>
                 {seating.map((p) => (
                   <td key={p}>{r.round_scores[p] ?? 0}</td>
                 ))}
@@ -82,7 +82,7 @@ export function GameDetail({ lobby = false }: { lobby?: boolean }) {
             ))}
             <tr style={{ fontWeight: 700 }}>
               <td>Total</td>
-              <td></td>
+              <td className="hide-sm"></td>
               {seating.map((p) => (
                 <td key={p}>{totals[p]}</td>
               ))}
