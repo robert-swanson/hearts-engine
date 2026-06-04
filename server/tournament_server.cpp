@@ -6,13 +6,18 @@
  *
  * Config keys (in addition to standard SERVER_PORT / LOG_DIR):
  *   TOURNAMENT_PORT              port to listen on (overrides SERVER_PORT if present)
- *   QUALIFYING_GAMES             total games in stage 1
+ *   QUALIFYING_GAMES_PER_PLAYER  games each participating player plays in stage 1
+ *                                (preferred; total scales with who registers — issue #93)
+ *   QUALIFYING_GAMES             legacy fixed total for stage 1 (used only if the
+ *                                per-player count above is unset)
  *   FINALS_GAMES                 games in stage 2 (top-4 playoff)
  *   MAX_PLAYERS_PER_TEAM         must be a multiple of 4
  *   QUALIFYING_POINTS            comma-separated 1st,2nd,3rd,4th place points
  *   ALLOW_MULTI_TEAM_FINALS      0 or 1
  *   TEAMS                        name:password,name:password,...
  *   FALLBACK_PLAYER_TAG          player_tag of the always-available fallback client
+ *   FILLER_ONLY_IF_NEEDED        0 or 1; when 1, empty teams are backfilled with the
+ *                                fallback bot only to reach the 4-team minimum
  *   RESULTS_DIR                  directory for JSON result files
  */
 
@@ -70,8 +75,10 @@ using Common::Game::compactHandArrays;
 
 struct TournamentConfig {
     int port;
-    int qualifyingGames;
+    int qualifyingGamesPerPlayer;         // QUALIFYING_GAMES_PER_PLAYER: games each player plays in stage 1 (0 = unset → legacy total)
+    int qualifyingGames;                  // computed from the per-player count once the participating roster is known (legacy: read directly)
     int finalsGames;
+    bool fillerOnlyIfNeeded;              // FILLER_ONLY_IF_NEEDED: autofill empty teams only to reach the 4-team minimum
     int maxPlayersPerTeam;
     std::vector<int> qualifyingPoints; // [1st, 2nd, 3rd, 4th]
     bool allowMultiTeamFinals;
@@ -94,7 +101,18 @@ static TournamentConfig loadConfig(int64_t startAt)
     cfg.port = std::stoi(
         EnvLoader->has("TOURNAMENT_PORT") ? ENV_STRING("TOURNAMENT_PORT")
                                           : ENV_STRING("SERVER_PORT"));
-    cfg.qualifyingGames    = std::stoi(ENV_STRING("QUALIFYING_GAMES"));
+    // Stage-1 sizing. Preferred input is QUALIFYING_GAMES_PER_PLAYER (N): the
+    // number of games every participating player plays. The actual game count is
+    // derived at run time from who actually registered (see below), so a team
+    // that fails to register simply shrinks the tournament instead of forcing the
+    // remaining players to absorb its games. QUALIFYING_GAMES (a fixed total) is
+    // still honored as a legacy fallback when the per-player count is absent.
+    cfg.qualifyingGamesPerPlayer = EnvLoader->has("QUALIFYING_GAMES_PER_PLAYER")
+        ? std::stoi(ENV_STRING("QUALIFYING_GAMES_PER_PLAYER")) : 0;
+    cfg.qualifyingGames    = EnvLoader->has("QUALIFYING_GAMES")
+        ? std::stoi(ENV_STRING("QUALIFYING_GAMES")) : 0;
+    cfg.fillerOnlyIfNeeded = EnvLoader->has("FILLER_ONLY_IF_NEEDED")
+        && ENV_STRING("FILLER_ONLY_IF_NEEDED") == "1";
     cfg.finalsGames        = std::stoi(ENV_STRING("FINALS_GAMES"));
     cfg.maxPlayersPerTeam  = std::stoi(ENV_STRING("MAX_PLAYERS_PER_TEAM"));
     cfg.allowMultiTeamFinals = ENV_STRING("ALLOW_MULTI_TEAM_FINALS") == "1";
@@ -130,6 +148,9 @@ static TournamentConfig loadConfig(int64_t startAt)
         if (colon != std::string::npos)
             cfg.teams[entry.substr(0, colon)] = entry.substr(colon + 1);
     }
+
+    ASRT(cfg.qualifyingGamesPerPlayer > 0 || cfg.qualifyingGames > 0,
+         "set QUALIFYING_GAMES_PER_PLAYER (preferred) or QUALIFYING_GAMES");
 
     return cfg;
 }
@@ -776,6 +797,7 @@ static json buildRulesJson(const TournamentConfig& cfg,
     rules["tournament_index"]             = tournamentIndex;
     rules["began_at"]                     = beganAt;
     rules["qualifying_games"]             = cfg.qualifyingGames;
+    rules["qualifying_games_per_player"]  = cfg.qualifyingGamesPerPlayer;
     rules["finals_games"]                 = cfg.finalsGames;
     rules["max_players_per_team"]         = cfg.maxPlayersPerTeam;
     rules["qualifying_points"]            = cfg.qualifyingPoints;
@@ -1241,24 +1263,57 @@ int main(int argc, char** argv)
     for (auto& p : lobby.players)
         byTeam[p.teamName].push_back(&p);
 
-    std::map<std::string, std::vector<PlayerSlot>> teamRosters;
+    // Decide which configured teams actually take part. A team that registered
+    // at least one player always plays. A team that registered nobody is an
+    // "empty" team we can optionally backfill with the fallback bot so the field
+    // stays large enough — but only when a fallback player is available.
+    bool canFill = fallback != nullptr && cfg.fallbackPlayerTag != "none";
+    std::vector<std::string> realTeams, emptyTeams;
     for (auto& [name, _] : cfg.teams)
+        (byTeam[name].empty() ? emptyTeams : realTeams).push_back(name);
+
+    // How many empty teams to backfill:
+    //   - FILLER_ONLY_IF_NEEDED: just enough to reach the 4-team minimum, so a
+    //     full field of real teams runs no filler-vs-filler games at all.
+    //   - otherwise (legacy): backfill every empty team.
+    int fillCount = 0;
+    if (canFill)
     {
-        // If fallback is disabled ("none") and the team submitted no players, exclude them entirely.
-        if (byTeam[name].empty() && cfg.fallbackPlayerTag == "none") continue;
-        teamRosters[name] = buildRoster(name, byTeam[name], cfg.maxPlayersPerTeam, fallback);
+        fillCount = cfg.fillerOnlyIfNeeded
+            ? std::min((int)emptyTeams.size(), std::max(0, 4 - (int)realTeams.size()))
+            : (int)emptyTeams.size();
     }
 
-    // Validate qualifying game count
+    std::map<std::string, std::vector<PlayerSlot>> teamRosters;
+    for (auto& name : realTeams)
+        teamRosters[name] = buildRoster(name, byTeam[name], cfg.maxPlayersPerTeam, fallback);
+    for (int i = 0; i < fillCount; i++)
+        teamRosters[emptyTeams[i]] = buildRoster(emptyTeams[i], byTeam[emptyTeams[i]], cfg.maxPlayersPerTeam, fallback);
+
+    // Size stage 1 from who actually showed up. Every game seats 4 players, so to
+    // give each of the P*T players (P = slots/team, T = participating teams) the
+    // same N games, run N*P*T/4 games (issue #93). That is exactly N*(totalPlayers/4),
+    // an integer multiple of `required`, so the per-slot fairness rotation in
+    // scheduleGames (issue #69) still divides evenly. A no-show team just lowers T
+    // and shrinks the tournament instead of piling its games onto everyone else.
     int totalPlayers = 0;
     for (auto& [_, slots] : teamRosters) totalPlayers += (int)slots.size();
-    int required = totalPlayers / 4;
-    if (cfg.qualifyingGames % required != 0)
+    int required = std::max(1, totalPlayers / 4);
+    if (cfg.qualifyingGamesPerPlayer > 0)
     {
+        cfg.qualifyingGames = cfg.qualifyingGamesPerPlayer * required;
+    }
+    else if (cfg.qualifyingGames % required != 0)
+    {
+        // Legacy fixed-total path: round up to the nearest fair multiple.
         int rounded = ((cfg.qualifyingGames + required - 1) / required) * required;
         LOG("Rounding qualifying games from %d to %d (multiple of %d)", cfg.qualifyingGames, rounded, required);
         cfg.qualifyingGames = rounded;
     }
+
+    if ((int)teamRosters.size() < 4)
+        LOG("WARNING: only %d team(s) participating — a tournament needs at least 4. "
+            "Check registrations or enable filler backfill.", (int)teamRosters.size());
 
     // Detailed roster log — one line per slot, grouped by team.
     LOG("Tournament roster — %d teams, %d slots, %d qualifying games:",

@@ -116,8 +116,13 @@ def write_config(path: str, cfg: dict, teams: Dict[str, str], filler_teams: Dict
         f.write(f"REGISTRATION_WINDOW={cfg.get('registration_window', 60)}\n")
         f.write(f"INTERVAL={cfg['interval']}\n")
         f.write(f"ALIGN_FIRST_TO_INTERVAL={1 if cfg.get('align_first_to_interval') else 0}\n")
-        # Tournament rules
+        # Tournament rules. QUALIFYING_GAMES_PER_PLAYER is authoritative: the
+        # server recomputes the actual qualifying-game total each cycle from who
+        # registered (issue #93). QUALIFYING_GAMES is kept as the all-teams-present
+        # estimate for display/back-compat.
+        f.write(f"QUALIFYING_GAMES_PER_PLAYER={cfg.get('qualifying_games_per_player', 0)}\n")
         f.write(f"QUALIFYING_GAMES={cfg['qualifying_games']}\n")
+        f.write(f"FILLER_ONLY_IF_NEEDED={1 if cfg.get('filler_only_if_needed') else 0}\n")
         f.write(f"FINALS_GAMES={cfg['finals_games']}\n")
         f.write(f"MAX_PLAYERS_PER_TEAM={cfg['max_players']}\n")
         f.write(f"QUALIFYING_POINTS={cfg['qualifying_points']}\n")
@@ -332,6 +337,7 @@ def configure_rules(non_interactive: bool = False,
             'fallback_player_tag':   d.get('FALLBACK_PLAYER_TAG', 'random_player'),
             'num_filler_teams':      num_filler,
             'filler_team_ais':       filler_ais,
+            'filler_only_if_needed': d_bool('FILLER_ONLY_IF_NEEDED', False),
         }
 
     print('\n=== Competition Rules ===')
@@ -377,6 +383,8 @@ def configure_rules(non_interactive: bool = False,
                                       d.get('FALLBACK_PLAYER_TAG', 'random_player')),
         'num_filler_teams':   num_filler,
         'filler_team_ais':    filler_ais,
+        'filler_only_if_needed': prompt('Backfill empty teams only to reach 4? (y/n)',
+                                        'y' if d_bool('FILLER_ONLY_IF_NEEDED', False) else 'n').lower() == 'y',
     }
 
 
@@ -681,8 +689,12 @@ def main():
         if cfg['qualifying_games'] != raw:
             print(f'  → rounded up to {cfg["qualifying_games"]} '
                   f'(nearest multiple of {required_mult})')
+    # The per-player count is the stable knob the server uses to re-derive the
+    # actual total each cycle from who registers (issue #93). Derive it from the
+    # rounded all-teams-present total so a full field reproduces this same count.
+    cfg['qualifying_games_per_player'] = cfg['qualifying_games'] // required_mult
     print(f'Qualifying games: {cfg["qualifying_games"]} '
-          f'({cfg["qualifying_games"] // required_mult} game(s) per player)')
+          f'({cfg["qualifying_games_per_player"]} game(s) per player)')
 
     # ── Run competition loop ───────────────────────────────────────────────
 
