@@ -67,13 +67,19 @@
   stroke-width: 2;
 }
 
-/* Click-to-inspect detail panel: players ranked at the chosen x value. */
+/* Click-to-inspect detail panel: players ranked at the chosen x value.
+   Black background per design (PR #86 review). */
 .line-chart__details {
   margin-top: 10px;
-  border: 1px solid #e2e6ec;
+  border: 1px solid #000;
   border-radius: 8px;
-  background: #fafbfc;
+  background: #000;
+  color: #f4f6f8;
   padding: 8px 10px;
+}
+
+.line-chart__details .muted {
+  color: #b8c0cc;
 }
 
 .line-chart__details-head {
@@ -82,6 +88,7 @@
   justify-content: space-between;
   font-size: 13px;
   margin-bottom: 6px;
+  color: #fff;
 }
 
 .line-chart__details-close {
@@ -90,11 +97,11 @@
   font-size: 18px;
   line-height: 1;
   cursor: pointer;
-  color: #8a93a0;
+  color: #aab2bf;
   padding: 0 4px;
 }
 .line-chart__details-close:hover {
-  color: #3a4452;
+  color: #fff;
 }
 
 .line-chart__details-list {

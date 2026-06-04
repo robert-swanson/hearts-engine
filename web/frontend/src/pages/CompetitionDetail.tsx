@@ -14,12 +14,6 @@ const SUMMARY_REFRESH_MS = 15000
 // points climb live (per PR #86 review).
 const CHART_REFRESH_MS = 1000
 
-function formatTime(iso: string | null): string {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString()
-}
-
 function formatLength(seconds: number | null): string {
   if (seconds == null) return '—'
   const s = Math.round(seconds)
@@ -40,8 +34,6 @@ export function CompetitionDetail() {
 
   const [params, setParams] = useSearchParams()
   const stage: 'qualifying' | 'finals' = params.get('cstage') === 'qualifying' ? 'qualifying' : 'finals'
-  // Averaging window for the chart: full tournament, or a rolling 10-game window.
-  const windowSize = params.get('cwin') === '10' ? 10 : undefined
   const castMode = params.get('cast') === '1'
   const setParam = (key: string, value: string | null) => {
     const next = new URLSearchParams(params)
@@ -97,7 +89,7 @@ export function CompetitionDetail() {
     }))
   }, [summaries, indexKey, stage])
 
-  const series = useMemo(() => competitionSeries(perTournament, windowSize), [perTournament, windowSize])
+  const series = useMemo(() => competitionSeries(perTournament), [perTournament])
 
   // Lookup of a tournament index -> its (stage-filtered) games, so clicking a
   // chart point can list every player's average in that tournament.
@@ -109,13 +101,13 @@ export function CompetitionDetail() {
 
   const pointDetails = useCallback(
     (x: number) =>
-      playerAvgsForGames(gamesByIndex.get(x) ?? [], windowSize).map((pa) => ({
+      playerAvgsForGames(gamesByIndex.get(x) ?? []).map((pa) => ({
         id: pa.key,
         label: `${pa.team} / ${pa.tag}`,
         color: teamColor(pa.team),
         value: pa.avg,
       })),
-    [gamesByIndex, windowSize],
+    [gamesByIndex],
   )
 
   const xTicks = useMemo(() => tournaments.map((t) => Number(t.index)), [indexKey])
@@ -130,32 +122,13 @@ export function CompetitionDetail() {
   const chartCard = (
     <div className="card-surface">
       <div className="chart-controls">
-        <strong style={{ fontSize: 14 }}>Top player per team, by tournament</strong>
+        <strong style={{ fontSize: 14 }}>{stage === 'finals' ? 'Finals Scores' : 'Qualifying Scores'}</strong>
         <span className="chart-controls__spacer" />
         <button
-          className={`btn${stage === 'qualifying' ? ' btn--active' : ''}`}
-          onClick={() => setParam('cstage', 'qualifying')}
+          className="btn"
+          onClick={() => setParam('cstage', stage === 'finals' ? 'qualifying' : null)}
         >
-          Qualifying
-        </button>
-        <button
-          className={`btn${stage === 'finals' ? ' btn--active' : ''}`}
-          onClick={() => setParam('cstage', null)}
-        >
-          Finals
-        </button>
-        <span style={{ width: 12 }} />
-        <button
-          className={`btn${windowSize === undefined ? ' btn--active' : ''}`}
-          onClick={() => setParam('cwin', null)}
-        >
-          Full avg
-        </button>
-        <button
-          className={`btn${windowSize === 10 ? ' btn--active' : ''}`}
-          onClick={() => setParam('cwin', '10')}
-        >
-          Last 10
+          Show {stage === 'finals' ? 'Qualifying' : 'Finals'} Scores
         </button>
       </div>
       <LineChart
@@ -163,7 +136,7 @@ export function CompetitionDetail() {
         big={castMode}
         height={castMode ? 380 : 320}
         xLabel="Tournament"
-        yLabel="Avg tournament points"
+        yLabel="Avg points per game (top player)"
         xTicks={xTicks}
         xTickFormat={(x) => `#${x}`}
         pointDetails={pointDetails}
@@ -187,76 +160,87 @@ export function CompetitionDetail() {
         </button>
       </div>
 
-      <div className="muted" style={{ marginBottom: 12, fontSize: 13 }}>
-        {!data.is_legacy && <>Started {formatTime(data.started_at)} · </>}
-        {data.qualifying_games != null && (
-          <>
-            {data.qualifying_games} qualifying · {data.finals_games ?? '—'} finals games ·{' '}
-          </>
-        )}
-        Teams: {data.teams.length > 0 ? data.teams.join(', ') : '—'}
-        {castMode && <> · auto-refreshing every {SUMMARY_REFRESH_MS / 1000}s</>}
-      </div>
+      <div
+        style={
+          castMode
+            ? { display: 'grid', gridTemplateColumns: 'minmax(0, 1.4fr) minmax(0, 1fr)', gap: 24, alignItems: 'start' }
+            : undefined
+        }
+      >
+        {/* Competition section (top, or left in TV view): the arc chart, rules,
+            and the full list of tournaments. */}
+        <div>
+          {hasChart && (
+            <>
+              <h2 style={{ marginTop: 0 }}>Competition overview</h2>
+              {chartCard}
+            </>
+          )}
 
-      {/* Registration countdown for the next tournament — only while THIS
-          competition is the one currently running. */}
-      {isLiveCompetition && <NextTournamentBanner />}
+          {rules && (
+            <>
+              <h2>Rules</h2>
+              <div className="card-surface">
+                <table className="data rules-table">
+                  <tbody>
+                    <RuleRow label="Qualifying games" value={rules.qualifying_games} />
+                    <RuleRow label="Finals games" value={rules.finals_games} />
+                    <RuleRow
+                      label="Qualifying points (1st–4th)"
+                      value={rules.qualifying_points?.length ? rules.qualifying_points.join(' / ') : '—'}
+                    />
+                    <RuleRow label="Max players per team" value={rules.max_players_per_team} />
+                    <RuleRow label="Allow multi-team finals" value={rules.allow_multi_team_finals ? 'Yes' : 'No'} />
+                    <RuleRow label="Move timeout" value={`${rules.move_timeout_ms} ms`} />
+                    <RuleRow label="Auto-move after timeouts" value={rules.auto_move_after_timeouts} />
+                    <RuleRow label="Max concurrent games per team" value={rules.max_concurrent_games_per_team} />
+                    <RuleRow label="Fallback player tag" value={rules.fallback_player_tag} />
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
 
-      {/* Live standings for THIS competition (only when it's the one running). */}
-      <LiveStatsPanel cid={data.competition_id} />
-
-      {/* Competition arc chart. */}
-      {hasChart && (
-        <>
-          <h2>Competition overview</h2>
-          {chartCard}
-        </>
-      )}
-
-      {rules && !castMode && (
-        <>
-          <h2>Rules</h2>
+          <h2>Tournaments ({data.tournaments.length})</h2>
           <div className="card-surface">
-            <table className="data rules-table">
+            <table className="data">
+              <thead>
+                <tr>
+                  <th>Index</th>
+                  <th>Start time</th>
+                  <th>Duration</th>
+                  <th>1st place</th>
+                  <th>2nd place</th>
+                  <th>3rd place</th>
+                  <th>4th place</th>
+                </tr>
+              </thead>
               <tbody>
-                <RuleRow label="Qualifying games" value={rules.qualifying_games} />
-                <RuleRow label="Finals games" value={rules.finals_games} />
-                <RuleRow
-                  label="Qualifying points (1st–4th)"
-                  value={rules.qualifying_points?.length ? rules.qualifying_points.join(' / ') : '—'}
-                />
-                <RuleRow label="Max players per team" value={rules.max_players_per_team} />
-                <RuleRow label="Allow multi-team finals" value={rules.allow_multi_team_finals ? 'Yes' : 'No'} />
-                <RuleRow label="Move timeout" value={`${rules.move_timeout_ms} ms`} />
-                <RuleRow label="Auto-move after timeouts" value={rules.auto_move_after_timeouts} />
-                <RuleRow label="Max concurrent games per team" value={rules.max_concurrent_games_per_team} />
-                <RuleRow label="Fallback player tag" value={rules.fallback_player_tag} />
+                {tournaments.map((t) => (
+                  <TournamentRowView key={t.index} t={t} cid={cid} nameOf={nameOf} navigate={navigate} />
+                ))}
               </tbody>
             </table>
           </div>
-        </>
-      )}
 
-      <h2>Tournaments ({data.tournaments.length})</h2>
-      <div className="card-surface">
-        <table className="data">
-          <thead>
-            <tr>
-              <th>Index</th>
-              <th>Start time</th>
-              <th>Duration</th>
-              <th>1st place</th>
-              <th>2nd place</th>
-              <th>3rd place</th>
-              <th>4th place</th>
-            </tr>
-          </thead>
-          <tbody>
-            {tournaments.map((t) => (
-              <TournamentRowView key={t.index} t={t} cid={cid} nameOf={nameOf} navigate={navigate} />
-            ))}
-          </tbody>
-        </table>
+          {/* Next-tournament registration — below the competition info when NOT
+              in TV view (the last-tournament section that hosts it is hidden). */}
+          {!castMode && isLiveCompetition && (
+            <div style={{ marginTop: 16 }}>
+              <NextTournamentBanner />
+            </div>
+          )}
+        </div>
+
+        {/* Last/current tournament section (right in TV view) — TV mode only,
+            since the same detail is available on the tournament page itself.
+            The next-tournament banner sits beneath it here. */}
+        {castMode && (
+          <div>
+            <LiveStatsPanel cid={data.competition_id} />
+            {isLiveCompetition && <NextTournamentBanner />}
+          </div>
+        )}
       </div>
     </div>
   )
