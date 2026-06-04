@@ -657,3 +657,86 @@
     max-height: 104px;
   }
 }
+
+/* --- Interactive-mode card-movement animations -----------------------------
+   Only mounted when the table's "slow down for interactivity" option is on.
+   Each wrapper sits between the seat slot and the <Card>, so transforms move
+   just the card without disturbing the grid. Per-quadrant custom properties
+   (--dx/--dy) point the motion at (or away from) the table center. */
+.seat-card-anim {
+  display: inline-block;
+  will-change: transform, opacity;
+}
+
+/* A card sliding ONTO the table: it flies in from the seat's outward corner. */
+@keyframes seat-card-play {
+  from {
+    opacity: 0;
+    transform: translate(var(--dx, 0), var(--dy, 0)) scale(0.82) rotate(var(--rot, 0deg));
+  }
+  to {
+    opacity: 1;
+    transform: translate(0, 0) scale(1) rotate(0deg);
+  }
+}
+.seat-card-anim--play-bl,
+.seat-card-anim--play-tl,
+.seat-card-anim--play-tr,
+.seat-card-anim--play-br {
+  animation: seat-card-play 0.32s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+.seat-card-anim--play-bl { --dx: -26px; --dy: 26px; --rot: -6deg; }
+.seat-card-anim--play-tl { --dx: -26px; --dy: -26px; --rot: 6deg; }
+.seat-card-anim--play-tr { --dx: 26px; --dy: -26px; --rot: -6deg; }
+.seat-card-anim--play-br { --dx: 26px; --dy: 26px; --rot: 6deg; }
+
+/* A collected trick sliding OFF the table: each card travels toward the WINNING
+   seat's corner and shrinks away. --dx/--dy are set inline per card (winner
+   quadrant − card quadrant), so the four cards converge on the collector. */
+@keyframes seat-card-collect {
+  from {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate(var(--dx, 0), var(--dy, 0)) scale(0.4);
+  }
+}
+.seat-card-anim--collect {
+  animation: seat-card-collect 0.5s ease-in both;
+}
+
+/* Winner seat pulses as it sweeps up the trick. */
+.live-seat--collect-winner {
+  animation: seat-collect-winner 0.5s ease-out;
+  border-color: #4caf50;
+}
+@keyframes seat-collect-winner {
+  0% { box-shadow: 0 0 0 1px #4caf50 inset; }
+  50% { box-shadow: 0 0 0 3px #4caf50 inset, 0 0 14px rgba(76, 175, 80, 0.5); }
+  100% { box-shadow: 0 0 0 1px #4caf50 inset; }
+}
+
+/* Passing: received cards drop into the hand, committed cards fly out. */
+@keyframes seat-card-pass-in {
+  from { opacity: 0; transform: translateY(-14px) scale(0.85); }
+  to { opacity: 1; transform: none; }
+}
+.seat-card-anim--pass-in {
+  animation: seat-card-pass-in 0.45s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+@keyframes seat-card-pass-out {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translate(var(--dx, 0), var(--dy, -40px)) scale(0.7); }
+}
+.seat-card-anim--pass-out {
+  animation: seat-card-pass-out 0.4s ease-in both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .seat-card-anim,
+  .live-seat--collect-winner {
+    animation: none !important;
+  }
+}

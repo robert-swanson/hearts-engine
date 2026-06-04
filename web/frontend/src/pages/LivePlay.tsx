@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api/client'
-import type { LiveSeat, LiveMySeat, LivePublic, LiveRound, AiTypeOption, LiveAiSeat, LiveLogEntry, LiveTableSummary, LiveSnapshot, LiveCollecting } from '../api/client'
+import type { LiveSeat, LiveMySeat, LivePublic, LiveRound, AiTypeOption, LiveAiSeat, LiveLogEntry, LiveTableSummary, LiveSnapshot, LiveCollecting, LiveMove } from '../api/client'
 import { useLiveTable, type SendAction } from '../lib/liveSocket'
 import { Card } from '../components/Card'
 import { TrickRow } from '../components/TrickRow'
@@ -317,7 +317,14 @@ export function LiveTable() {
       {status === 'lobby' ? (
         <Lobby table={table} send={send} />
       ) : (
-        <PlayView pub={pub} mySeats={you.seats} aiSeats={you.ai ?? []} send={send} serverOffset={serverOffset} />
+        <PlayView
+          pub={pub}
+          mySeats={you.seats}
+          aiSeats={you.ai ?? []}
+          send={send}
+          serverOffset={serverOffset}
+          interactive={!!table.slow_mode}
+        />
       )}
     </div>
   )
@@ -635,18 +642,29 @@ function CollectBar({
   )
 }
 
+// Grid coordinates of each table quadrant, used to aim the collect animation:
+// played cards converge on the winning seat's corner rather than the center.
+const QUAD: Record<string, [number, number]> = {
+  bl: [0, 1],
+  tl: [0, 0],
+  tr: [1, 0],
+  br: [1, 1],
+}
+
 function PlayView({
   pub,
   mySeats,
   aiSeats,
   send,
   serverOffset,
+  interactive,
 }: {
   pub: LivePublic | null
   mySeats: LiveMySeat[]
   aiSeats: LiveAiSeat[]
   send: (a: SendAction) => void
   serverOffset: number
+  interactive: boolean
 }) {
   // Sensory turn cues (opt-in, per-browser). Hooks must run before any early
   // return, so they live at the top regardless of whether the game has begun.
@@ -681,6 +699,24 @@ function PlayView({
     return () => document.removeEventListener('visibilitychange', onVis)
   }, [sound])
 
+  // Interactive (slow) mode card-collect animation: when a held trick is
+  // collected its cards vanish from the snapshot, so capture them on the
+  // set→null edge of `collecting` and keep them on the table for one beat,
+  // flying them off toward the center, before clearing.
+  const collectingNow = pub?.collecting ?? null
+  const prevCollecting = useRef<LiveCollecting | null>(null)
+  const [collectExit, setCollectExit] = useState<{ moves: LiveMove[]; winner: string } | null>(null)
+  useEffect(() => {
+    const prev = prevCollecting.current
+    prevCollecting.current = collectingNow
+    if (!interactive) return
+    if (prev && !collectingNow) {
+      setCollectExit({ moves: prev.trick.moves, winner: prev.winner })
+      const id = setTimeout(() => setCollectExit(null), 520)
+      return () => clearTimeout(id)
+    }
+  }, [collectingNow, interactive])
+
   if (!pub) return <p className="muted">Waiting for the game to begin…</p>
   const nameOf = (pid: string) => pub.players[pid]?.name ?? pid
   // While a finished trick is being collected (slow mode), keep its cards on the
@@ -690,6 +726,10 @@ function PlayView({
   const activeMoves = collecting?.trick?.moves ?? pub.current_trick.moves
   const trickCard: Record<string, string> = {}
   for (const m of activeMoves) trickCard[m.player] = m.card
+  // Cards of a just-collected trick, kept on the table for one beat so they can
+  // animate off (interactive mode only — `collectExit` is never set otherwise).
+  const exitCard: Record<string, string> = {}
+  if (collectExit) for (const m of collectExit.moves) exitCard[m.player] = m.card
   // I'm the human collector when I own the winning seat of the held trick.
   const myCollectSeat = collecting?.human
     ? mySeats.find((s) => s.pid === collecting.winner)
@@ -708,6 +748,17 @@ function PlayView({
     const pid = pub.player_order[(startIdx + i) % pub.player_order.length]
     seatAt[tablePos[i] ?? 'bl'] = pid
   })
+  // Reverse lookup (pid → quadrant) so a collected trick can aim each card at
+  // the winning seat's corner. Direction = winner quadrant − card quadrant.
+  const posOf: Record<string, string> = {}
+  for (const p of tablePos) if (seatAt[p]) posOf[seatAt[p]] = p
+  const winnerPos = collectExit ? posOf[collectExit.winner] : undefined
+  const collectStyle = (pos: string): React.CSSProperties | undefined => {
+    if (!winnerPos) return undefined
+    const [cx, cy] = QUAD[pos] ?? [0, 0]
+    const [wx, wy] = QUAD[winnerPos] ?? [0, 0]
+    return { ['--dx']: `${(wx - cx) * 92}px`, ['--dy']: `${(wy - cy) * 80}px` } as React.CSSProperties
+  }
 
   return (
     <>
@@ -764,14 +815,29 @@ function PlayView({
           const pid = seatAt[pos]
           if (!pid) return <div key={pos} className={`live-seat-slot live-seat-slot--${pos}`} />
           const isTurn = pub.turn === pid || collecting?.winner === pid
+          const played = trickCard[pid]
+          const exiting = !played ? exitCard[pid] : undefined
+          const wonCollect = collectExit?.winner === pid
           return (
             <div key={pos} className={`live-seat-slot live-seat-slot--${pos}`}>
-              <div className={`live-seat ${isTurn ? 'live-seat--turn' : ''}`}>
+              <div className={`live-seat ${isTurn ? 'live-seat--turn' : ''} ${wonCollect ? 'live-seat--collect-winner' : ''}`}>
                 <div className="live-seat__name">
                   {nameOf(pid)}
                 </div>
                 <div className="live-seat__card">
-                  {trickCard[pid] ? <Card code={trickCard[pid]} size="md" /> : <div className="live-seat__empty" />}
+                  {played ? (
+                    // Keyed by card code so a freshly played card remounts and
+                    // replays its slide-onto-the-table animation.
+                    <div key={played} className={interactive ? `seat-card-anim seat-card-anim--play-${pos}` : undefined}>
+                      <Card code={played} size="md" />
+                    </div>
+                  ) : exiting ? (
+                    <div key={`exit-${exiting}`} className="seat-card-anim seat-card-anim--collect" style={collectStyle(pos)}>
+                      <Card code={exiting} size="md" />
+                    </div>
+                  ) : (
+                    <div className="live-seat__empty" />
+                  )}
                 </div>
                 <div className="muted live-seat__score">
                   {pub.scores[pid] ?? 0} pts
@@ -810,7 +876,7 @@ function PlayView({
 
       {/* My private seats: hand + pass/move controls. */}
       {mySeats.map((seat) => (
-        <MySeatPanel key={seat.seat_id} seat={seat} send={send} serverOffset={serverOffset} />
+        <MySeatPanel key={seat.seat_id} seat={seat} send={send} serverOffset={serverOffset} interactive={interactive} />
       ))}
 
       {/* AI players I'm running: live activity so I can see a slow/hung bot. */}
@@ -1095,7 +1161,7 @@ function DecisionTimer({ deadline, timeoutS, serverOffset }: { deadline: number;
   )
 }
 
-function MySeatPanel({ seat, send, serverOffset }: { seat: LiveMySeat; send: (a: SendAction) => void; serverOffset: number }) {
+function MySeatPanel({ seat, send, serverOffset, interactive }: { seat: LiveMySeat; send: (a: SendAction) => void; serverOffset: number; interactive: boolean }) {
   const [picked, setPicked] = useState<string[]>([])
   // A single card "pre-selected" while it isn't my turn — lets me plan my play
   // ahead. Cleared automatically if it's no longer legal once my move prompt
@@ -1119,6 +1185,52 @@ function MySeatPanel({ seat, send, serverOffset }: { seat: LiveMySeat; send: (a:
   const hand = seat.hand ?? pending?.hand ?? []
   const legal = new Set(pending?.legal_moves ?? [])
 
+  // Interactive-mode pass animations: slide newly received cards into the hand,
+  // and fly the three committed cards out when a pass is submitted.
+  const handKey = hand.join(',')
+  const prevHandKey = useRef<string | null>(null)
+  const [passedIn, setPassedIn] = useState<Set<string>>(new Set())
+  const [flyingOut, setFlyingOut] = useState<Set<string>>(new Set())
+  // The committed cards fly toward the recipient seat; the offset is keyed off
+  // the pass direction at submit time.
+  const [passOutDir, setPassOutDir] = useState<{ dx: number; dy: number } | null>(null)
+  // Cards just received in a pass stay highlighted ("temporarily selected") for
+  // a beat after they slide in, so I can see exactly what I was dealt.
+  const [justReceived, setJustReceived] = useState<Set<string>>(new Set())
+  useEffect(() => {
+    const prevKey = prevHandKey.current
+    prevHandKey.current = handKey
+    if (!interactive || prevKey == null) return
+    const prev = new Set(prevKey ? prevKey.split(',') : [])
+    const added = handKey ? handKey.split(',').filter((c) => c && !prev.has(c)) : []
+    // Animate only a small (≤3) incremental arrival — a pass landing — not the
+    // initial 13-card deal or a hand reset between rounds.
+    if (prev.size > 0 && added.length > 0 && added.length <= 3) {
+      const received = new Set(added)
+      setPassedIn(received)
+      setJustReceived(received)
+      const id = setTimeout(() => setPassedIn(new Set()), 480)
+      const id2 = setTimeout(() => setJustReceived(new Set()), 1800)
+      return () => {
+        clearTimeout(id)
+        clearTimeout(id2)
+      }
+    }
+  }, [handKey, interactive])
+
+  const animClass = (c: string) =>
+    flyingOut.has(c)
+      ? 'seat-card-anim seat-card-anim--pass-out'
+      : passedIn.has(c)
+        ? 'seat-card-anim seat-card-anim--pass-in'
+        : undefined
+  // Aim the fly-out at the recipient: opponents sit above the hand, so all
+  // committed cards rise, leaning left/right for LEFT/RIGHT passes.
+  const animStyle = (c: string): React.CSSProperties | undefined =>
+    flyingOut.has(c) && passOutDir
+      ? ({ ['--dx']: `${passOutDir.dx}px`, ['--dy']: `${passOutDir.dy}px` } as React.CSSProperties)
+      : undefined
+
   // Drop a pre-selection that's become invalid: not legal now that it's my move
   // turn, or no longer in my hand at all. Done during render (guarded so it
   // can't loop) per React's "adjust state on prop change" pattern.
@@ -1140,7 +1252,9 @@ function MySeatPanel({ seat, send, serverOffset }: { seat: LiveMySeat; send: (a:
     <div className="hand-row">
       {suitGroups(hand).map((g, i) => (
         <div className="hand-suit-group" key={i}>
-          {g.map(renderCard)}
+          {g.map((c) => (
+            <span key={c} className={animClass(c)} style={animStyle(c)}>{renderCard(c)}</span>
+          ))}
         </div>
       ))}
     </div>
@@ -1205,7 +1319,18 @@ function MySeatPanel({ seat, send, serverOffset }: { seat: LiveMySeat; send: (a:
             <button
               className="btn pass-bar__btn"
               disabled={picked.length !== 3}
-              onClick={() => send({ action: 'decide', seat_id: seat.seat_id, value: picked })}
+              onClick={() => {
+                if (interactive) {
+                  const dir = pending.pass_direction
+                  setPassOutDir({
+                    dx: dir === 'LEFT' ? -72 : dir === 'RIGHT' ? 72 : 0,
+                    dy: dir === 'ACROSS' ? -116 : -76,
+                  })
+                  setFlyingOut(new Set(picked))
+                  window.setTimeout(() => setFlyingOut(new Set()), 420)
+                }
+                send({ action: 'decide', seat_id: seat.seat_id, value: picked })
+              }}
             >
               {picked.length === 3 ? 'Pass these 3 →' : `Pick ${3 - picked.length} more`}
             </button>
@@ -1226,7 +1351,7 @@ function MySeatPanel({ seat, send, serverOffset }: { seat: LiveMySeat; send: (a:
               size="md"
               legal={legalNow}
               dim={illegalNow}
-              selected={selected === c}
+              selected={selected === c || justReceived.has(c)}
               onClick={
                 legalNow
                   ? () => send({ action: 'decide', seat_id: seat.seat_id, value: c })
