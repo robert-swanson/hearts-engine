@@ -938,6 +938,22 @@ static void writeResults(
 
 static std::atomic<PlayerGameSessionID> gameSessionCounter{100000};
 
+// Deliver a control/notification message to a queued client, swallowing the
+// network errors (broken pipe / connection reset) that arise when that client
+// has already disconnected. A client dropping out must never abort a broadcast
+// to the others — or, worse, escape its thread and std::terminate the whole
+// server (the bug behind issue #89).
+static void trySendControl(const std::shared_ptr<PlayerGameSession>& session,
+                           Message::Message message, const char* what)
+{
+    if (!session) return;
+    try {
+        session->send(std::move(message));
+    } catch (const std::exception& e) {
+        LOG("Could not deliver %s to a disconnected client: %s", what, e.what());
+    }
+}
+
 static GameResult runOneGame(
     const GameAssignment& assignment,
     const std::string& resultsDir,
@@ -976,12 +992,15 @@ static GameResult runOneGame(
         observer->result.playerTagToSlotId[tagSession] = slot->slotId;
         observer->result.playerOrder.push_back(tagSession); // actual seating order
 
-        slot->source->controlSession->send({{
+        // A client that has dropped since registering would throw "broken pipe"
+        // here; tolerate it so the game still starts for the other seats (the
+        // absent player simply times out and is auto-played).
+        trySendControl(slot->source->controlSession, {{
             {Tags::TYPE,                        ServerMsgTypes::Tournament::GAME_ASSIGNMENT},
             {Tags::Tournament::GAME_SESSION_ID, (long long)sid},
             {Tags::Tournament::GAME_ID,         assignment.gameId},
             {Tags::Tournament::STAGE,           assignment.stage}
-        }});
+        }}, "game assignment");
 
         sessions.push_back(session);
         players.push_back(std::make_shared<RemotePlayer>(
@@ -1310,11 +1329,11 @@ int main(int argc, char** argv)
         std::lock_guard<std::mutex> lock(lobby.mtx);
         for (auto& rp : lobby.players)
         {
-            rp.controlSession->send({{
+            trySendControl(rp.controlSession, {{
                 {Tags::TYPE, ServerMsgTypes::Tournament::STAGE_COMPLETE},
                 {"stage", "qualifying"},
                 {Tags::Tournament::RESULTS, stageResult}
-            }});
+            }}, "stage-complete notice");
         }
     }
 
@@ -1447,10 +1466,10 @@ int main(int argc, char** argv)
         std::lock_guard<std::mutex> lock(lobby.mtx);
         for (auto& rp : lobby.players)
         {
-            rp.controlSession->send({{
+            trySendControl(rp.controlSession, {{
                 {Tags::TYPE, ServerMsgTypes::Tournament::COMPLETE},
                 {Tags::Tournament::RESULTS, completeMsg}
-            }});
+            }}, "tournament-complete notice");
         }
     }
 
