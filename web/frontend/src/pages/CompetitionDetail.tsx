@@ -1,15 +1,18 @@
-import { useMemo } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
-import { api, type TournamentRow } from '../api/client'
-import { useFetch } from '../lib/useFetch'
-import { nameResolver } from '../lib/playerId'
+import { useCallback, useMemo } from 'react'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { api, type GameSummary, type TournamentRow, type TournamentSummary } from '../api/client'
+import { useFetch, usePoll } from '../lib/useFetch'
+import { nameResolver, teamColor } from '../lib/playerId'
 import { PlayerName } from '../components/PlayerName'
+import { LineChart } from '../components/LineChart'
+import { competitionSeries, playerAvgsForGames } from '../lib/chartData'
+import { LiveStatsPanel } from './LiveStats'
+import { NextTournamentBanner } from './NextTournament'
 
-function formatTime(iso: string | null): string {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString()
-}
+const SUMMARY_REFRESH_MS = 15000
+// The competition arc chart refreshes every second so an in-progress tournament's
+// points climb live (per PR #86 review).
+const CHART_REFRESH_MS = 1000
 
 function formatLength(seconds: number | null): string {
   if (seconds == null) return '—'
@@ -24,8 +27,20 @@ function formatLength(seconds: number | null): string {
 
 export function CompetitionDetail() {
   const { cid = '' } = useParams()
-  const { data, loading, error } = useFetch(() => api.competition(cid), [cid])
+  // Poll so a live competition's placements/standings refresh on their own,
+  // which also keeps the TV-cast view current without interaction.
+  const { data, loading, error } = usePoll(() => api.competition(cid), SUMMARY_REFRESH_MS, [cid])
   const navigate = useNavigate()
+
+  const [params, setParams] = useSearchParams()
+  const stage: 'qualifying' | 'finals' = params.get('cstage') === 'qualifying' ? 'qualifying' : 'finals'
+  const castMode = params.get('cast') === '1'
+  const setParam = (key: string, value: string | null) => {
+    const next = new URLSearchParams(params)
+    if (value == null) next.delete(key)
+    else next.set(key, value)
+    setParams(next, { replace: false })
+  }
 
   const nameOf = useMemo(() => {
     const ids: string[] = []
@@ -48,73 +63,184 @@ export function CompetitionDetail() {
     [cid, rulesIndex],
   )
 
-  if (loading) return <p className="muted">Loading…</p>
-  if (error) return <p className="muted">Error: {error}</p>
+  // Fetch every tournament's per-game summary so we can chart the competition
+  // arc. Polls alongside the detail so the in-progress tournament's points keep
+  // climbing on screen.
+  const indexKey = tournaments.map((t) => t.index).join(',')
+  const { data: summaries } = usePoll<TournamentSummary[]>(
+    () =>
+      tournaments.length
+        ? Promise.all(tournaments.map((t) => api.tournament(cid, t.index)))
+        : Promise.resolve([]),
+    CHART_REFRESH_MS,
+    [cid, indexKey],
+  )
+
+  // Is THIS competition the one currently running? Used to scope the next-up
+  // registration banner to the competition it belongs to.
+  const { data: live } = usePoll(() => api.live(), SUMMARY_REFRESH_MS, [])
+  const isLiveCompetition = !!live?.competition_id && live.competition_id === data?.competition_id
+
+  const perTournament = useMemo(() => {
+    if (!summaries || !summaries.length) return []
+    return summaries.map((s, i) => ({
+      index: Number(tournaments[i]?.index ?? i + 1),
+      games: stage === 'finals' ? s.finals : s.qualifying,
+    }))
+  }, [summaries, indexKey, stage])
+
+  const series = useMemo(() => competitionSeries(perTournament), [perTournament])
+
+  // Lookup of a tournament index -> its (stage-filtered) games, so clicking a
+  // chart point can list every player's average in that tournament.
+  const gamesByIndex = useMemo(() => {
+    const m = new Map<number, GameSummary[]>()
+    for (const t of perTournament) m.set(t.index, t.games)
+    return m
+  }, [perTournament])
+
+  const pointDetails = useCallback(
+    (x: number) =>
+      playerAvgsForGames(gamesByIndex.get(x) ?? []).map((pa) => ({
+        id: pa.key,
+        label: `${pa.team} / ${pa.tag}`,
+        color: teamColor(pa.team),
+        value: pa.avg,
+      })),
+    [gamesByIndex],
+  )
+
+  const xTicks = useMemo(() => tournaments.map((t) => Number(t.index)), [indexKey])
+
+  if (loading && !data) return <p className="muted">Loading…</p>
+  if (error && !data) return <p className="muted">Error: {error}</p>
   if (!data) return <p className="muted">Not found.</p>
 
   const title = data.is_legacy ? 'Ungrouped tournaments (legacy)' : `Competition ${data.competition_id}`
+  const hasChart = series.length > 0
+
+  const chartCard = (
+    <div className="card-surface">
+      <div className="chart-controls">
+        <strong style={{ fontSize: 14 }}>{stage === 'finals' ? 'Finals Scores' : 'Qualifying Scores'}</strong>
+        <span className="chart-controls__spacer" />
+        <button
+          className="btn"
+          onClick={() => setParam('cstage', stage === 'finals' ? 'qualifying' : null)}
+        >
+          Show {stage === 'finals' ? 'Qualifying' : 'Finals'} Scores
+        </button>
+      </div>
+      <LineChart
+        series={series}
+        big={castMode}
+        height={castMode ? 380 : 320}
+        xLabel="Tournament"
+        yLabel="Avg points per game (top player)"
+        xTicks={xTicks}
+        xTickFormat={(x) => `#${x}`}
+        pointDetails={pointDetails}
+        detailTitle={(x) => `Tournament #${x} — players by avg`}
+      />
+    </div>
+  )
 
   return (
-    <div>
-      <div className="crumbs">
-        <Link to="/">Competitions</Link> / {data.is_legacy ? 'legacy' : data.competition_id}
-      </div>
-      <h1>{title}</h1>
+    <div className={castMode ? 'cast-mode' : undefined}>
+      {!castMode && (
+        <div className="crumbs">
+          <Link to="/">Competitions</Link> / {data.is_legacy ? 'legacy' : data.competition_id}
+        </div>
+      )}
 
-      <div className="muted" style={{ marginTop: -8, marginBottom: 12, fontSize: 13 }}>
-        {!data.is_legacy && <>Started {formatTime(data.started_at)} · </>}
-        {data.qualifying_games != null && (
-          <>
-            {data.qualifying_games} qualifying · {data.finals_games ?? '—'} finals games ·{' '}
-          </>
-        )}
-        Teams: {data.teams.length > 0 ? data.teams.join(', ') : '—'}
+      <div className="cast-toggle-row" style={{ justifyContent: 'space-between', marginBottom: 8 }}>
+        <h1 style={{ margin: 0 }}>{title}</h1>
+        <button className={`btn${castMode ? ' btn--active' : ''}`} onClick={() => setParam('cast', castMode ? null : '1')}>
+          {castMode ? 'Exit TV view' : 'TV view'}
+        </button>
       </div>
 
-      {rules && (
-        <>
-          <h2>Rules</h2>
+      <div
+        style={
+          castMode
+            ? { display: 'grid', gridTemplateColumns: 'minmax(0, 1.4fr) minmax(0, 1fr)', gap: 24, alignItems: 'start' }
+            : undefined
+        }
+      >
+        {/* Competition section (top, or left in TV view): the arc chart, rules,
+            and the full list of tournaments. */}
+        <div>
+          {hasChart && (
+            <>
+              <h2 style={{ marginTop: 0 }}>Competition overview</h2>
+              {chartCard}
+            </>
+          )}
+
+          {rules && (
+            <>
+              <h2>Rules</h2>
+              <div className="card-surface">
+                <table className="data rules-table">
+                  <tbody>
+                    <RuleRow label="Qualifying games" value={rules.qualifying_games} />
+                    <RuleRow label="Finals games" value={rules.finals_games} />
+                    <RuleRow
+                      label="Qualifying points (1st–4th)"
+                      value={rules.qualifying_points?.length ? rules.qualifying_points.join(' / ') : '—'}
+                    />
+                    <RuleRow label="Max players per team" value={rules.max_players_per_team} />
+                    <RuleRow label="Allow multi-team finals" value={rules.allow_multi_team_finals ? 'Yes' : 'No'} />
+                    <RuleRow label="Move timeout" value={`${rules.move_timeout_ms} ms`} />
+                    <RuleRow label="Auto-move after timeouts" value={rules.auto_move_after_timeouts} />
+                    <RuleRow label="Max concurrent games per team" value={rules.max_concurrent_games_per_team} />
+                    <RuleRow label="Fallback player tag" value={rules.fallback_player_tag} />
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+
+          <h2>Tournaments ({data.tournaments.length})</h2>
           <div className="card-surface">
-            <table className="data rules-table">
+            <table className="data">
+              <thead>
+                <tr>
+                  <th>Index</th>
+                  <th>Start time</th>
+                  <th>Duration</th>
+                  <th>1st place</th>
+                  <th>2nd place</th>
+                  <th>3rd place</th>
+                  <th>4th place</th>
+                </tr>
+              </thead>
               <tbody>
-                <RuleRow label="Qualifying games" value={rules.qualifying_games} />
-                <RuleRow label="Finals games" value={rules.finals_games} />
-                <RuleRow
-                  label="Qualifying points (1st–4th)"
-                  value={rules.qualifying_points?.length ? rules.qualifying_points.join(' / ') : '—'}
-                />
-                <RuleRow label="Max players per team" value={rules.max_players_per_team} />
-                <RuleRow label="Allow multi-team finals" value={rules.allow_multi_team_finals ? 'Yes' : 'No'} />
-                <RuleRow label="Move timeout" value={`${rules.move_timeout_ms} ms`} />
-                <RuleRow label="Auto-move after timeouts" value={rules.auto_move_after_timeouts} />
-                <RuleRow label="Max concurrent games per team" value={rules.max_concurrent_games_per_team} />
-                <RuleRow label="Fallback player tag" value={rules.fallback_player_tag} />
+                {tournaments.map((t) => (
+                  <TournamentRowView key={t.index} t={t} cid={cid} nameOf={nameOf} navigate={navigate} />
+                ))}
               </tbody>
             </table>
           </div>
-        </>
-      )}
 
-      <h2>Tournaments ({data.tournaments.length})</h2>
-      <div className="card-surface">
-        <table className="data">
-          <thead>
-            <tr>
-              <th>Index</th>
-              <th>Start time</th>
-              <th>Duration</th>
-              <th>1st place</th>
-              <th>2nd place</th>
-              <th>3rd place</th>
-              <th>4th place</th>
-            </tr>
-          </thead>
-          <tbody>
-            {tournaments.map((t) => (
-              <TournamentRowView key={t.index} t={t} cid={cid} nameOf={nameOf} navigate={navigate} />
-            ))}
-          </tbody>
-        </table>
+          {/* Next-tournament registration — below the competition info when NOT
+              in TV view (the last-tournament section that hosts it is hidden). */}
+          {!castMode && isLiveCompetition && (
+            <div style={{ marginTop: 16 }}>
+              <NextTournamentBanner />
+            </div>
+          )}
+        </div>
+
+        {/* Last/current tournament section (right in TV view) — TV mode only,
+            since the same detail is available on the tournament page itself.
+            The next-tournament banner sits beneath it here. */}
+        {castMode && (
+          <div>
+            <LiveStatsPanel cid={data.competition_id} />
+            {isLiveCompetition && <NextTournamentBanner />}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -152,7 +278,7 @@ function TournamentRowView({
     >
       <td>
         #{t.index}
-        {!t.complete && <span className="muted" style={{ fontSize: 11 }}> (in progress)</span>}
+        {!t.complete && <span className="badge-live">● Live</span>}
       </td>
       <td>{t.began_at ? new Date(t.began_at).toLocaleString() : '—'}</td>
       <td className="muted">{formatLength(t.length_seconds)}</td>

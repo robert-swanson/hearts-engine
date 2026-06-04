@@ -1,0 +1,154 @@
+.line-chart {
+  width: 100%;
+  /* Cap so the fixed aspect ratio doesn't make the chart absurdly tall on very
+     wide screens (e.g. a TV-cast view). */
+  max-width: 1080px;
+}
+
+.line-chart svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.line-chart__empty {
+  padding: 24px 0;
+  text-align: center;
+  font-size: 13px;
+}
+
+.line-chart__grid {
+  stroke: #eef0f3;
+  stroke-width: 1;
+}
+
+.line-chart__axis {
+  stroke: #c7ccd3;
+  stroke-width: 1;
+}
+
+.line-chart__tick {
+  fill: #8a93a0;
+}
+
+.line-chart__axis-label {
+  fill: #5a6472;
+  font-weight: 600;
+}
+
+.line-chart__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-top: 10px;
+  font-size: 13px;
+}
+
+.line-chart__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #3a4452;
+}
+
+.line-chart__swatch {
+  width: 14px;
+  height: 4px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+/* Clickable data points (when a details callback is wired up). */
+.line-chart__dot--clickable {
+  cursor: pointer;
+}
+.line-chart__dot--clickable:hover {
+  stroke: #1b2330;
+  stroke-width: 2;
+}
+
+/* Click-to-inspect detail panel: players ranked at the chosen x value.
+   Black background per design (PR #86 review). */
+.line-chart__details {
+  margin-top: 10px;
+  border: 1px solid #000;
+  border-radius: 8px;
+  background: #000;
+  color: #f4f6f8;
+  padding: 8px 10px;
+}
+
+.line-chart__details .muted {
+  color: #b8c0cc;
+}
+
+.line-chart__details-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  margin-bottom: 6px;
+  color: #fff;
+}
+
+.line-chart__details-close {
+  background: none;
+  border: none;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  color: #aab2bf;
+  padding: 0 4px;
+}
+.line-chart__details-close:hover {
+  color: #fff;
+}
+
+.line-chart__details-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.line-chart__details-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.line-chart__details-rank {
+  width: 20px;
+  text-align: right;
+  color: #8a93a0;
+  font-variant-numeric: tabular-nums;
+}
+
+.line-chart__details-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.line-chart__details-value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* TV-cast mode — bigger legend so it reads from across the room. */
+.line-chart--big .line-chart__legend {
+  font-size: 18px;
+  gap: 8px 24px;
+  margin-top: 14px;
+}
+
+.line-chart--big .line-chart__swatch {
+  width: 20px;
+  height: 6px;
+}

@@ -1,8 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
-import { useFetch } from '../lib/useFetch'
-import { LiveStatsPanel } from './LiveStats'
-import { NextTournamentBanner } from './NextTournament'
+import { useFetch, usePoll } from '../lib/useFetch'
 
 function formatTime(iso: string | null): string {
   if (!iso) return '—'
@@ -10,14 +8,18 @@ function formatTime(iso: string | null): string {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString()
 }
 
+const LIVE_REFRESH_MS = 5000
+
 export function CompetitionsList() {
   const { data, loading, error } = useFetch(() => api.competitions(), [])
+  // The currently-running competition (if any), so we can badge it as live. Polls
+  // quietly; `{}`/null just means nothing is running right now.
+  const { data: live } = usePoll(() => api.live(), LIVE_REFRESH_MS, [])
+  const ongoingCid = live?.competition_id ?? null
   const navigate = useNavigate()
 
   return (
     <div>
-      <NextTournamentBanner />
-      <LiveStatsPanel />
       <h1>Competitions</h1>
       {loading ? (
         <p className="muted">Loading competitions…</p>
@@ -38,14 +40,19 @@ export function CompetitionsList() {
             </tr>
           </thead>
           <tbody>
-            {data.map((c) => (
+            {data.map((c) => {
+              const ongoing = !c.is_legacy && c.competition_id === ongoingCid
+              return (
               <tr
                 key={c.competition_id}
                 className="row-link"
                 onClick={() => navigate(`/c/${encodeURIComponent(c.competition_id)}`)}
               >
                 <td>{c.is_legacy ? <span className="muted">—</span> : formatTime(c.started_at)}</td>
-                <td>{c.is_legacy ? 'Ungrouped (legacy)' : c.competition_id}</td>
+                <td>
+                  {c.is_legacy ? 'Ungrouped (legacy)' : c.competition_id}
+                  {ongoing && <span className="badge-live">● Live</span>}
+                </td>
                 <td style={{ fontSize: 12 }}>
                   {c.teams.length > 0 ? (
                     c.teams.map((t, i) => (
@@ -65,7 +72,8 @@ export function CompetitionsList() {
                     : '—'}
                 </td>
               </tr>
-            ))}
+              )
+            })}
           </tbody>
         </table>
       </div>
