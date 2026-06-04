@@ -15,8 +15,11 @@ public:
     virtual void onHandsAfterPass(const std::map<std::string, std::vector<std::string>>& hands) {}
     // passedByPlayer: playerTagSession → 3 cards they passed (empty map on Keeper rounds)
     virtual void onCardsPassed(const std::map<std::string, std::vector<std::string>>& passedByPlayer) {}
+    // moveSources[i] is how cards[i] was chosen: "player", "timeout", or "give_up"
+    // (Common::Server::MoveSource). Aligned with playerOrder/cards.
     virtual void onTrickComplete(const std::vector<std::string>& playerOrder, // play order
                                   const std::vector<std::string>& cards,       // play order
+                                  const std::vector<std::string>& moveSources, // play order
                                   const std::string& winner, int points) {}
     virtual void onRoundComplete(int roundIdx, const std::map<std::string, int>& scores) {}
     virtual void onMove(const std::string& playerTag, long latencyMs, bool autoMoved,

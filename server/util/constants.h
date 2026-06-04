@@ -92,6 +92,15 @@ namespace Common::Server::MoveSource
 {
     constexpr auto PLAYER = "player";
     constexpr auto SERVER = "server";
+
+    // Recorder-level move provenance (emitted in game detail JSON `move_sources`).
+    // PLAYER above means the client chose the card. The two below distinguish *how*
+    // a server-substituted (auto) move happened, which the web UI renders as:
+    //   TIMEOUT  → "*"  the client was given the full timeout but never answered
+    //   GIVE_UP  → "#"  the client had already timed out >= N times, so the server
+    //                   stopped waiting and auto-played immediately
+    constexpr auto TIMEOUT = "timeout";
+    constexpr auto GIVE_UP = "give_up";
 }
 
 namespace Common::Server::ServerStatus

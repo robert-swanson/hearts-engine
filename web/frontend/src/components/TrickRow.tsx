@@ -1,6 +1,6 @@
 import type { TrickRecord } from '../api/client'
 import { placeTrickCards, NUM_COLS, CENTER } from '../lib/seating'
-import { Card } from './Card'
+import { Card, type MoveSource } from './Card'
 import './TrickRow.css'
 
 interface TrickRowProps {
@@ -32,6 +32,7 @@ export function TrickRow({ trick, trickIndex, playerOrder, selected, onCardClick
                   <Card
                     code={cell.card}
                     highlight={cell.isWinner}
+                    moveSource={cell.source as MoveSource | undefined}
                     onClick={onCardClick ? () => onCardClick(cell.player, cell.card, trickIndex) : undefined}
                   />
                 ) : (

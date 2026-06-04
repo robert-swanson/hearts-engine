@@ -49,6 +49,7 @@ public:
     }
     void onTrickComplete(const std::vector<std::string>& playerOrder,
                          const std::vector<std::string>& cards,
+                         const std::vector<std::string>& /*moveSources*/,
                          const std::string&, int) override {
         for (size_t k = 0; k < playerOrder.size() && k < cards.size(); ++k)
             played[playerOrder[k]].insert(cards[k]);
@@ -83,6 +84,7 @@ public:
     }
     void onTrickComplete(const std::vector<std::string>& playerOrder,
                          const std::vector<std::string>& cards,
+                         const std::vector<std::string>& /*moveSources*/,
                          const std::string&, int) override {
         if (rounds.empty()) return;
         for (size_t k = 0; k < playerOrder.size() && k < cards.size(); ++k)

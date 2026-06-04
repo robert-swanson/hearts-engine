@@ -22,6 +22,10 @@ public:
     void RunTrick()
     {
         notifyStartTrick();
+        // Per-move provenance in play order, aligned with mPlayedCards. Captured
+        // immediately after each getMove() because wasLastMove* is overwritten by
+        // the next player's move.
+        std::vector<std::string> moveSources;
         for (const PlayerRef& currentPlayer : mPlayers)
         {
             CardCollection legalMoves = legalMovesForPlayer(currentPlayer);
@@ -30,6 +34,10 @@ public:
             long latencyMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now() - moveStart).count();
             bool autoMoved = currentPlayer->wasLastMoveAuto();
+            moveSources.push_back(
+                !autoMoved ? Common::Server::MoveSource::PLAYER
+                           : (currentPlayer->wasLastMoveGiveUp() ? Common::Server::MoveSource::GIVE_UP
+                                                                 : Common::Server::MoveSource::TIMEOUT));
             // RemotePlayer validates and auto-substitutes on bad input, so a card
             // reaching here should always be legal. Keep as a sanity-check assertion.
             ASRT(legalMoves.contains(card), "Illegal card %s reached trick (should have been caught in RemotePlayer)",
@@ -57,7 +65,7 @@ public:
                 if (mPlayedCards[i].getSuit() == HEARTS) points++;
                 if (mPlayedCards[i] == Card(QUEEN, SPADES)) points += Constants::QUEEN_SCORE;
             }
-            mObserver->onTrickComplete(playerOrder, cards,
+            mObserver->onTrickComplete(playerOrder, cards, moveSources,
                 mPlayers[mTrickWinnerIdx]->getTagSession(), points);
         }
     }

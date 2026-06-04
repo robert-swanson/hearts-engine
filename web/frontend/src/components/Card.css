@@ -130,6 +130,51 @@
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
+/* Played because the move timed out (random legal card): red border + "*". */
+.card--timeout {
+  border-color: #e23b3b;
+  box-shadow: 0 0 0 2px #e23b3b, 0 1px 4px rgba(0, 0, 0, 0.25);
+}
+
+/* Auto-played after repeated timeouts (give-up mode): darker red border + "#". */
+.card--giveup {
+  border-color: #8c1212;
+  box-shadow: 0 0 0 2px #8c1212, 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+
+/* A timed-out card that also won the trick keeps the red ring (reason matters
+   more than the win highlight here). */
+.card--timeout.card--win {
+  border-color: #e23b3b;
+  box-shadow: 0 0 0 2px #e23b3b, 0 0 0 4px #f5b301, 0 1px 4px rgba(0, 0, 0, 0.25);
+}
+.card--giveup.card--win {
+  border-color: #8c1212;
+  box-shadow: 0 0 0 2px #8c1212, 0 0 0 4px #f5b301, 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+
+/* "*" / "#" badge marking how a card was auto-played, bottom-left so it doesn't
+   collide with the top-right points badge. */
+.card__timeout-mark {
+  position: absolute;
+  bottom: -7px;
+  left: -7px;
+  background: #e23b3b;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  border-radius: 999px;
+  min-width: 14px;
+  text-align: center;
+  padding: 2px 4px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.card--giveup .card__timeout-mark {
+  background: #8c1212;
+}
+
 /* Empty card slot placeholder in the trick grid. */
 .card-slot--empty {
   width: 48px;
