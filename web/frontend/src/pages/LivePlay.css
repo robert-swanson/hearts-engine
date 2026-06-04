@@ -690,8 +690,9 @@
 .seat-card-anim--play-tr { --dx: 26px; --dy: -26px; --rot: -6deg; }
 .seat-card-anim--play-br { --dx: 26px; --dy: 26px; --rot: 6deg; }
 
-/* A collected trick sliding OFF the table: cards whisk toward the center and
-   shrink away. --dx/--dy here point inward (toward center) from each quadrant. */
+/* A collected trick sliding OFF the table: each card travels toward the WINNING
+   seat's corner and shrinks away. --dx/--dy are set inline per card (winner
+   quadrant − card quadrant), so the four cards converge on the collector. */
 @keyframes seat-card-collect {
   from {
     opacity: 1;
@@ -702,16 +703,9 @@
     transform: translate(var(--dx, 0), var(--dy, 0)) scale(0.4);
   }
 }
-.seat-card-anim--collect-bl,
-.seat-card-anim--collect-tl,
-.seat-card-anim--collect-tr,
-.seat-card-anim--collect-br {
+.seat-card-anim--collect {
   animation: seat-card-collect 0.5s ease-in both;
 }
-.seat-card-anim--collect-bl { --dx: 30px; --dy: -30px; }
-.seat-card-anim--collect-tl { --dx: 30px; --dy: 30px; }
-.seat-card-anim--collect-tr { --dx: -30px; --dy: 30px; }
-.seat-card-anim--collect-br { --dx: -30px; --dy: -30px; }
 
 /* Winner seat pulses as it sweeps up the trick. */
 .live-seat--collect-winner {
@@ -734,7 +728,7 @@
 }
 @keyframes seat-card-pass-out {
   from { opacity: 1; transform: none; }
-  to { opacity: 0; transform: translateY(-40px) scale(0.7); }
+  to { opacity: 0; transform: translate(var(--dx, 0), var(--dy, -40px)) scale(0.7); }
 }
 .seat-card-anim--pass-out {
   animation: seat-card-pass-out 0.4s ease-in both;

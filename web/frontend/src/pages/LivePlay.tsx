@@ -642,6 +642,15 @@ function CollectBar({
   )
 }
 
+// Grid coordinates of each table quadrant, used to aim the collect animation:
+// played cards converge on the winning seat's corner rather than the center.
+const QUAD: Record<string, [number, number]> = {
+  bl: [0, 1],
+  tl: [0, 0],
+  tr: [1, 0],
+  br: [1, 1],
+}
+
 function PlayView({
   pub,
   mySeats,
@@ -739,6 +748,17 @@ function PlayView({
     const pid = pub.player_order[(startIdx + i) % pub.player_order.length]
     seatAt[tablePos[i] ?? 'bl'] = pid
   })
+  // Reverse lookup (pid → quadrant) so a collected trick can aim each card at
+  // the winning seat's corner. Direction = winner quadrant − card quadrant.
+  const posOf: Record<string, string> = {}
+  for (const p of tablePos) if (seatAt[p]) posOf[seatAt[p]] = p
+  const winnerPos = collectExit ? posOf[collectExit.winner] : undefined
+  const collectStyle = (pos: string): React.CSSProperties | undefined => {
+    if (!winnerPos) return undefined
+    const [cx, cy] = QUAD[pos] ?? [0, 0]
+    const [wx, wy] = QUAD[winnerPos] ?? [0, 0]
+    return { ['--dx']: `${(wx - cx) * 92}px`, ['--dy']: `${(wy - cy) * 80}px` } as React.CSSProperties
+  }
 
   return (
     <>
@@ -812,7 +832,7 @@ function PlayView({
                       <Card code={played} size="md" />
                     </div>
                   ) : exiting ? (
-                    <div key={`exit-${exiting}`} className={`seat-card-anim seat-card-anim--collect-${pos}`}>
+                    <div key={`exit-${exiting}`} className="seat-card-anim seat-card-anim--collect" style={collectStyle(pos)}>
                       <Card code={exiting} size="md" />
                     </div>
                   ) : (
@@ -1171,6 +1191,12 @@ function MySeatPanel({ seat, send, serverOffset, interactive }: { seat: LiveMySe
   const prevHandKey = useRef<string | null>(null)
   const [passedIn, setPassedIn] = useState<Set<string>>(new Set())
   const [flyingOut, setFlyingOut] = useState<Set<string>>(new Set())
+  // The committed cards fly toward the recipient seat; the offset is keyed off
+  // the pass direction at submit time.
+  const [passOutDir, setPassOutDir] = useState<{ dx: number; dy: number } | null>(null)
+  // Cards just received in a pass stay highlighted ("temporarily selected") for
+  // a beat after they slide in, so I can see exactly what I was dealt.
+  const [justReceived, setJustReceived] = useState<Set<string>>(new Set())
   useEffect(() => {
     const prevKey = prevHandKey.current
     prevHandKey.current = handKey
@@ -1180,9 +1206,15 @@ function MySeatPanel({ seat, send, serverOffset, interactive }: { seat: LiveMySe
     // Animate only a small (≤3) incremental arrival — a pass landing — not the
     // initial 13-card deal or a hand reset between rounds.
     if (prev.size > 0 && added.length > 0 && added.length <= 3) {
-      setPassedIn(new Set(added))
+      const received = new Set(added)
+      setPassedIn(received)
+      setJustReceived(received)
       const id = setTimeout(() => setPassedIn(new Set()), 480)
-      return () => clearTimeout(id)
+      const id2 = setTimeout(() => setJustReceived(new Set()), 1800)
+      return () => {
+        clearTimeout(id)
+        clearTimeout(id2)
+      }
     }
   }, [handKey, interactive])
 
@@ -1192,6 +1224,12 @@ function MySeatPanel({ seat, send, serverOffset, interactive }: { seat: LiveMySe
       : passedIn.has(c)
         ? 'seat-card-anim seat-card-anim--pass-in'
         : undefined
+  // Aim the fly-out at the recipient: opponents sit above the hand, so all
+  // committed cards rise, leaning left/right for LEFT/RIGHT passes.
+  const animStyle = (c: string): React.CSSProperties | undefined =>
+    flyingOut.has(c) && passOutDir
+      ? ({ ['--dx']: `${passOutDir.dx}px`, ['--dy']: `${passOutDir.dy}px` } as React.CSSProperties)
+      : undefined
 
   // Drop a pre-selection that's become invalid: not legal now that it's my move
   // turn, or no longer in my hand at all. Done during render (guarded so it
@@ -1215,7 +1253,7 @@ function MySeatPanel({ seat, send, serverOffset, interactive }: { seat: LiveMySe
       {suitGroups(hand).map((g, i) => (
         <div className="hand-suit-group" key={i}>
           {g.map((c) => (
-            <span key={c} className={animClass(c)}>{renderCard(c)}</span>
+            <span key={c} className={animClass(c)} style={animStyle(c)}>{renderCard(c)}</span>
           ))}
         </div>
       ))}
@@ -1283,6 +1321,11 @@ function MySeatPanel({ seat, send, serverOffset, interactive }: { seat: LiveMySe
               disabled={picked.length !== 3}
               onClick={() => {
                 if (interactive) {
+                  const dir = pending.pass_direction
+                  setPassOutDir({
+                    dx: dir === 'LEFT' ? -72 : dir === 'RIGHT' ? 72 : 0,
+                    dy: dir === 'ACROSS' ? -116 : -76,
+                  })
                   setFlyingOut(new Set(picked))
                   window.setTimeout(() => setFlyingOut(new Set()), 420)
                 }
@@ -1308,7 +1351,7 @@ function MySeatPanel({ seat, send, serverOffset, interactive }: { seat: LiveMySe
               size="md"
               legal={legalNow}
               dim={illegalNow}
-              selected={selected === c}
+              selected={selected === c || justReceived.has(c)}
               onClick={
                 legalNow
                   ? () => send({ action: 'decide', seat_id: seat.seat_id, value: c })
