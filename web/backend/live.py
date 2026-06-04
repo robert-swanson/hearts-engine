@@ -175,6 +175,19 @@ def load_uploaded_player(source: str) -> type:
 HUMAN_DECISION_TIMEOUT_S = float(os.environ.get("HEARTS_HUMAN_TIMEOUT_S", "115"))
 SDK_SESSION_TIMEOUT_S = int(os.environ.get("HEARTS_SDK_TIMEOUT_S", "150"))
 
+# "Slow down for interactivity" pacing (only applied when a table enables
+# slow_mode in its lobby). AI moves pause this long so a human can follow them,
+# and a finished trick lingers this long (auto-collect) before the next begins.
+# The collect pause is longer than the move pause so a human watching has a beat
+# to register the points an AI just took before the next trick starts.
+AI_MOVE_DELAY_S = float(os.environ.get("HEARTS_SLOW_AI_MOVE_S", "2"))
+COLLECT_DELAY_S = float(os.environ.get("HEARTS_SLOW_COLLECT_S", "4"))
+
+# Bounds for the lobby-configurable human decision timeout (seconds): long enough
+# to actually think, short enough that a walked-away human can't wedge a game.
+MIN_TIMEOUT_S = 10.0
+MAX_TIMEOUT_S = 600.0
+
 _ABORT = object()  # sentinel pushed onto a seat queue to unblock a thinking human
 
 LIVE_LOG_CAP = 60  # max activity-log entries kept per AI seat
@@ -266,8 +279,16 @@ class Seat:
     player_tag: Optional[str] = None
     pid: Optional[str] = None  # resolved "tag(session)" once the game begins
     pending: Optional[dict] = None
+    # Slow-mode pacing: set when this seat's collect pause already provided the
+    # beat before its leading move, so that move plays immediately (no extra
+    # AI delay stacked on top of the collect wait).
+    skip_move_delay: bool = False
     response_queue: "queue.Queue" = field(default_factory=queue.Queue)
     cards_ref: List[Card] = field(default_factory=list)  # live hand reference
+    # The seat's *current* hand (2-char codes), kept fresh by the human player's
+    # observer hooks so the browser can show the cards even when it isn't this
+    # seat's turn (not just inside a pending prompt).
+    hand: List[str] = field(default_factory=list)
     passed: List[str] = field(default_factory=list)      # cards I passed this round
     received: List[str] = field(default_factory=list)    # cards passed to me this round
     # Per-round passing history (round_idx -> cards), so the live view's
@@ -334,16 +355,22 @@ class WebHumanPlayer(Player):
         self._seat.cards_ref = round.cards_in_hand  # dealt 13 (pass-pool fallback)
         self._seat.passed = []      # reset passing record for the new round
         self._seat.received = []
+        self._seat.skip_move_delay = False
+        self._seat.hand = self._hand_strings()
         self._table.on_new_round(round)
 
     def handle_new_trick(self, trick):
         self._table.on_new_trick(trick)
 
     def handle_move(self, player, card, report_latency_ms=None, decided_move_latency_ms=None):
+        # Keep the seat's visible hand current after every move (mine drops a
+        # card; others' moves don't change it but refreshing is cheap and safe).
+        self._seat.hand = self._hand_strings()
         self._table.on_move(player, card)
 
     def handle_finished_trick(self, trick, winning_player):
         self._table.on_finished_trick(trick, winning_player)
+        self._table.gate_collect(self._seat, trick, winning_player)
 
     def handle_finished_round(self, round, round_points):
         self._table.on_finished_round(round, round_points)
@@ -355,19 +382,22 @@ class WebHumanPlayer(Player):
         self._seat.received = [str(c) for c in cards]
         if self._round is not None:
             self._seat.received_by_round[self._round.round_idx] = list(self._seat.received)
+        self._seat.hand = self._hand_strings()
         self._table.schedule_broadcast()
 
     # -- decisions: block on the browser ------------------------------------
     def get_cards_to_pass(self, pass_dir, receiving_player):
         seat = self._seat
         hand = self._hand_strings()
+        seat.hand = hand
+        timeout_s = self._table.timeout_s
         seat.pending = {
             "kind": "pass",
             "hand": hand,
             "pass_direction": pass_dir.value,
             "receiving_player": _pid(receiving_player),
-            "deadline": time.time() + HUMAN_DECISION_TIMEOUT_S,
-            "timeout_s": HUMAN_DECISION_TIMEOUT_S,
+            "deadline": time.time() + timeout_s,
+            "timeout_s": timeout_s,
         }
         self._table.schedule_broadcast()
         chosen = self._await_response()
@@ -383,10 +413,12 @@ class WebHumanPlayer(Player):
         seat = self._seat
         legal = [str(c) for c in legal_moves]
         hand = self._hand_strings()
+        seat.hand = hand
+        timeout_s = self._table.timeout_s
         seat.pending = {
             "kind": "move", "hand": hand, "legal_moves": legal, "trick_idx": trick.trick_idx,
-            "deadline": time.time() + HUMAN_DECISION_TIMEOUT_S,
-            "timeout_s": HUMAN_DECISION_TIMEOUT_S,
+            "deadline": time.time() + timeout_s,
+            "timeout_s": timeout_s,
         }
         self._table.set_turn(seat.pid)
         self._table.schedule_broadcast()
@@ -399,7 +431,7 @@ class WebHumanPlayer(Player):
     # -- helpers ------------------------------------------------------------
     def _await_response(self):
         try:
-            return self._seat.response_queue.get(timeout=HUMAN_DECISION_TIMEOUT_S)
+            return self._seat.response_queue.get(timeout=self._table.timeout_s)
         except queue.Empty:
             return _ABORT
 
@@ -467,6 +499,7 @@ def _make_ai_cls(table: "Table", seat: Seat, base_cls: type) -> type:
 
     def handle_new_round(self, round):
         _safe("handle_new_round", lambda: base_cls.handle_new_round(self, round))
+        seat.skip_move_delay = False
         table.log_seat(seat, "round", f"Round {round.round_idx + 1} — dealt {len(round.cards_in_hand)} cards")
         table.on_new_round(round)
 
@@ -484,6 +517,7 @@ def _make_ai_cls(table: "Table", seat: Seat, base_cls: type) -> type:
     def handle_finished_trick(self, trick, winning_player):
         _safe("handle_finished_trick", lambda: base_cls.handle_finished_trick(self, trick, winning_player))
         table.on_finished_trick(trick, winning_player)
+        table.gate_collect(seat, trick, winning_player)
 
     def handle_finished_round(self, round, round_points):
         _safe("handle_finished_round", lambda: base_cls.handle_finished_round(self, round, round_points))
@@ -510,6 +544,14 @@ def _make_ai_cls(table: "Table", seat: Seat, base_cls: type) -> type:
         return cards
 
     def get_move(self, trick, legal_moves, move_request_latency_ms=None):
+        # Slow-mode pacing: pause before an AI move so a human can follow it.
+        # The leading move after a collect pause skips the extra delay (the
+        # collect wait already provided the beat — "play first move immediately").
+        if table.slow_mode:
+            if seat.skip_move_delay:
+                seat.skip_move_delay = False
+            else:
+                time.sleep(AI_MOVE_DELAY_S)
         table.log_seat(seat, "think",
                        f"Thinking · trick {trick.trick_idx + 1} · {len(legal_moves)} legal…",
                        pending=True)
@@ -562,6 +604,22 @@ class Table:
         self.lobby_code = f"weblive_{code}_{uuid.uuid4().hex[:8]}"
         self.seats: List[Seat] = [Seat(index=i, seat_id=f"seat-{i}") for i in range(4)]
         self.status = "lobby"  # "lobby" | "playing" | "finished"
+
+        # "Slow down for interactivity" options. Set in the lobby and frozen at
+        # start (a running game can't change pacing without confusing seats).
+        #   slow_mode        — pause before AI moves + gate trick collection.
+        #   hide_prev_tricks — hide a round's completed tricks until it finishes.
+        self.slow_mode = False
+        self.hide_prev_tricks = False
+        # Human decision budget (seconds), configurable in the lobby. The server
+        # auto-moves after its own MOVE_TIMEOUT_MS, so this is a per-table override
+        # for the browser-side wait; defaults to HUMAN_DECISION_TIMEOUT_S.
+        self.timeout_s = HUMAN_DECISION_TIMEOUT_S
+        # Inter-trick collect gate (only active under slow_mode). Holds the
+        # finished trick on the table until the winner collects it: a human
+        # taps "Collect cards"; an AI auto-collects after COLLECT_DELAY_S.
+        self._collecting: Optional[dict] = None
+        self._collect_event = threading.Event()
 
         # WebSocket connections keyed by a unique per-connection id -> (ws,
         # client_id). Keyed by connection (not client_id) so two sockets sharing
@@ -687,6 +745,23 @@ class Table:
         seat.log = []
         return None
 
+    def set_options(self, slow_mode=None, hide_prev_tricks=None, timeout_s=None) -> Optional[str]:
+        """Set the slow-mode / hide-previous-tricks / timeout pacing options.
+        Lobby-only: once the game starts these are frozen."""
+        if self.status != "lobby":
+            return "Game already started"
+        if slow_mode is not None:
+            self.slow_mode = bool(slow_mode)
+        if hide_prev_tricks is not None:
+            self.hide_prev_tricks = bool(hide_prev_tricks)
+        if timeout_s is not None:
+            try:
+                t = float(timeout_s)
+            except (TypeError, ValueError):
+                return "Invalid timeout"
+            self.timeout_s = max(MIN_TIMEOUT_S, min(MAX_TIMEOUT_S, t))
+        return None
+
     # -- start --------------------------------------------------------------
     def start(self) -> Optional[str]:
         """Spawn one SDK GameSession per seat (blocking; run off the event loop)."""
@@ -704,8 +779,13 @@ class Table:
 
         _ensure_stdout_router()  # so bots' print() output is captured per seat
 
+        # The SDK session timeout must sit above the human decision budget so a
+        # waiting seat thread doesn't give up before a slow human (or the collect
+        # gate) resolves. Bump it when the lobby raised the timeout past the default.
+        session_timeout = max(SDK_SESSION_TIMEOUT_S, int(self.timeout_s) + 35)
+
         try:
-            self.connection = ManagedConnection(timeout_s=SDK_SESSION_TIMEOUT_S)
+            self.connection = ManagedConnection(timeout_s=session_timeout)
         except Exception as e:  # server down / unreachable
             return f"Could not connect to game server: {e}"
 
@@ -723,7 +803,7 @@ class Table:
             try:
                 thread, _session = MakeSession(
                     self.connection, GameType.ANY, player_cls,
-                    lobby_code=self.lobby_code, timeout_s=SDK_SESSION_TIMEOUT_S,
+                    lobby_code=self.lobby_code, timeout_s=session_timeout,
                 )
             except Exception as e:
                 return f"Failed to create session for {seat.name}: {e}"
@@ -823,6 +903,67 @@ class Table:
             }
         self.schedule_broadcast()
 
+    def gate_collect(self, seat: Seat, trick, winning_player):
+        """Hold a just-finished trick on the table until it's collected.
+
+        Called from every seat's ``handle_finished_trick`` hook, but only the
+        *winning local seat's* thread does the gating (it's the one that leads
+        the next trick, so blocking it pauses the game cleanly without racing
+        the other observers). A human winner must tap "Collect cards"; an AI
+        winner auto-collects after a short delay and then leads immediately.
+
+        The finished trick's cards travel inside ``_collecting`` so the frontend
+        can keep showing them even after the shared ``current_trick`` advances
+        (and regardless of the hide-previous-tricks option).
+        """
+        if not self.slow_mode:
+            return
+        if seat.pid is None or _pid(winning_player) != seat.pid:
+            return  # not the winner (or not a local seat) — nothing to gate
+        human = seat.kind == "human"
+        moves = [{"player": _pid(m.player), "card": str(m.card)} for m in trick.moves]
+        points = trick.get_current_point_value()
+        with self._state_lock:
+            self._collect_event.clear()
+            self._collecting = {
+                "winner": seat.pid,
+                "human": human,
+                "deadline": time.time() + (self.timeout_s if human else COLLECT_DELAY_S),
+                "delay_s": COLLECT_DELAY_S,
+                # `points` lets the UI label the button ("Collect N points").
+                "trick": {"trick_idx": trick.trick_idx, "moves": moves,
+                          "winner": seat.pid, "points": points},
+            }
+        self.schedule_broadcast()
+        if human:
+            # Wait for the browser to tap "Collect cards" (bounded so a walked-
+            # away human can't wedge the game / block status -> finished).
+            self._collect_event.wait(timeout=self.timeout_s)
+        else:
+            time.sleep(COLLECT_DELAY_S)
+            seat.skip_move_delay = True  # lead the next trick immediately
+        with self._state_lock:
+            self._collecting = None
+        self.schedule_broadcast()
+
+    def collect(self, seat_id: str, client_id: str) -> Optional[str]:
+        """Browser action: the human trick-winner collected the finished trick."""
+        with self._state_lock:
+            collecting = self._collecting
+        if collecting is None:
+            return None  # already collected / nothing pending — treat as a no-op
+        if not collecting.get("human"):
+            return "Trick is collecting automatically"
+        seat = self._seat(seat_id)
+        if seat is None:
+            return "No such seat"
+        if seat.kind != "human" or seat.owner_client_id != client_id:
+            return "Not your seat"
+        if seat.pid != collecting.get("winner"):
+            return "Only the trick winner can collect"
+        self._collect_event.set()
+        return None
+
     def on_finished_round(self, round, round_points):
         with self._state_lock:
             self._round_results[round.round_idx] = {_pid(p): v for p, v in round_points.items()}
@@ -855,6 +996,24 @@ class Table:
     def _seat_for_tag(self, tag: str) -> Optional[Seat]:
         return next((s for s in self.seats if s.player_tag == tag), None)
 
+    @staticmethod
+    def _redact_log(log: List[dict]) -> List[dict]:
+        """Strip card-revealing text from an AI seat's log for hide-tricks mode.
+
+        With "hide previous tricks" on, the activity log would otherwise leak
+        what a bot played/passed (and any cards it printed), defeating the point.
+        We keep the line (so a hung/slow bot is still visible) but replace the
+        card-bearing text with a neutral placeholder. Status lines (game/round/
+        think/error) carry no card info, so they pass through unchanged.
+        """
+        redacted = {"move": "Played a card", "pass": "Passed 3 cards", "print": "(output hidden)"}
+        out = []
+        for e in log:
+            if e.get("kind") in redacted:
+                e = {**e, "text": redacted[e["kind"]]}
+            out.append(e)
+        return out
+
     # -- snapshots ----------------------------------------------------------
     def _cumulative_scores(self) -> Dict[str, int]:
         scores = {pid: 0 for pid in self._player_order}
@@ -879,12 +1038,18 @@ class Table:
         expandable per-round tables in the live view."""
         rounds = []
         for ridx in sorted(self._round_tricks):
+            complete = ridx in self._round_results
+            tricks = self._round_tricks_sorted(ridx)
+            # hide_prev_tricks: a round's tricks stay hidden until it finishes,
+            # so players can't review earlier tricks of the round in progress.
+            if self.hide_prev_tricks and not complete:
+                tricks = []
             rounds.append({
                 "round_idx": ridx,
                 "pass_direction": self._round_pass_dir.get(ridx),
-                "tricks": self._round_tricks_sorted(ridx),
+                "tricks": tricks,
                 "scores": dict(self._round_results.get(ridx, {})),
-                "complete": ridx in self._round_results,
+                "complete": complete,
             })
         return rounds
 
@@ -893,6 +1058,13 @@ class Table:
             ct = self._current_trick
             moves = [{"player": pid, "card": ct["moves"][pid]} for pid in ct["order"]]
             completed_tricks = self._round_tricks_sorted(self._round_idx)
+            completed_count = len(completed_tricks)
+            # hide_prev_tricks: keep the trick count (for progress) but withhold
+            # the in-progress round's finished tricks until the round completes.
+            round_complete = self._round_idx in self._round_results
+            shown_completed = (
+                [] if (self.hide_prev_tricks and not round_complete) else completed_tricks
+            )
             return {
                 "status": self.status,
                 "player_order": list(self._player_order),
@@ -906,12 +1078,13 @@ class Table:
                     "leader": ct["leader"],
                     "moves": moves,
                 },
-                "completed_trick_count": len(completed_tricks),
-                "completed_tricks": completed_tricks,
+                "completed_trick_count": completed_count,
+                "completed_tricks": shown_completed,
                 "rounds": self._rounds_history(),
                 "turn": self._turn,
                 "winner": self._winner,
                 "final_points": dict(self._final_points),
+                "collecting": dict(self._collecting) if self._collecting else None,
             }
 
     def snapshot_for(self, client_id: Optional[str]) -> dict:
@@ -925,6 +1098,7 @@ class Table:
                     "pid": seat.pid,
                     "name": seat.name,
                     "pending": seat.pending,
+                    "hand": list(seat.hand),
                     "passed": list(seat.passed),
                     "received": list(seat.received),
                     "passed_by_round": {str(k): v for k, v in seat.passed_by_round.items()},
@@ -933,12 +1107,15 @@ class Table:
             # AI seats this browser added: surface their activity log so the
             # owner can watch the bot (and spot a hung/slow one).
             elif seat.kind == "ai" and seat.owner_client_id == client_id:
+                # Hide-tricks mode also hides what the bot played/printed, so the
+                # log can't be used to peek at the round in progress.
+                log = self._redact_log(seat.log) if self.hide_prev_tricks else list(seat.log)
                 ai.append({
                     "seat_id": seat.seat_id,
                     "ai_type": seat.ai_type,
                     "name": seat.name,
                     "pid": seat.pid,
-                    "log": list(seat.log),
+                    "log": log,
                 })
         return {
             "type": "state",
@@ -947,6 +1124,9 @@ class Table:
                 "code": self.code,
                 "status": self.status,
                 "lobby_code": self.lobby_code,  # share with CLI clients to co-fill open seats
+                "slow_mode": self.slow_mode,
+                "hide_prev_tricks": self.hide_prev_tricks,
+                "timeout_s": self.timeout_s,
                 "seats": [s.public_view(client_id) for s in self.seats],
                 # Per-table AI options = uploaded clients for this table only
                 # (the global discovered list is fetched separately and cached).
