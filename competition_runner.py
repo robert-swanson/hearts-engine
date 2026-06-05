@@ -116,8 +116,12 @@ def write_config(path: str, cfg: dict, teams: Dict[str, str], filler_teams: Dict
         f.write(f"REGISTRATION_WINDOW={cfg.get('registration_window', 60)}\n")
         f.write(f"INTERVAL={cfg['interval']}\n")
         f.write(f"ALIGN_FIRST_TO_INTERVAL={1 if cfg.get('align_first_to_interval') else 0}\n")
-        # Tournament rules
-        f.write(f"QUALIFYING_GAMES={cfg['qualifying_games']}\n")
+        # Tournament rules. QUALIFYING_GAMES_PER_PLAYER is the knob the operator
+        # sets: the server recomputes the actual qualifying-game total each cycle
+        # from who registered, so every participating player plays this many games
+        # (issue #93). The all-teams-present total is no longer configured here.
+        f.write(f"QUALIFYING_GAMES_PER_PLAYER={cfg.get('qualifying_games_per_player', 0)}\n")
+        f.write(f"FILLER_ONLY_IF_NEEDED={1 if cfg.get('filler_only_if_needed') else 0}\n")
         f.write(f"FINALS_GAMES={cfg['finals_games']}\n")
         f.write(f"MAX_PLAYERS_PER_TEAM={cfg['max_players']}\n")
         f.write(f"QUALIFYING_POINTS={cfg['qualifying_points']}\n")
@@ -287,7 +291,7 @@ def prompt(msg: str, default=None):
 def configure_rules(non_interactive: bool = False,
                     registration_window: Optional[int] = None,
                     interval: Optional[int] = None,
-                    qualifying_games: Optional[int] = None,
+                    qualifying_games_per_player: Optional[int] = None,
                     port: int = 40406,
                     defaults: Optional[dict] = None,
                     available_modules: Optional[List[str]] = None) -> dict:
@@ -312,7 +316,8 @@ def configure_rules(non_interactive: bool = False,
         filler_ais = [ais_raw[i] if i < len(ais_raw) else ais_raw[-1] for i in range(num_filler)]
         return {
             'port':                  port,
-            'qualifying_games':      qualifying_games if qualifying_games is not None else d_int('QUALIFYING_GAMES', 20),
+            'qualifying_games_per_player': qualifying_games_per_player if qualifying_games_per_player is not None
+                                     else d_int('QUALIFYING_GAMES_PER_PLAYER', 5),
             'finals_games':          d_int('FINALS_GAMES', 7),
             'max_players':           d_int('MAX_PLAYERS_PER_TEAM', 4),
             'qualifying_points':     d_str('QUALIFYING_POINTS', '10,5,3,1'),
@@ -332,6 +337,7 @@ def configure_rules(non_interactive: bool = False,
             'fallback_player_tag':   d.get('FALLBACK_PLAYER_TAG', 'random_player'),
             'num_filler_teams':      num_filler,
             'filler_team_ais':       filler_ais,
+            'filler_only_if_needed': d_bool('FILLER_ONLY_IF_NEEDED', False),
         }
 
     print('\n=== Competition Rules ===')
@@ -353,11 +359,12 @@ def configure_rules(non_interactive: bool = False,
             print(f'    Invalid AI "{choice}". Choose from: {", ".join(modules)}')
     return {
         'port':               port,
-        # Seed only — the real qualifying-game count is asked after registration
-        # (in main), once the full roster is known, so the prompt can show the
-        # exact multiple it must be rounded up to for fair, equal participation.
-        'qualifying_games':   qualifying_games if qualifying_games is not None
-                              else d_int('QUALIFYING_GAMES', 20),
+        # Per-player qualifying count: every participating player plays exactly this
+        # many qualifying games. The server derives the actual total each cycle from
+        # who registered (issue #93), so this is roster-independent and asked here.
+        'qualifying_games_per_player': qualifying_games_per_player if qualifying_games_per_player is not None
+                              else int(prompt('Qualifying games per player',
+                                              d_int('QUALIFYING_GAMES_PER_PLAYER', 5))),
         'finals_games':       int(prompt('Finals games',                 d_int('FINALS_GAMES', 7))),
         'max_players':        int(prompt('Max players per team (mult. of 4)', d_int('MAX_PLAYERS_PER_TEAM', 4))),
         'qualifying_points':  prompt('Qualifying points (1st,2nd,3rd,4th)', d_str('QUALIFYING_POINTS', '10,5,3,1')),
@@ -377,6 +384,8 @@ def configure_rules(non_interactive: bool = False,
                                       d.get('FALLBACK_PLAYER_TAG', 'random_player')),
         'num_filler_teams':   num_filler,
         'filler_team_ais':    filler_ais,
+        'filler_only_if_needed': prompt('Backfill empty teams only to reach 4? (y/n)',
+                                        'y' if d_bool('FILLER_ONLY_IF_NEEDED', False) else 'n').lower() == 'y',
     }
 
 
@@ -449,14 +458,9 @@ def run_competition(cfg: dict, real_teams: Dict[str, str],
     filler_count = cfg.get('num_filler_teams', 4)
     filler_teams = build_filler_teams(filler_count, max_players, real_teams)
 
-    all_teams     = {**real_teams, **filler_teams}
-    total_slots   = len(all_teams) * max_players
-    required_mult = total_slots // 4
-    q = cfg['qualifying_games']
-    if required_mult > 0 and q % required_mult != 0:
-        q = ((q // required_mult) + 1) * required_mult
-        print(f'qualifying_games adjusted to {q} (multiple of {required_mult})')
-    round_cfg = {**cfg, 'qualifying_games': q}
+    # The server derives the qualifying-game total from QUALIFYING_GAMES_PER_PLAYER
+    # and the participating roster (issue #93), so no total is computed here.
+    round_cfg = cfg
 
     # Write config before starting filler clients so they can read server address.
     write_config(config_path, round_cfg, real_teams, filler_teams, server_addr=public_addr)
@@ -552,8 +556,9 @@ def main():
     parser.add_argument('--interval', type=int, default=None, metavar='SECONDS',
                         help='Seconds between successive tournaments (default: 30 non-interactive, '
                              'prompts otherwise)')
-    parser.add_argument('--qualifying-games', type=int, default=None, metavar='N',
-                        help='Number of qualifying games (overrides tournament_server.env)')
+    parser.add_argument('--qualifying-games-per-player', type=int, default=None, metavar='N',
+                        help='Qualifying games each participating player plays '
+                             '(overrides tournament_server.env)')
     args = parser.parse_args()
 
     non_interactive = args.non_interactive
@@ -598,7 +603,7 @@ def main():
         non_interactive=non_interactive,
         registration_window=args.registration_window,
         interval=args.interval,
-        qualifying_games=args.qualifying_games,
+        qualifying_games_per_player=args.qualifying_games_per_player,
         port=port,
         defaults=server_env,
         available_modules=available_modules,
@@ -658,31 +663,10 @@ def main():
     else:
         print(f'{len(real_teams)} team(s) registered: {list(real_teams.keys())}')
 
-    # ── Qualifying-game count (now that the roster is known) ────────────────
-    # Every game seats 4 players, so for every player to play the *exact* same
-    # number of games the count must be a multiple of (total slots / 4). Ask
-    # for it here — the only point where the full roster size is known — showing
-    # that multiple, and round any answer up to the nearest multiple.
-    num_filler  = cfg.get('num_filler_teams', 4)
-    total_slots = (len(real_teams) + num_filler) * cfg['max_players']
-    required_mult = max(1, total_slots // 4)
-
-    def _round_up(n: int) -> int:
-        return ((n + required_mult - 1) // required_mult) * required_mult
-
-    if non_interactive:
-        cfg['qualifying_games'] = _round_up(cfg['qualifying_games'])
-    else:
-        default_q = _round_up(cfg['qualifying_games'])
-        raw = int(prompt(
-            f'Qualifying games ({total_slots} players, must be a multiple of '
-            f'{required_mult})', default_q))
-        cfg['qualifying_games'] = _round_up(max(required_mult, raw))
-        if cfg['qualifying_games'] != raw:
-            print(f'  → rounded up to {cfg["qualifying_games"]} '
-                  f'(nearest multiple of {required_mult})')
-    print(f'Qualifying games: {cfg["qualifying_games"]} '
-          f'({cfg["qualifying_games"] // required_mult} game(s) per player)')
+    # The qualifying-game total is derived by the server from
+    # QUALIFYING_GAMES_PER_PLAYER and the participating roster each cycle
+    # (issue #93), so there is nothing to ask for here.
+    print(f'Qualifying games per player: {cfg["qualifying_games_per_player"]}')
 
     # ── Run competition loop ───────────────────────────────────────────────
 

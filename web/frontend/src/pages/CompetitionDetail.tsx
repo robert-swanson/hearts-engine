@@ -183,7 +183,7 @@ export function CompetitionDetail() {
               <div className="card-surface">
                 <table className="data rules-table">
                   <tbody>
-                    <RuleRow label="Qualifying games" value={rules.qualifying_games} />
+                    <RuleRow label="Qualifying games per player" value={rules.qualifying_games_per_player ?? '—'} />
                     <RuleRow label="Finals games" value={rules.finals_games} />
                     <RuleRow
                       label="Qualifying points (1st–4th)"

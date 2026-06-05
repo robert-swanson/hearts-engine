@@ -57,6 +57,7 @@ export interface TournamentRules {
   tournament_index: string
   began_at: string
   qualifying_games: number
+  qualifying_games_per_player: number | null
   finals_games: number
   max_players_per_team: number
   qualifying_points: number[]
