@@ -316,6 +316,28 @@ def get_summary(competition_id: str, index: str) -> Optional[dict]:
     return _read_json(tdir / "summary.json")
 
 
+# Per-game fields the web UI never reads. The tournament page shows aggregated
+# move-time stats from the small top-level "player_stats" object, so the verbose
+# per-game latency breakdown is pure dead weight on the wire — together these two
+# are ~half the summary.json bytes for a large tournament. Stripping them before
+# serving (alongside gzip) roughly halves the payload and the client-side JSON
+# parse, which was the dominant tournament-page load cost.
+_HEAVY_GAME_FIELDS = ("latency", "total_move_latency_ms")
+
+
+def get_summary_web(competition_id: str, index: str) -> Optional[dict]:
+    """get_summary() projected down to what the web tournament page needs:
+    the same document with the unused heavy per-game latency fields removed."""
+    summary = get_summary(competition_id, index)
+    if summary is None:
+        return None
+    for stage in ("qualifying", "finals"):
+        for game in summary.get(stage, []):
+            for field in _HEAVY_GAME_FIELDS:
+                game.pop(field, None)
+    return summary
+
+
 def get_rules(competition_id: str, index: str) -> Optional[dict]:
     tdir = _tournament_dir(competition_id, index)
     if tdir is None:
