@@ -525,6 +525,7 @@ function SeatCard({
               value={selectedAi}
               disabled={aiOptions.length === 0}
               onChange={(e) => setAi(e.target.value)}
+              style={{ flex: 1, minWidth: 0 }}
             >
               {aiOptions.map((o) => (
                 <option key={o.value} value={o.value}>{o.label}</option>

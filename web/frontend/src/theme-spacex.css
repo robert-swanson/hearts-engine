@@ -367,3 +367,41 @@
   background: var(--sx-on-primary);
   color: var(--sx-canvas-night);
 }
+
+/* ---- Phone tuning ------------------------------------------------------ */
+/* The display type and surface padding are sized for desktop; the theme's
+ * higher specificity would otherwise override index.css's mobile rules, so the
+ * mobile scale-down has to live here too. Smaller headings, tighter header and
+ * card padding, and long IDs that wrap instead of pushing siblings off-screen. */
+@media (max-width: 600px) {
+  .theme-spacex h1 {
+    font-size: 24px;
+    letter-spacing: 0.6px;
+    margin-bottom: 14px;
+    overflow-wrap: anywhere;
+  }
+
+  .theme-spacex h2 {
+    font-size: 15px;
+    letter-spacing: 0.6px;
+    margin: 20px 0 10px;
+  }
+
+  .theme-spacex .app-header {
+    padding: 12px 14px;
+    gap: 14px;
+  }
+
+  .theme-spacex .card-surface {
+    padding: 14px;
+  }
+
+  .theme-spacex table.data th {
+    padding: 8px 8px;
+    letter-spacing: 0.5px;
+  }
+
+  .theme-spacex table.data td {
+    padding: 8px;
+  }
+}

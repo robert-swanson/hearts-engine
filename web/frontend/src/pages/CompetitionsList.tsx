@@ -34,9 +34,9 @@ export function CompetitionsList() {
             <tr>
               <th>Started</th>
               <th>Competition</th>
-              <th>Teams</th>
+              <th className="hide-sm">Teams</th>
               <th>Tournaments</th>
-              <th>Games / tournament</th>
+              <th className="hide-sm">Games / tournament</th>
             </tr>
           </thead>
           <tbody>
@@ -53,7 +53,7 @@ export function CompetitionsList() {
                   {c.is_legacy ? 'Ungrouped (legacy)' : c.competition_id}
                   {ongoing && <span className="badge-live">● Live</span>}
                 </td>
-                <td style={{ fontSize: 12 }}>
+                <td className="hide-sm" style={{ fontSize: 12 }}>
                   {c.teams.length > 0 ? (
                     c.teams.map((t, i) => (
                       <span key={t}>
@@ -66,7 +66,7 @@ export function CompetitionsList() {
                   )}
                 </td>
                 <td className="muted">{c.num_tournaments}</td>
-                <td className="muted">
+                <td className="muted hide-sm">
                   {c.qualifying_games != null
                     ? `${c.qualifying_games} qual · ${c.finals_games ?? '—'} finals`
                     : '—'}

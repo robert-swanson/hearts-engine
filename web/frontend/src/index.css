@@ -464,4 +464,16 @@ button.btn.btn--active:hover {
   .passing-across__cols {
     gap: 18px;
   }
+
+  /* Utility: hide low-priority table columns / elements on phones so dense
+     tables fit without horizontal scrolling. */
+  .hide-sm {
+    display: none !important;
+  }
+
+  /* A heading paired with a control (e.g. the TV-view toggle) wraps the control
+     below instead of letting a long title push it off the edge. */
+  .cast-toggle-row {
+    flex-wrap: wrap;
+  }
 }

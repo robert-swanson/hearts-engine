@@ -48,7 +48,7 @@ export function LobbyGamesSection({ headingLevel = 'h2' }: { headingLevel?: 'h1'
                 <th>Played</th>
                 <th>Players (seating)</th>
                 <th>Winner</th>
-                <th>Rounds</th>
+                <th className="hide-sm">Rounds</th>
               </tr>
             </thead>
             <tbody>
@@ -72,7 +72,7 @@ export function LobbyGamesSection({ headingLevel = 'h2' }: { headingLevel?: 'h1'
                     <td>
                       <PlayerName d={nameOf(g.winner)} />
                     </td>
-                    <td className="muted">{g.rounds_played ?? '—'}</td>
+                    <td className="muted hide-sm">{g.rounds_played ?? '—'}</td>
                   </tr>
                 )
               })}

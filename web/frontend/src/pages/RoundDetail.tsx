@@ -140,8 +140,11 @@ export function RoundDetail({ lobby = false }: { lobby?: boolean }) {
 
       <div className="row-actions">
         <span className="muted" style={{ fontSize: 12 }}>
-          Click a player's column header to center the view on them · click any card to see that
-          player's hand just before the play.
+          Click any card to see that player's hand just before the play.
+          <span className="hide-sm">
+            {' '}
+            · Click a player's column header to center the view on them.
+          </span>
         </span>
       </div>
 

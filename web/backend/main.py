@@ -6,6 +6,7 @@ import uuid
 
 from fastapi import FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -16,6 +17,13 @@ import results
 import table
 
 app = FastAPI(title="Hearts Web UI")
+
+# Compress responses for clients that accept it. A tournament summary.json can be
+# several MB of repetitive JSON (per-game latency/score records); large tournaments
+# took many seconds to load on mobile. gzip shrinks that JSON ~10x, so this is the
+# single biggest win for page-load time. minimum_size skips tiny responses where
+# compression would just add overhead. (WebSocket frames are unaffected.)
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 # Dev: Vite serves the frontend on :5173 and proxies /api here, but allow direct CORS too.
 app.add_middleware(
