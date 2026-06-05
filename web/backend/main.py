@@ -76,7 +76,9 @@ def competition_live(competition_id: str):
 
 @app.get("/api/competitions/{competition_id}/tournaments/{index}")
 def tournament(competition_id: str, index: str):
-    summary = results.get_summary(competition_id, index)
+    # Serve the slimmed summary (heavy unused per-game latency fields dropped) so
+    # large tournaments load quickly; the page reads aggregated stats instead.
+    summary = results.get_summary_web(competition_id, index)
     if summary is None:
         raise HTTPException(status_code=404, detail="tournament not found")
     return summary
