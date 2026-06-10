@@ -46,6 +46,11 @@ jobs:
         export PYTHONPATH="$(pwd):${PYTHONPATH}"
         python3 tests/tournament_timing_test.py
 
+    - name: Run resource guard test
+      run: |
+        export PYTHONPATH="$(pwd):${PYTHONPATH}"
+        python3 tests/resource_guard_test.py
+
   competition:
     runs-on: macos-latest
 
