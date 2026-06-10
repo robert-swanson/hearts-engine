@@ -183,22 +183,24 @@ export function topTeam(games: GameSummary[]): string | null {
 }
 
 /**
- * Rank the top (team, player) across a set of games by *average* tournament
- * points — that player's total (summed over all their slots for that team)
- * divided by the number of games they appeared in. Ranking by average (not
- * total) keeps the prediction fair across a filtered subset. Returns "team/tag",
- * or null when there are no games / no scored players.
+ * Rank the top player *slot* across a set of games by average tournament
+ * points — the same per-slot "Avg tournament points" the aggregate table
+ * shows, so a prediction computed here always names the row that would top
+ * that table (issue #102). Aggregating at any coarser granularity (e.g. all
+ * of a player's slots combined) can disagree with the table: a player with
+ * several decent slots can out-average every slot of the player who owns the
+ * single best one. Returns a slot id ("team/tag/slot"), or null when there
+ * are no games / no scored players.
  */
-export function topTeamPlayer(games: GameSummary[]): string | null {
-  const sumByTP: Record<string, number> = {}
-  const gamesByTP: Record<string, number> = {}
+export function topSlotPlayer(games: GameSummary[]): string | null {
+  const sumBySlot: Record<string, number> = {}
+  const gamesBySlot: Record<string, number> = {}
   for (const g of games) {
-    const tpsInGame = new Set<string>()
     for (const p of gamePlayers(g)) {
-      add(sumByTP, teamPlayerKey(p.id), p.tournament_points)
-      tpsInGame.add(teamPlayerKey(p.id))
+      const key = slotId(p.id)
+      add(sumBySlot, key, p.tournament_points)
+      add(gamesBySlot, key, 1)
     }
-    for (const tp of tpsInGame) add(gamesByTP, tp, 1)
   }
-  return topByAverage(sumByTP, gamesByTP)
+  return topByAverage(sumBySlot, gamesBySlot)
 }
