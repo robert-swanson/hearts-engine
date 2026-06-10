@@ -32,6 +32,8 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from resource_guard import ResourceGuard
+
 # ─── Single-instance guard ────────────────────────────────────────────────────
 
 _PIDFILE = Path('competition_runner.pid')
@@ -451,6 +453,22 @@ def run_competition(cfg: dict, real_teams: Dict[str, str],
     competition_id = (f"{now.tm_year}-{now.tm_mon}-{now.tm_mday}_"
                       f"{now.tm_hour:02d}-{now.tm_min:02d}-{now.tm_sec:02d}.{ms:03d}")
     print(f"Competition id: {competition_id} (results under {cfg['results_dir']}/{competition_id}/)")
+
+    # Resource guard (issue #100): a runaway run has watchdog-panicked the host
+    # before. Sample memory pressure + per-child RSS for forensics, and kill the
+    # whole stack if the system enters a sustained swap-thrash spiral.
+    def _resource_abort(reason: str):
+        print(f'\nFATAL: resource guard tripped — {reason}', flush=True)
+        print('Killing the tournament stack to keep the host alive (issue #100).',
+              flush=True)
+        _cleanup()
+        os._exit(2)
+
+    guard = ResourceGuard(
+        Path(cfg['results_dir']) / competition_id / 'resources.log',
+        procs=lambda: list(_child_procs),
+        on_abort=_resource_abort)
+    guard.start()
 
     # Filler teams are computed once with stable passwords so their clients
     # can be started once and loop across all tournament cycles, just like
