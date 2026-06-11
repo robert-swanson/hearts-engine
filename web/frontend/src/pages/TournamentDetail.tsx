@@ -69,7 +69,9 @@ export function TournamentDetail() {
   const windowSize = params.get('win') === '10' ? 10 : undefined
   const minMoon = Number(params.get('minMoon')) || 0
   const page = Math.max(0, Number(params.get('page')) || 0)
-  const sortKey = (params.get('sort') as SortKey) || 'rank'
+  // Default to avg tournament points (descending) so the table's top row is the
+  // same leader the filter-chip hints predict.
+  const sortKey = (params.get('sort') as SortKey) || 'avgTournament'
   const sortAsc = params.get('dir') ? params.get('dir') === 'asc' : ASC_DEFAULT_SORTS.includes(sortKey)
 
   // Merge a set of changes into the URL search params (preserving the rest).

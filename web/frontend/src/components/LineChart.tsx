@@ -119,7 +119,9 @@ export function LineChart({
   const sy = (y: number) => pad.top + (yHi === yLo ? plotH / 2 : plotH - ((y - yLo) / (yHi - yLo)) * plotH)
 
   const stroke = big ? 3 : 2
-  const dot = big ? 4 : 3
+  // Keep the visible dots well under the line width so dense series read as
+  // lines, not beads; clickable charts get a separate invisible hit circle.
+  const dot = big ? 2 : 1.5
   const tickFont = big ? 15 : 11
   const labelFont = big ? 16 : 12
 
@@ -171,17 +173,25 @@ export function LineChart({
               <g key={s.label}>
                 {pts.length > 1 && <path d={d} fill="none" stroke={s.color} strokeWidth={stroke} strokeLinejoin="round" strokeLinecap="round" />}
                 {pts.map((p) => (
-                  <circle
-                    key={p.x}
-                    cx={sx(p.x)}
-                    cy={sy(p.y)}
-                    r={pointDetails ? dot + 3 : dot}
-                    fill={s.color}
-                    className={pointDetails ? 'line-chart__dot--clickable' : undefined}
-                    onClick={pointDetails ? () => setSelectedX((cur) => (cur === p.x ? null : p.x)) : undefined}
-                  >
-                    <title>{`${s.label} · ${xTickFormat(p.x)}: ${yTickFormat(p.y)}`}</title>
-                  </circle>
+                  <g key={p.x}>
+                    <circle cx={sx(p.x)} cy={sy(p.y)} r={dot} fill={s.color}>
+                      {!pointDetails && <title>{`${s.label} · ${xTickFormat(p.x)}: ${yTickFormat(p.y)}`}</title>}
+                    </circle>
+                    {pointDetails && (
+                      // Invisible, larger circle so the click/tap target stays
+                      // comfortable even though the visible dot is small.
+                      <circle
+                        cx={sx(p.x)}
+                        cy={sy(p.y)}
+                        r={dot + 5}
+                        fill="transparent"
+                        className="line-chart__dot--clickable"
+                        onClick={() => setSelectedX((cur) => (cur === p.x ? null : p.x))}
+                      >
+                        <title>{`${s.label} · ${xTickFormat(p.x)}: ${yTickFormat(p.y)}`}</title>
+                      </circle>
+                    )}
+                  </g>
                 ))}
               </g>
             )
