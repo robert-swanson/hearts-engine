@@ -2,10 +2,14 @@
  * tournament_server — two-stage Hearts tournament binary.
  *
  * Usage:
- *   tournament_server <config_env> --start-at=<unix_timestamp>
+ *   tournament_server <config_env> [--port=<port>] --start-at=<unix_timestamp>
  *
- * Config keys (in addition to standard SERVER_PORT / LOG_DIR):
- *   TOURNAMENT_PORT              port to listen on (overrides SERVER_PORT if present)
+ * The listen port comes from --port when given (the competition runner always
+ * passes it, sourced from config.env — issue #99); otherwise from the env keys
+ * TOURNAMENT_PORT / SERVER_PORT when present (legacy/standalone runs), else
+ * the standard tournament port 40406.
+ *
+ * Config keys (in addition to standard LOG_DIR):
  *   QUALIFYING_GAMES_PER_PLAYER  games each participating player plays in stage 1
  *                                (preferred; total scales with who registers — issue #93)
  *   QUALIFYING_GAMES             legacy fixed total for stage 1 (used only if the
@@ -92,15 +96,18 @@ struct TournamentConfig {
     int64_t startAt;                      // unix timestamp
 };
 
-static TournamentConfig loadConfig(int64_t startAt)
+static TournamentConfig loadConfig(int64_t startAt, int portOverride)
 {
     TournamentConfig cfg;
     cfg.startAt = startAt;
 
-    // Port: TOURNAMENT_PORT takes precedence
-    cfg.port = std::stoi(
-        EnvLoader->has("TOURNAMENT_PORT") ? ENV_STRING("TOURNAMENT_PORT")
-                                          : ENV_STRING("SERVER_PORT"));
+    // Port: --port (passed by the competition runner from config.env — issue
+    // #99) wins; the env keys remain a fallback for legacy/standalone runs,
+    // then the standard tournament port.
+    cfg.port = portOverride > 0 ? portOverride
+        : EnvLoader->has("TOURNAMENT_PORT") ? std::stoi(ENV_STRING("TOURNAMENT_PORT"))
+        : EnvLoader->has("SERVER_PORT")     ? std::stoi(ENV_STRING("SERVER_PORT"))
+                                            : 40406;
     // Stage-1 sizing. Preferred input is QUALIFYING_GAMES_PER_PLAYER (N): the
     // number of games every participating player plays. The actual game count is
     // derived at run time from who actually registered (see below), so a team
@@ -1121,6 +1128,7 @@ int main(int argc, char** argv)
     EnvLoader = EnvironmentLoader(argv[1]);
 
     int64_t startAt = 0;
+    int portOverride = 0;          // 0 => take the port from the env file
     std::string competitionId;     // empty => legacy flat layout
     std::string tournamentIndex;   // competition-relative index ("1", "2", ...)
     for (int i = 2; i < argc; i++)
@@ -1128,6 +1136,8 @@ int main(int argc, char** argv)
         std::string arg = argv[i];
         if (arg.substr(0, 11) == "--start-at=")
             startAt = std::stoll(arg.substr(11));
+        else if (arg.substr(0, 7) == "--port=")
+            portOverride = std::stoi(arg.substr(7));
         else if (arg.substr(0, 17) == "--competition-id=")
             competitionId = arg.substr(17);
         else if (arg.substr(0, 19) == "--tournament-index=")
@@ -1136,7 +1146,7 @@ int main(int argc, char** argv)
     if (startAt == 0)
         startAt = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()) + 30;
 
-    TournamentConfig cfg = loadConfig(startAt);
+    TournamentConfig cfg = loadConfig(startAt, portOverride);
     // In nested (competition) layout the tournament dir is its competition-relative
     // index; in legacy/standalone runs it is the timestamp.
     std::string timestampId = Common::Dates::GetStrDate('-') + "_" + Common::Dates::GetStrTime('-');

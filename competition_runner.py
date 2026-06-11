@@ -110,9 +110,9 @@ def write_config(path: str, cfg: dict, teams: Dict[str, str], filler_teams: Dict
     all_teams = {**teams, **filler_teams}
     teams_str = ','.join(f'{n}:{p}' for n, p in all_teams.items())
     with open(path, 'w') as f:
-        # Connection info
-        f.write(f"TOURNAMENT_PORT={cfg['port']}\n")
-        f.write(f"SERVER_PORT={cfg['port']}\n")
+        # Connection info. Ports deliberately do NOT live here (issue #99):
+        # config.env is the single place they're configured, and the runner
+        # passes them explicitly (--port) to the server and filler clients.
         f.write(f"SERVER_ADDR={server_addr}\n")
         # Competition orchestration (read back as defaults next run)
         f.write(f"REGISTRATION_WINDOW={cfg.get('registration_window', 60)}\n")
@@ -269,6 +269,9 @@ def start_filler_clients(filler_teams: Dict[str, str], max_players: int,
             f'--password={password}',
             f'--player={module}',
             '--host=127.0.0.1',  # fillers always run co-located with competition_runner
+            # The config file no longer carries ports (issue #99) — pass the
+            # port from config.env explicitly.
+            f'--port={port}',
             config_path
         ]
         env = {**os.environ, 'PYTHONPATH': os.getcwd()}
@@ -525,6 +528,7 @@ def run_competition(cfg: dict, real_teams: Dict[str, str],
         # authoritative per-player registration state during its window.
         server_proc = subprocess.Popen(
             ['./bazel-bin/server/tournament_server', config_path,
+             f'--port={port}',  # ports live in config.env only (issue #99)
              f'--start-at={start_at}',
              f'--competition-id={competition_id}',
              f'--tournament-index={tournament_num}'],
