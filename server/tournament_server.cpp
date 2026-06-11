@@ -37,6 +37,7 @@
 #include <sstream>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <vector>
 
 #include <sys/socket.h>
@@ -409,70 +410,137 @@ static std::vector<GameAssignment> scheduleGames(
 {
     std::mt19937 rng{std::random_device{}()};
 
-    // Collect team names and shuffle once (order fixed for the whole stage)
+    // Collect team names and shuffle once (breaks ties symmetrically so no team
+    // index is privileged across the stage).
     std::vector<std::string> teamNames;
     for (auto& [name, _] : teamRosters) teamNames.push_back(name);
     std::shuffle(teamNames.begin(), teamNames.end(), rng);
+    int T = (int)teamNames.size();
 
-    int numTeams = (int)teamNames.size();
+    // Slot pointers per team (stable: they point into teamRosters for the call).
+    std::vector<std::vector<PlayerSlot*>> roster(T);
+    for (int i = 0; i < T; i++)
+        for (auto& slot : teamRosters[teamNames[i]]) roster[i].push_back(&slot);
 
-    // Per-team round-robin queue. Fairness guarantee (see issue #69): every slot
-    // on a team must play the *exact* same number of games. The team-rotation
-    // below ((4g+t) % numTeams) walks the consecutive integers 0..4*numGames-1,
-    // so when numTeams divides 4*numGames — which the qualifying-game count is
-    // rounded up to ensure — each team is selected exactly the same number of
-    // times, M. Because every team has the same roster size R (buildRoster pads
-    // to MAX_PLAYERS_PER_TEAM) and R divides M, draining each team's queue in
-    // full R-slot cycles (reshuffled per cycle for random combinations) hands
-    // every slot exactly M/R games. No slot can be over- or under-played.
-    struct TeamState {
-        std::vector<PlayerSlot*> roster;  // all slots, fixed for the whole stage
-        std::vector<PlayerSlot*> queue;   // slots not yet used in the current cycle
-    };
-    std::map<std::string, TeamState> states;
-    for (auto& name : teamNames)
+    // ── Fairness model (issues #69 + #97) ─────────────────────────────────────
+    // Two guarantees:
+    //   (a) equal play — every slot plays the same number of games, and
+    //   (b) even opponents — every pair of players on different teams meets a
+    //       roughly equal number of times.
+    // The old scheduler picked the 4 teams as a sliding window of consecutive
+    // indices ((4g+t) % T). That satisfies (a) but badly violates (b): when T
+    // shares a factor with 4 some pairs of teams meet twice as often as others,
+    // and for T divisible by 4 some pairs never meet at all. We instead hand out
+    // games greedily, always balancing the pairwise meeting counts.
+    //
+    // Quotas are split as evenly as possible; they come out exactly equal in the
+    // normal case where T | 4*numGames (the qualifying count is rounded up to
+    // guarantee this) and, within a team, R | M.
+    std::vector<int> teamRemaining(T);
     {
-        TeamState st;
-        for (auto& slot : teamRosters[name]) st.roster.push_back(&slot);
-        states[name] = std::move(st);
+        int base = (4 * numGames) / T, rem = (4 * numGames) % T;
+        for (int i = 0; i < T; i++) teamRemaining[i] = base + (i < rem ? 1 : 0);
+    }
+    std::vector<std::vector<int>> slotRemaining(T);
+    for (int i = 0; i < T; i++)
+    {
+        int R = (int)roster[i].size();
+        int base = R ? teamRemaining[i] / R : 0, rem = R ? teamRemaining[i] % R : 0;
+        slotRemaining[i].assign(R, 0);
+        for (int s = 0; s < R; s++) slotRemaining[i][s] = base + (s < rem ? 1 : 0);
     }
 
-    // Hand out the next slot for a team, reshuffling a fresh cycle when the
-    // current one is exhausted. One slot per (team, cycle) ⇒ equal play.
-    auto nextSlot = [&](TeamState& st) -> PlayerSlot* {
-        if (st.queue.empty())
-        {
-            st.queue = st.roster;
-            std::shuffle(st.queue.begin(), st.queue.end(), rng);
-        }
-        PlayerSlot* p = st.queue.back();
-        st.queue.pop_back();
-        return p;
+    // Pairwise meeting counts used to steer the greedy choice toward balance.
+    std::vector<std::vector<long>> teamPair(T, std::vector<long>(T, 0));
+    std::map<std::pair<PlayerSlot*, PlayerSlot*>, long> playerPair;
+    auto ppKey = [](PlayerSlot* a, PlayerSlot* b) {
+        return a < b ? std::make_pair(a, b) : std::make_pair(b, a);
     };
+    std::uniform_real_distribution<double> jitter(0.0, 1.0);
 
     std::vector<GameAssignment> assignments;
     assignments.reserve(numGames);
 
     for (int g = 0; g < numGames; g++)
     {
-        GameAssignment game;
-        game.gameId = stage + "_" + std::to_string(g + 1);
-        game.stage  = stage;
+        const int gamesLeft = numGames - g;
 
-        // Pick 4 teams for this game (rotating through the shuffled list). With
-        // numTeams >= 4 these four consecutive residues are always distinct, so
-        // no team faces itself and each team's slots only meet other teams.
-        std::vector<PlayerSlot*> chosen(4, nullptr);
-        for (int t = 0; t < 4; t++)
+        // ── Choose 4 distinct teams ───────────────────────────────────────────
+        // A team whose remaining quota equals the number of games still to play
+        // must appear in every one of them, so seat those first. At most 4 teams
+        // can be in this state (their quotas would otherwise exceed the
+        // 4*gamesLeft slots that remain), so this never overflows a game. Fill any
+        // open seats with the team that has met the already-chosen teams the
+        // fewest times, breaking ties toward the most under-played team, then
+        // randomly — this is what evens out who-plays-whom.
+        std::vector<int> chosenTeams;
+        for (int i = 0; i < T && (int)chosenTeams.size() < 4; i++)
+            if (teamRemaining[i] == gamesLeft) chosenTeams.push_back(i);
+
+        while ((int)chosenTeams.size() < 4)
         {
-            const std::string& team = teamNames[(g * 4 + t) % numTeams];
-            chosen[t] = nextSlot(states[team]);
+            int best = -1;
+            std::tuple<long, int, double> bestKey;
+            for (int i = 0; i < T; i++)
+            {
+                if (teamRemaining[i] <= 0) continue;
+                if (std::find(chosenTeams.begin(), chosenTeams.end(), i) != chosenTeams.end()) continue;
+                long overlap = 0;
+                for (int c : chosenTeams) overlap += teamPair[i][c];
+                std::tuple<long, int, double> key{overlap, -teamRemaining[i], jitter(rng)};
+                if (best == -1 || key < bestKey) { best = i; bestKey = key; }
+            }
+            chosenTeams.push_back(best);
         }
+
+        // ── Choose one slot per chosen team ───────────────────────────────────
+        // Same rule one level down: a slot forced by its quota plays; otherwise
+        // pick the slot that has faced the already-seated players least, keeping
+        // per-slot counts equal and player-vs-player meetings even.
+        std::vector<PlayerSlot*> chosen;
+        for (int ti : chosenTeams)
+        {
+            const int teamLeft = teamRemaining[ti]; // includes this game (not yet decremented)
+            const int R = (int)roster[ti].size();
+            int bestSlot = -1;
+            for (int s = 0; s < R; s++)
+                if (slotRemaining[ti][s] == teamLeft) { bestSlot = s; break; }
+            if (bestSlot < 0)
+            {
+                std::tuple<long, int, double> bestKey;
+                for (int s = 0; s < R; s++)
+                {
+                    if (slotRemaining[ti][s] <= 0) continue;
+                    long overlap = 0;
+                    for (auto* c : chosen) overlap += playerPair[ppKey(roster[ti][s], c)];
+                    std::tuple<long, int, double> key{overlap, -slotRemaining[ti][s], jitter(rng)};
+                    if (bestSlot < 0 || key < bestKey) { bestSlot = s; bestKey = key; }
+                }
+            }
+            slotRemaining[ti][bestSlot]--;
+            chosen.push_back(roster[ti][bestSlot]);
+        }
+
+        // Commit quotas + pairwise counters for this game.
+        for (int ti : chosenTeams) teamRemaining[ti]--;
+        for (size_t a = 0; a < chosenTeams.size(); a++)
+            for (size_t b = a + 1; b < chosenTeams.size(); b++)
+            {
+                teamPair[chosenTeams[a]][chosenTeams[b]]++;
+                teamPair[chosenTeams[b]][chosenTeams[a]]++;
+            }
+        for (size_t a = 0; a < chosen.size(); a++)
+            for (size_t b = a + 1; b < chosen.size(); b++)
+                playerPair[ppKey(chosen[a], chosen[b])]++;
 
         // Randomize seating per game: the 4 players sit in a random order at the
         // table (and that order then persists across all rounds of the game, since
         // runOneGame builds the seating once from game.players).
         std::shuffle(chosen.begin(), chosen.end(), rng);
+
+        GameAssignment game;
+        game.gameId = stage + "_" + std::to_string(g + 1);
+        game.stage  = stage;
         game.players = std::move(chosen);
         assignments.push_back(std::move(game));
     }
