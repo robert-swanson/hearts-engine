@@ -45,6 +45,11 @@ ENV_FILEPATH = _resolve_env_filepath()
 ENV = EnvReader(ENV_FILEPATH)
 
 SERVER_IP = ENV.get("SERVER_ADDR")
-SERVER_PORT = int(ENV.get("SERVER_PORT"))
-TOURNAMENT_PORT = int(ENV.env_dict.get("TOURNAMENT_PORT", ENV.get("SERVER_PORT")))
+# Ports default to the documented standard ports when the env file doesn't set
+# them: the generated tournament_server.env no longer carries ports (issue #99
+# — config.env is their single home), but it is still a valid env file for
+# clients that read it for SERVER_ADDR / credentials.
+SERVER_PORT = int(ENV.env_dict.get("SERVER_PORT", 40405))
+TOURNAMENT_PORT = int(ENV.env_dict.get("TOURNAMENT_PORT",
+                                       ENV.env_dict.get("SERVER_PORT", 40406)))
 LOG_DIR = Path(ENV.env_dict.get("LOG_DIR", "./log"))

@@ -99,6 +99,10 @@ def main():
                         help='Priority score — higher-scored clients get preferred slots')
     parser.add_argument('--host',     default=None,
                         help='Override server host (default: SERVER_ADDR from env file)')
+    parser.add_argument('--port',     type=int, default=None,
+                        help='Override server port (default: TOURNAMENT_PORT/SERVER_PORT '
+                             'from env file, else 40406). The competition runner passes '
+                             'this since the generated config no longer carries ports.')
     # --env-file is consumed before argparse (Env.py needs it at import); declared
     # here only so it shows up in --help.
     parser.add_argument('--env-file', dest='env_file_opt', default=None,
@@ -116,6 +120,7 @@ def main():
     tag = f"[{args.team}/{player_cls.player_tag}]"
 
     host = args.host or SERVER_IP
+    port = args.port or TOURNAMENT_PORT
 
     # Retry until the tournament server accepts this team's registration.
     # Transient failures:
@@ -125,11 +130,11 @@ def main():
     #     retry so we catch the next round once register_team.py has been run.
     retry_interval = 5
     while True:
-        print(f"{tag} Connecting to {host}:{TOURNAMENT_PORT}...")
+        print(f"{tag} Connecting to {host}:{port}...")
         connected = False
         registered = False
         try:
-            with ManagedConnection(host, TOURNAMENT_PORT, timeout_s=600) as conn:
+            with ManagedConnection(host, port, timeout_s=600) as conn:
                 connected = True
                 ts = TournamentSession(conn, args.team, args.password, player_cls,
                                        priority_score=args.score)
