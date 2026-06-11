@@ -13,8 +13,8 @@ import {
   allTeamPlayers,
   filterGames,
   teamPlayerId,
+  topSlotPlayer,
   topTeam,
-  topTeamPlayer,
   type GameFilter,
   type TeamPlayer,
 } from '../lib/aggregate'
@@ -69,7 +69,9 @@ export function TournamentDetail() {
   const windowSize = params.get('win') === '10' ? 10 : undefined
   const minMoon = Number(params.get('minMoon')) || 0
   const page = Math.max(0, Number(params.get('page')) || 0)
-  const sortKey = (params.get('sort') as SortKey) || 'rank'
+  // Default to avg tournament points (descending) so the table's top row is the
+  // same leader the filter-chip hints predict.
+  const sortKey = (params.get('sort') as SortKey) || 'avgTournament'
   const sortAsc = params.get('dir') ? params.get('dir') === 'asc' : ASC_DEFAULT_SORTS.includes(sortKey)
 
   // Merge a set of changes into the URL search params (preserving the rest).
@@ -184,8 +186,10 @@ export function TournamentDetail() {
     return m
   }, [games, teams, filter, excludeMode, selectedTeams.join('|'), excludedTeams.join('|')])
 
-  // Same idea for the team+player chips: the player ("team/tag") that would lead
-  // if this chip were added in the current mode.
+  // Same idea for the team+player chips, but at slot granularity: the slot that
+  // would top the aggregate table's "Avg tournament points" column if this chip
+  // were added in the current mode — so the hint always agrees with the table
+  // it predicts (issue #102).
   const tpPredictions = useMemo(() => {
     const m: Record<string, string | null> = {}
     for (const tp of teamPlayers) {
@@ -198,7 +202,7 @@ export function TournamentDetail() {
         ? { ...filter, excludeTeamPlayers: [...excludedTPs, tp] }
         : { ...filter, teamPlayers: [...selectedTPs, tp] }
       const sub = filterGames(games, nextFilter)
-      m[key] = sub.length ? topTeamPlayer(sub) : null
+      m[key] = sub.length ? topSlotPlayer(sub) : null
     }
     return m
   }, [games, teamPlayers, filter, excludeMode, selectedTPKeys.join('|'), excludedTPKeys.join('|')])
@@ -358,7 +362,7 @@ export function TournamentDetail() {
         <div className="muted" style={{ fontSize: 13, marginBottom: 6 }}>
           Teams — <span className="chip-key chip-key--include">required</span>{' '}
           <span className="chip-key chip-key--exclude">excluded</span>; click a chip to toggle.
-          Hints show who'd lead if added.
+          Hints show who'd lead by avg tournament points if added.
         </div>
         <FilterChipRow
           items={teams}
