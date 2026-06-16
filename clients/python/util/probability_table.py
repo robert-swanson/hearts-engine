@@ -38,7 +38,8 @@ runtime dependency for no real gain. ``to_dataframe()` offers an optional pandas
 view for debugging if pandas is installed.
 """
 
-from typing import Dict, Iterable, List, Optional
+import random
+from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
 from clients.python.api.types.Card import Card
 
@@ -189,7 +190,8 @@ class ProbabilityTable:
 
         Assumes the per-card events are independent. They are in fact mildly
         (negatively) correlated through the player's fixed hand size, so treat
-        this as a close approximation; sample valid deals for an exact answer.
+        this as a close approximation; use ``prob_has_at_least_one_exact`` (Monte
+        Carlo) when the correlation matters.
         """
         p_none = 1.0
         for card in cards:
@@ -210,6 +212,111 @@ class ProbabilityTable:
     def played_cards(self) -> set:
         """Cards that have been played and are out of every hand."""
         return set(self._played)
+
+    # ── Monte Carlo (exact joint queries) ────────────────────────────────────
+    def sample_deals(self, n: int, rng: Optional[random.Random] = None
+                     ) -> List[Tuple[Dict[Card, object], float]]:
+        """Draw ``n`` complete valid deals, each with an importance weight.
+
+        A *deal* maps every tracked card to the player holding it (known cards to
+        their owner, played cards to ``None``, unknown cards to a sampled holder),
+        always respecting capacities and ruled-out cells. Cards are filled
+        most-constrained-first and each is given to a still-eligible player with
+        probability proportional to that player's remaining capacity; dead ends
+        are rejected and redrawn.
+
+        Without ruled-out cells that scheme is already uniform; with them it is
+        biased, so each deal carries weight ``1 / P(generated)``. Feeding (deal,
+        weight) pairs to ``estimate`` yields a self-normalized importance-sampling
+        estimate of the *uniform* distribution over feasible deals. See
+        ``estimate`` for the typical entry point.
+        """
+        rng = rng or random.Random()
+        out: List[Tuple[Dict[Card, object], float]] = []
+        attempts, limit = 0, n * 100 + 100
+        while len(out) < n and attempts < limit:
+            attempts += 1
+            drawn = self._sample_one_deal(rng)
+            if drawn is not None:
+                deal, p = drawn
+                out.append((deal, 1.0 / p))
+        if len(out) < n:
+            raise RuntimeError(
+                "drew only %d of %d deals in %d attempts; constraints may be too tight"
+                % (len(out), n, attempts))
+        return out
+
+    def estimate(self, predicate: Callable[[Dict[Card, object]], bool],
+                 n: int = 10000, rng: Optional[random.Random] = None) -> float:
+        """Probability that ``predicate(deal)`` holds, over uniform feasible deals.
+
+        Unlike the marginal-based queries this captures correlations between
+        cards exactly (in the Monte Carlo limit), e.g.
+        ``estimate(lambda d: d[QS] == p and d[KS] == p)``.
+        """
+        samples = self.sample_deals(n, rng)
+        denom = sum(w for _, w in samples)
+        if denom <= 0.0:
+            return 0.0
+        numer = sum(w for deal, w in samples if predicate(deal))
+        return numer / denom
+
+    def prob_has_at_least_one_exact(self, player, cards: List[Card],
+                                    n: int = 10000,
+                                    rng: Optional[random.Random] = None) -> float:
+        """Exact (sampled) counterpart to ``prob_has_at_least_one``.
+
+        Accounts for the negative correlation between cards in a hand that the
+        independence-based ``prob_has_at_least_one`` ignores.
+        """
+        targets = list(cards)
+        if not targets:
+            return 0.0
+        return self.estimate(lambda deal: any(deal.get(c) == player for c in targets), n, rng)
+
+    def _sample_one_deal(self, rng: random.Random):
+        """One forward sampling pass. Returns (deal, generation_prob) or None on a dead end."""
+        m = len(self.players)
+        active = [i for i in range(len(self.cards)) if self._is_active(i)]
+        cap = [int(round(c)) for c in self._cap]
+        allowed = {i: [j for j in range(m) if not self._forbidden[i][j]] for i in active}
+
+        assigned: Dict[int, int] = {}
+        remaining = set(active)
+        gen_p = 1.0
+        while remaining:
+            # Most-constrained card first (fewest still-eligible players).
+            pick_i, pick_feas = None, None
+            for i in remaining:
+                feas = [j for j in allowed[i] if cap[j] > 0]
+                if not feas:
+                    return None                          # dead end → reject
+                if pick_feas is None or len(feas) < len(pick_feas):
+                    pick_i, pick_feas = i, feas
+                    if len(feas) == 1:
+                        break
+            # Choose proportional to remaining capacity.
+            total = sum(cap[j] for j in pick_feas)
+            r = rng.random() * total
+            acc, chosen = 0, pick_feas[-1]
+            for j in pick_feas:
+                acc += cap[j]
+                if r <= acc:
+                    chosen = j
+                    break
+            gen_p *= cap[chosen] / total
+            assigned[pick_i] = chosen
+            cap[chosen] -= 1
+            remaining.discard(pick_i)
+
+        deal: Dict[Card, object] = {}
+        for card, owner in self._resolved.items():
+            deal[card] = owner
+        for card in self._played:
+            deal[card] = None
+        for i, j in assigned.items():
+            deal[self.cards[i]] = self.players[j]
+        return deal, gen_p
 
     # ── internals ────────────────────────────────────────────────────────────
     def _idx(self, card: Card) -> int:

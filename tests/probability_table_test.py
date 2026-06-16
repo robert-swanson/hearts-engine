@@ -13,6 +13,8 @@ Covers the two things that make the table correct:
 Run directly: ``python3 tests/probability_table_test.py``.
 """
 
+import itertools
+import random
 import sys
 from pathlib import Path
 
@@ -183,6 +185,73 @@ def test_prob_has_at_least_one():
     print("PASS: prob_has_at_least_one (independence approx + known short-circuit)")
 
 
+def _brute_force_deals(players, cards, caps, forbidden):
+    """Enumerate every feasible assignment of cards to players (small cases only)."""
+    deals = []
+    for combo in itertools.product(players, repeat=len(cards)):
+        deal = dict(zip(cards, combo))
+        if any(deal[c] in forbidden.get(c, ()) for c in cards):
+            continue
+        if all(sum(1 for c in cards if deal[c] == p) == caps[p] for p in players):
+            deals.append(deal)
+    return deals
+
+
+def test_monte_carlo_matches_brute_force():
+    """Sampled marginals match exact enumeration even with a ruled-out (void) cell."""
+    players = ["A", "B"]
+    cards = [C("2C"), C("3C"), C("4C"), C("5C")]
+    t = ProbabilityTable(players, cards, {"A": 2, "B": 2})
+    t.rule_out("A", C("2C"))                     # A is void in 2C -> propagates 2C to B
+    assert t.known_cards().get(C("2C")) == "B"
+
+    # Brute force the three feasible deals: A holds two of {3C,4C,5C}, B holds 2C + the third.
+    deals = _brute_force_deals(players, cards, {"A": 2, "B": 2}, {C("2C"): {"A"}})
+    assert len(deals) == 3
+    exact = {c: sum(1 for d in deals if d[c] == "A") / len(deals) for c in cards}
+
+    rng = random.Random(12345)
+    for c in cards:
+        est = t.estimate(lambda d, c=c: d[c] == "A", n=8000, rng=rng)
+        assert approx(est, exact[c], tol=0.03), (c, est, exact[c])
+    print("PASS: Monte Carlo marginals match brute-force enumeration (with a void)")
+
+
+def test_exact_beats_independence_for_correlated_query():
+    """A holds 2 of {3C,4C,5C}, so they ALWAYS hold >=1 of any two of them.
+
+    Exact answer is 1.0; the independence approximation underestimates it.
+    """
+    players = ["A", "B"]
+    cards = [C("2C"), C("3C"), C("4C"), C("5C")]
+    t = ProbabilityTable(players, cards, {"A": 2, "B": 2})
+    t.rule_out("A", C("2C"))
+    rng = random.Random(7)
+    exact = t.prob_has_at_least_one_exact("A", [C("3C"), C("4C")], n=8000, rng=rng)
+    approxd = t.prob_has_at_least_one("A", [C("3C"), C("4C")])
+    assert approx(exact, 1.0, tol=0.001), exact          # genuinely certain
+    assert approx(approxd, 1 - (1 / 3) ** 2, tol=0.02), approxd  # 8/9, the biased guess
+    assert exact > approxd + 0.05
+    print("PASS: exact joint query (1.0) beats independence approx (~0.889)")
+
+
+def test_sampled_deals_are_valid():
+    """Every sampled deal respects capacities and ruled-out cells."""
+    t = ProbabilityTable(PLAYERS, CARDS, CAPS)
+    t.rule_out("left", C("AH"))
+    t.rule_out("left", C("KH"))
+    t.play("right", C("AS"))
+    rng = random.Random(99)
+    for deal, weight in t.sample_deals(200, rng=rng):
+        assert weight > 0.0
+        assert deal[C("AS")] is None                     # played card held by nobody
+        assert deal[C("AH")] != "left" and deal[C("KH")] != "left"   # voids respected
+        held = [c for c in CARDS if deal.get(c) is not None]
+        for p in PLAYERS:                                 # capacities respected
+            assert sum(1 for c in held if deal[c] == p) == {"left": 3, "across": 3, "right": 2}[p]
+    print("PASS: sampled deals respect voids, played cards, and capacities")
+
+
 def test_contradiction_detected():
     t = ProbabilityTable(PLAYERS, CARDS, CAPS)
     raised = False
@@ -214,6 +283,9 @@ def run():
     test_play_known_card_removes_it()
     test_play_unknown_card_reveals_and_reweights()
     test_play_contradictions()
+    test_monte_carlo_matches_brute_force()
+    test_exact_beats_independence_for_correlated_query()
+    test_sampled_deals_are_valid()
     test_prob_has_at_least_one()
     test_contradiction_detected()
     test_capacity_validation()
