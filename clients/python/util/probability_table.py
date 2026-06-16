@@ -86,6 +86,7 @@ class ProbabilityTable:
         self._P: List[List[float]] = [[cap[j] / n for j in range(m)] for _ in range(n)]
         self._forbidden: List[List[bool]] = [[False] * m for _ in range(n)]
         self._resolved: Dict[Card, object] = {}            # card -> player known to hold it
+        self._played: set = set()                          # cards out of play (held by nobody)
         self._settle()
 
     # ── updates ────────────────────────────────────────────────────────────
@@ -93,6 +94,7 @@ class ProbabilityTable:
         """Record the known fact that ``player`` holds ``card``."""
         i, j = self._idx(card), self._col(player)
         prior = self._resolved.get(card)
+        self._reject_if_played(card)
         if prior is not None:
             if prior != player:
                 raise ContradictionError("%r already assigned to %r, not %r"
@@ -106,11 +108,41 @@ class ProbabilityTable:
     def rule_out(self, player, card: Card) -> None:
         """Record the known fact that ``player`` does not hold ``card``."""
         i, j = self._idx(card), self._col(player)
+        self._reject_if_played(card)
         if self._resolved.get(card) == player:
             raise ContradictionError("%r is known to be held by %r" % (card, player))
         if self._forbidden[i][j]:
             return
         self._forbid_raw(j, i)
+        self._settle()
+
+    def play(self, player, card: Card) -> None:
+        """Record that ``player`` played ``card``: it leaves play for good.
+
+        Afterwards every ``prob_has_one(*, card)`` is 0.0 — nobody holds it. If
+        the card was previously unknown, the play *reveals* that this player held
+        it, so their remaining capacity drops by one and the other unknown cards
+        are reweighted accordingly. Playing a card the model had ruled out for
+        this player (or assigned to another) raises ContradictionError.
+        """
+        i, j = self._idx(card), self._col(player)
+        if card in self._played:
+            raise ContradictionError("%r has already been played" % (card,))
+        owner = self._resolved.get(card)
+        if owner is not None and owner != player:
+            raise ContradictionError("%r was held by %r, but %r played it"
+                                     % (card, owner, player))
+        if owner is None and self._forbidden[i][j]:
+            raise ContradictionError("%r was ruled out for %r, but they played it"
+                                     % (card, player))
+        if owner is None:
+            self._cap[j] -= 1.0          # the play reveals an unknown card was theirs
+        else:
+            del self._resolved[card]     # a known card simply leaves the hand
+        self._played.add(card)
+        for jj in range(len(self.players)):
+            self._P[i][jj] = 0.0
+            self._forbidden[i][jj] = True
         self._settle()
 
     def set_prob(self, player, card: Card, value: float) -> None:
@@ -123,6 +155,7 @@ class ProbabilityTable:
         if not 0.0 <= value <= 1.0:
             raise ValueError("probability must be in [0, 1]")
         i, j = self._idx(card), self._col(player)
+        self._reject_if_played(card)
         if self._resolved.get(card) is not None:
             raise ContradictionError("%r is already known; clear it before set_prob" % (card,))
         if value == 0.0:
@@ -142,8 +175,10 @@ class ProbabilityTable:
 
     # ── queries ────────────────────────────────────────────────────────────
     def prob_has_one(self, player, card: Card) -> float:
-        """Probability that ``player`` holds ``card`` (1.0/0.0 once known)."""
+        """Probability that ``player`` holds ``card`` (1.0/0.0 once known, 0.0 once played)."""
         i, j = self._idx(card), self._col(player)
+        if card in self._played:
+            return 0.0
         owner = self._resolved.get(card)
         if owner is not None:
             return 1.0 if owner == player else 0.0
@@ -169,8 +204,12 @@ class ProbabilityTable:
         return {p: self.prob_has_one(p, card) for p in self.players}
 
     def known_cards(self) -> Dict[Card, object]:
-        """Cards whose holder is known, mapped to that player."""
+        """Cards still in a hand whose holder is known, mapped to that player."""
         return dict(self._resolved)
+
+    def played_cards(self) -> set:
+        """Cards that have been played and are out of every hand."""
+        return set(self._played)
 
     # ── internals ────────────────────────────────────────────────────────────
     def _idx(self, card: Card) -> int:
@@ -184,6 +223,15 @@ class ProbabilityTable:
             return self._pj[player]
         except KeyError:
             raise KeyError("player %r is not tracked by this table" % (player,))
+
+    def _is_active(self, i: int) -> bool:
+        """True if card ``i`` is still unknown (not yet resolved or played)."""
+        card = self.cards[i]
+        return card not in self._resolved and card not in self._played
+
+    def _reject_if_played(self, card: Card) -> None:
+        if card in self._played:
+            raise ContradictionError("%r has already been played" % (card,))
 
     def _assign_raw(self, j: int, i: int) -> None:
         self._resolved[self.cards[i]] = self.players[j]
@@ -208,7 +256,7 @@ class ProbabilityTable:
             changed = False
             # A card with a single possible holder is held by them.
             for i in range(n):
-                if self.cards[i] in self._resolved:
+                if not self._is_active(i):
                     continue
                 candidates = [j for j in range(m) if not self._forbidden[i][j]]
                 if not candidates:
@@ -220,7 +268,7 @@ class ProbabilityTable:
             for j in range(m):
                 cap = self._cap[j]
                 cand = [i for i in range(n)
-                        if self.cards[i] not in self._resolved and not self._forbidden[i][j]]
+                        if self._is_active(i) and not self._forbidden[i][j]]
                 if cap < -_EPS or cap - len(cand) > _EPS:
                     raise ContradictionError(
                         "player %r needs %g cards but has %d candidates"
@@ -231,13 +279,13 @@ class ProbabilityTable:
                     changed = True
                 elif abs(cap - len(cand)) < _EPS and cand:  # must take all candidates
                     for i in cand:
-                        if self.cards[i] not in self._resolved and not self._forbidden[i][j]:
+                        if self._is_active(i) and not self._forbidden[i][j]:
                             self._assign_raw(j, i)
                     changed = True
 
     def _reconcile(self) -> None:
         """Iterative Proportional Fitting over the still-unknown rows."""
-        rows = [i for i in range(len(self.cards)) if self.cards[i] not in self._resolved]
+        rows = [i for i in range(len(self.cards)) if self._is_active(i)]
         if not rows:
             return
         m = len(self.players)

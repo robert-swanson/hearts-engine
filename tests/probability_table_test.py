@@ -117,6 +117,61 @@ def test_propagation_resolves_single_candidate():
     print("PASS: card with a single possible holder auto-resolves to 100%")
 
 
+def test_play_known_card_removes_it():
+    """Playing an already-known card drops it to 0 for everyone; others unchanged."""
+    t = ProbabilityTable(PLAYERS, CARDS, CAPS)
+    t.assign("left", C("AS"))
+    before = {k: t.distribution(k) for k in CARDS if k != C("AS")}
+    t.play("left", C("AS"))
+    assert t.prob_has_one("left", C("AS")) == 0.0
+    assert all(t.prob_has_one(p, C("AS")) == 0.0 for p in PLAYERS)
+    assert C("AS") in t.played_cards() and C("AS") not in t.known_cards()
+    # No new information about the other cards: their distributions are unchanged.
+    for k, dist in before.items():
+        for p in PLAYERS:
+            assert approx(t.prob_has_one(p, k), dist[p])
+    print("PASS: playing a known card -> 0% everywhere, other cards unchanged")
+
+
+def test_play_unknown_card_reveals_and_reweights():
+    """Playing an unknown card reveals the holder and reweights the other cards."""
+    t = ProbabilityTable(PLAYERS, CARDS, CAPS)
+    t.play("left", C("AS"))                      # AS was unknown (1/3 each)
+    assert all(t.prob_has_one(p, C("AS")) == 0.0 for p in PLAYERS)
+    assert C("AS") in t.played_cards()
+    # left has revealed one of their cards, so among the remaining 8 unknowns they
+    # now account for 2, while across/right still account for 3 each.
+    rest = [k for k in CARDS if k != C("AS")]
+    assert approx(sum(t.prob_has_one("left", k) for k in rest), 2.0)
+    assert approx(sum(t.prob_has_one("across", k) for k in rest), 3.0)
+    assert approx(sum(t.prob_has_one("right", k) for k in rest), 3.0)
+    for k in rest:                               # rows still sum to 1
+        assert approx(sum(t.distribution(k).values()), 1.0)
+    # left is now *less* likely than the others to hold any given remaining card.
+    assert t.prob_has_one("left", C("KS")) < t.prob_has_one("across", C("KS"))
+    print("PASS: playing an unknown card reveals holder and reweights the rest")
+
+
+def test_play_contradictions():
+    t = ProbabilityTable(PLAYERS, CARDS, CAPS)
+    t.rule_out("left", C("QS"))
+    raised = False
+    try:
+        t.play("left", C("QS"))                  # we had ruled left out of QS
+    except ContradictionError:
+        raised = True
+    assert raised, "playing a ruled-out card should contradict"
+    t2 = ProbabilityTable(PLAYERS, CARDS, CAPS)
+    t2.assign("right", C("QS"))
+    raised = False
+    try:
+        t2.play("left", C("QS"))                 # QS was known to be right's
+    except ContradictionError:
+        raised = True
+    assert raised, "playing another player's known card should contradict"
+    print("PASS: playing a ruled-out / mis-attributed card raises ContradictionError")
+
+
 def test_prob_has_at_least_one():
     t = ProbabilityTable(PLAYERS, CARDS, CAPS)
     v = t.prob_has_at_least_one("left", [C("AH"), C("KH")])
@@ -156,6 +211,9 @@ def run():
     test_init_uniform_and_margins()
     test_assign_makes_known_and_preserves_margins()
     test_propagation_resolves_single_candidate()
+    test_play_known_card_removes_it()
+    test_play_unknown_card_reveals_and_reweights()
+    test_play_contradictions()
     test_prob_has_at_least_one()
     test_contradiction_detected()
     test_capacity_validation()
