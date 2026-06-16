@@ -184,6 +184,56 @@ def test_play_contradictions():
     print("PASS: playing a ruled-out / mis-attributed card raises ContradictionError")
 
 
+def test_reassign_for_passing():
+    """Passing: reassign a card from yourself to another player, hands held fixed."""
+    players = ["me", "A", "B", "C"]
+    t = ProbabilityTable(players)                # full deck, 13 each
+    deck = t.cards
+    mine = deck[:13]
+    for c in mine:
+        t.assign("me", c)
+    # All my cards are 100% mine; the other 39 split among A/B/C.
+    assert all(t.prob_has_one("me", c) == 1.0 for c in mine)
+    assert approx(sum(t.prob_has_one("me", c) for c in deck), 13.0)
+
+    # Pass three of my cards to A.
+    passed = mine[:3]
+    for c in passed:
+        t.reassign("A", c)
+    for c in passed:
+        assert t.prob_has_one("A", c) == 1.0
+        assert t.prob_has_one("me", c) == 0.0
+    # Hands unchanged at 13; I now have three unknown slots (incoming), A has three known.
+    for p in players:
+        assert approx(sum(t.prob_has_one(p, c) for c in deck), 13.0), p
+    unknown_for_me = sum(t.prob_has_one("me", c) for c in deck if c not in mine)
+    assert approx(unknown_for_me, 3.0)           # the three cards I'll receive
+
+    # Receive three previously-unknown cards -> assign to me; I'm back to 13 known.
+    received = [c for c in deck if c not in mine][:3]
+    for c in received:
+        t.assign("me", c)
+    assert approx(sum(1.0 for c in deck if t.prob_has_one("me", c) == 1.0), 13.0)
+    assert approx(sum(t.prob_has_one("me", c) for c in deck if c not in mine and c not in received), 0.0)
+    print("PASS: reassign models passing (ownership moves, hands stay 13)")
+
+
+def test_reassign_edge_cases():
+    t = ProbabilityTable(["me", "A", "B", "C"])
+    t.reassign("A", C("QS"))                      # card was unknown -> behaves like assign
+    assert t.prob_has_one("A", C("QS")) == 1.0
+    t.reassign("A", C("QS"))                      # same holder -> no-op
+    assert t.prob_has_one("A", C("QS")) == 1.0
+    t.play("A", C("2C"))
+    raised = False
+    try:
+        t.reassign("B", C("2C"))                  # cannot reassign a played card
+    except ContradictionError:
+        raised = True
+    assert raised
+    print("PASS: reassign handles unknown card, no-op, and rejects played cards")
+
+
 def test_prob_has_at_least_one():
     t = ProbabilityTable(PLAYERS, CARDS, CAPS)
     v = t.prob_has_at_least_one("left", [C("AH"), C("KH")])
@@ -297,6 +347,8 @@ def run():
     test_monte_carlo_matches_brute_force()
     test_exact_beats_independence_for_correlated_query()
     test_sampled_deals_are_valid()
+    test_reassign_for_passing()
+    test_reassign_edge_cases()
     test_prob_has_at_least_one()
     test_contradiction_detected()
     test_capacity_validation()

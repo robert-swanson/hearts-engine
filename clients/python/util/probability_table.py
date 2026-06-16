@@ -17,6 +17,8 @@ Updates come in three flavours:
   * ``rule_out(player, card)`` — a known fact: this player does *not* hold this
     card (e.g. they failed to follow suit, so they are void in it).
   * ``set_prob(player, card, value)`` — a soft observation.
+  * ``reassign(player, card)`` — move a known card to a new holder (passing).
+  * ``play(player, card)`` — a card is played and leaves every hand.
 
 After any update the table (a) runs cheap logical constraint propagation to turn
 forced situations into certainties (a card with a single possible holder; a
@@ -90,9 +92,13 @@ class ProbabilityTable:
         if abs(sum(cap) - n) > _EPS:
             raise ValueError("capacities sum to %g but there are %d cards" % (sum(cap), n))
 
-        self._cap: List[float] = cap                       # remaining unknown capacity per player
+        self._hand: List[float] = list(cap)                # current hand size per player
+        self._cap: List[float] = list(cap)                 # remaining unknown capacity (= hand - #resolved)
         self._P: List[List[float]] = [[cap[j] / n for j in range(m)] for _ in range(n)]
+        # _void: structural rule-outs (permanent). _forbidden: _void plus capacity-derived
+        # forbids that propagation adds and that a later pass may need to undo.
         self._forbidden: List[List[bool]] = [[False] * m for _ in range(n)]
+        self._void: List[List[bool]] = [[False] * m for _ in range(n)]
         self._resolved: Dict[Card, PlayerTagSession] = {}  # card -> player known to hold it
         self._played: Set[Card] = set()                    # cards out of play (held by nobody)
         self._settle()
@@ -119,8 +125,9 @@ class ProbabilityTable:
         self._reject_if_played(card)
         if self._resolved.get(card) == player:
             raise ContradictionError("%r is known to be held by %r" % (card, player))
-        if self._forbidden[i][j]:
+        if self._void[i][j]:
             return
+        self._void[i][j] = True          # structural: never lifted by capacity changes
         self._forbid_raw(j, i)
         self._settle()
 
@@ -140,17 +147,43 @@ class ProbabilityTable:
         if owner is not None and owner != player:
             raise ContradictionError("%r was held by %r, but %r played it"
                                      % (card, owner, player))
-        if owner is None and self._forbidden[i][j]:
+        if owner is None and self._void[i][j]:
             raise ContradictionError("%r was ruled out for %r, but they played it"
                                      % (card, player))
-        if owner is None:
-            self._cap[j] -= 1.0          # the play reveals an unknown card was theirs
-        else:
+        if owner is not None:
             del self._resolved[card]     # a known card simply leaves the hand
+        self._hand[j] -= 1.0             # the player holds one fewer card now
         self._played.add(card)
         for jj in range(len(self.players)):
             self._P[i][jj] = 0.0
             self._forbidden[i][jj] = True
+        self._recompute_cap()
+        self._settle()
+
+    def reassign(self, player: PlayerTagSession, card: Card) -> None:
+        """Change a card's known holder to ``player`` (e.g. when you pass it).
+
+        Unlike ``assign``, this is allowed even when the card is already known to
+        be held by someone else — that is exactly the passing case. Hand sizes are
+        held fixed (you pass three and receive three), so the previous holder
+        regains an unknown slot for the card they will receive and the new holder
+        gives up one. The other unknown cards are reweighted accordingly. Use this
+        only for an authoritative ownership change; for *learning* a holder use
+        ``assign``, which stays strict and rejects conflicts.
+        """
+        self._reject_if_played(card)
+        i, j = self._idx(card), self._col(player)
+        prior = self._resolved.get(card)
+        if prior == player:
+            return
+        if self._void[i][j]:
+            self._void[i][j] = False     # we are giving this card to player; any prior void is moot
+        if prior is None:
+            self._assign_raw(j, i)       # card was unknown: this just learns the holder
+        else:
+            self._resolved[card] = player  # row already collapsed; move the resolution
+            self._recompute_cap()
+            self._reenable_player(self._col(prior))  # the old holder regained an unknown slot
         self._settle()
 
     def set_prob(self, player: PlayerTagSession, card: Card, value: float) -> None:
@@ -351,14 +384,37 @@ class ProbabilityTable:
 
     def _assign_raw(self, j: int, i: int) -> None:
         self._resolved[self.cards[i]] = self.players[j]
-        self._cap[j] -= 1.0
         for jj in range(len(self.players)):
             self._P[i][jj] = 0.0
             self._forbidden[i][jj] = True
+        self._recompute_cap()
+
+    def _recompute_cap(self) -> None:
+        """Remaining unknown capacity = current hand size minus cards already known to be held."""
+        counts = [0] * len(self.players)
+        for owner in self._resolved.values():
+            counts[self._pj[owner]] += 1
+        for j in range(len(self.players)):
+            self._cap[j] = self._hand[j] - counts[j]
 
     def _forbid_raw(self, j: int, i: int) -> None:
         self._forbidden[i][j] = True
         self._P[i][j] = 0.0
+
+    def _reenable_player(self, j: int) -> None:
+        """Lift capacity-derived (non-structural) forbids for player ``j``.
+
+        Called when a pass returns capacity to ``j``: cards propagation had ruled
+        out only because ``j`` was momentarily full are eligible again, so clear
+        those forbids and reseed a positive probability for IPF to redistribute.
+        """
+        n = len(self.cards)
+        for i in range(n):
+            if not self._is_active(i):
+                continue
+            if self._forbidden[i][j] and not self._void[i][j]:
+                self._forbidden[i][j] = False
+                self._P[i][j] = self._cap[j] / n
 
     def _settle(self) -> None:
         self._propagate()
