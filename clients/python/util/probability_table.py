@@ -56,16 +56,17 @@ _EPS = 1e-9
 
 
 class ProbabilityTable:
-    def __init__(self, players: List, cards: Iterable[Card],
+    def __init__(self, players: List, cards: Optional[Iterable[Card]] = None,
                  capacities: Optional[Dict] = None):
         """Build a table over ``players`` and ``cards``.
 
-        ``capacities`` maps each player to the number of tracked cards they hold;
-        the values must sum to ``len(cards)``. If omitted, the cards are assumed
-        split evenly (``len(cards)`` must then divide by ``len(players)``).
+        ``cards`` defaults to the full 52-card deck. ``capacities`` maps each
+        player to the number of tracked cards they hold; the values must sum to
+        ``len(cards)``. If omitted, the cards are assumed split evenly
+        (``len(cards)`` must then divide by ``len(players)``).
         """
         self.players: List = list(players)
-        self.cards: List[Card] = list(cards)
+        self.cards: List[Card] = list(cards) if cards is not None else Card.make_deck()
         self._pj: Dict = {p: j for j, p in enumerate(self.players)}
         self._ci: Dict[Card, int] = {c: i for i, c in enumerate(self.cards)}
         if len(self._pj) != len(self.players):

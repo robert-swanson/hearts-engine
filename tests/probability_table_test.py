@@ -85,6 +85,16 @@ def test_rule_out_redistributes_proportionally():
     print("PASS: zeroing redistributes proportionally ([0, 1/3, 2/3, 0])")
 
 
+def test_default_cards_full_deck():
+    """Omitting cards defaults to the full 52-card deck (13 each for 4 players)."""
+    t = ProbabilityTable(["N", "E", "S", "W"])
+    assert len(t.cards) == 52
+    assert approx(t.prob_has_one("N", C("QS")), 0.25)
+    for p in ["N", "E", "S", "W"]:
+        assert approx(sum(t.prob_has_one(p, c) for c in t.cards), 13.0)
+    print("PASS: default cards = full 52-card deck, 13 per player")
+
+
 def test_init_uniform_and_margins():
     t = ProbabilityTable(PLAYERS, CARDS, CAPS)
     for card in CARDS:
@@ -277,6 +287,7 @@ def test_capacity_validation():
 def run():
     test_set_prob_shares_proportionally()
     test_rule_out_redistributes_proportionally()
+    test_default_cards_full_deck()
     test_init_uniform_and_margins()
     test_assign_makes_known_and_preserves_margins()
     test_propagation_resolves_single_candidate()
