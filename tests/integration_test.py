@@ -15,12 +15,33 @@ import os
 if len(sys.argv) < 2:
     sys.argv.append("./local.config.env")
 
+from typing import List
+
 from clients.python.api.networking.ManagedConnection import ManagedConnection
 from clients.python.api.networking.SessionHelpers import RunGame, RunMultipleGames
 from clients.python.api.Player import Player
 from clients.python.players.random_player import RandomPlayer
+from clients.python.api.types.Card import Card
+from clients.python.api.types.PassDirection import PassDirection
+from clients.python.api.types.PlayerTagSession import PlayerTagSession
 from clients.python.util.Constants import GameType
 from clients.python.util.Env import SERVER_IP, SERVER_PORT
+
+
+class DuplicatePassPlayer(RandomPlayer):
+    """Misbehaving client: passes the same card three times.
+
+    A duplicate-card pass once aborted the server — it accepted the cards (each
+    is genuinely in hand) and then crashed subtracting the same card from the
+    hand twice (card_collection.h operator-). The server must instead reject the
+    pass and auto-pass, so the game still completes. Defined here (not under
+    players/) so it is excluded from smoke discovery.
+    """
+    player_tag = "duplicate_pass_player"
+
+    def get_cards_to_pass(self, pass_dir: PassDirection, receiving_player: PlayerTagSession) -> List[Card]:
+        card = self.hand[0]
+        return [card, card, card]
 
 # Players excluded from automated smoke testing
 _SKIP_PLAYER_FILES = {
@@ -103,6 +124,20 @@ def test_each_player():
             check_game(game, f"smoke-{player_cls.player_tag}")
 
 
+def test_malicious_duplicate_pass():
+    """Regression: a client passing duplicate cards must not crash the server.
+
+    Before the fix the server aborted on the duplicate-card subtraction; the
+    game would never complete. A completed game (winner declared) proves the
+    server stayed up and auto-passed for the misbehaving client.
+    """
+    print("Test 4: Malicious client passes duplicate cards (server must survive)")
+    roster = [DuplicatePassPlayer, RandomPlayer, RandomPlayer, RandomPlayer]
+    with ManagedConnection(timeout_s=TIMEOUT_S) as conn:
+        game = RunGame(conn, GameType.ANY, roster, timeout_s=TIMEOUT_S)
+    check_game(game, "malicious-duplicate-pass")
+
+
 if __name__ == "__main__":
     print("Hearts Engine Integration Tests")
     print("================================")
@@ -112,6 +147,7 @@ if __name__ == "__main__":
     test_single_game()
     test_two_concurrent_games()
     test_each_player()
+    test_malicious_duplicate_pass()
 
     print("\nAll integration tests PASSED")
     sys.exit(0)

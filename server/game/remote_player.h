@@ -60,6 +60,18 @@ public:
                                     mPlayerTagSession.c_str(), cards[i].getAbbreviation().c_str());
                                 valid = false;
                             }
+                            // Reject duplicate cards: passing the same card twice would
+                            // otherwise abort the server when the round subtracts it from
+                            // the hand twice (card_collection.h operator-).
+                            for (int j = 0; j < i && valid; ++j)
+                            {
+                                if (cards[i] == cards[j])
+                                {
+                                    LOG("Client %s tried to pass duplicate card: %s",
+                                        mPlayerTagSession.c_str(), cards[i].getAbbreviation().c_str());
+                                    valid = false;
+                                }
+                            }
                         }
                         if (valid)
                             return cards;
