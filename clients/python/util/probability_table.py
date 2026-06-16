@@ -39,9 +39,14 @@ view for debugging if pandas is installed.
 """
 
 import random
-from typing import Callable, Dict, Iterable, List, Optional, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Set, Tuple
 
 from clients.python.api.types.Card import Card
+from clients.python.api.types.PlayerTagSession import PlayerTagSession
+
+
+# A sampled deal maps every tracked card to its holder (None once the card is played).
+Deal = Dict[Card, Optional[PlayerTagSession]]
 
 
 class ContradictionError(ValueError):
@@ -56,8 +61,8 @@ _EPS = 1e-9
 
 
 class ProbabilityTable:
-    def __init__(self, players: List, cards: Optional[Iterable[Card]] = None,
-                 capacities: Optional[Dict] = None):
+    def __init__(self, players: List[PlayerTagSession], cards: Optional[Iterable[Card]] = None,
+                 capacities: Optional[Dict[PlayerTagSession, int]] = None):
         """Build a table over ``players`` and ``cards``.
 
         ``cards`` defaults to the full 52-card deck. ``capacities`` maps each
@@ -65,9 +70,9 @@ class ProbabilityTable:
         ``len(cards)``. If omitted, the cards are assumed split evenly
         (``len(cards)`` must then divide by ``len(players)``).
         """
-        self.players: List = list(players)
+        self.players: List[PlayerTagSession] = list(players)
         self.cards: List[Card] = list(cards) if cards is not None else Card.make_deck()
-        self._pj: Dict = {p: j for j, p in enumerate(self.players)}
+        self._pj: Dict[PlayerTagSession, int] = {p: j for j, p in enumerate(self.players)}
         self._ci: Dict[Card, int] = {c: i for i, c in enumerate(self.cards)}
         if len(self._pj) != len(self.players):
             raise ValueError("duplicate player in players")
@@ -75,6 +80,7 @@ class ProbabilityTable:
             raise ValueError("duplicate card in cards")
 
         n, m = len(self.cards), len(self.players)
+        cap: List[float]
         if capacities is None:
             if m == 0 or n % m != 0:
                 raise ValueError("cannot split %d cards evenly across %d players" % (n, m))
@@ -87,12 +93,12 @@ class ProbabilityTable:
         self._cap: List[float] = cap                       # remaining unknown capacity per player
         self._P: List[List[float]] = [[cap[j] / n for j in range(m)] for _ in range(n)]
         self._forbidden: List[List[bool]] = [[False] * m for _ in range(n)]
-        self._resolved: Dict[Card, object] = {}            # card -> player known to hold it
-        self._played: set = set()                          # cards out of play (held by nobody)
+        self._resolved: Dict[Card, PlayerTagSession] = {}  # card -> player known to hold it
+        self._played: Set[Card] = set()                    # cards out of play (held by nobody)
         self._settle()
 
     # ── updates ────────────────────────────────────────────────────────────
-    def assign(self, player, card: Card) -> None:
+    def assign(self, player: PlayerTagSession, card: Card) -> None:
         """Record the known fact that ``player`` holds ``card``."""
         i, j = self._idx(card), self._col(player)
         prior = self._resolved.get(card)
@@ -107,7 +113,7 @@ class ProbabilityTable:
         self._assign_raw(j, i)
         self._settle()
 
-    def rule_out(self, player, card: Card) -> None:
+    def rule_out(self, player: PlayerTagSession, card: Card) -> None:
         """Record the known fact that ``player`` does not hold ``card``."""
         i, j = self._idx(card), self._col(player)
         self._reject_if_played(card)
@@ -118,7 +124,7 @@ class ProbabilityTable:
         self._forbid_raw(j, i)
         self._settle()
 
-    def play(self, player, card: Card) -> None:
+    def play(self, player: PlayerTagSession, card: Card) -> None:
         """Record that ``player`` played ``card``: it leaves play for good.
 
         Afterwards every ``prob_has_one(*, card)`` is 0.0 — nobody holds it. If
@@ -147,7 +153,7 @@ class ProbabilityTable:
             self._forbidden[i][jj] = True
         self._settle()
 
-    def set_prob(self, player, card: Card, value: float) -> None:
+    def set_prob(self, player: PlayerTagSession, card: Card, value: float) -> None:
         """Pin a soft probability that ``player`` holds ``card`` and rebalance.
 
         The card's other (non-forbidden) cells keep their relative odds while
@@ -176,7 +182,7 @@ class ProbabilityTable:
         self._settle()
 
     # ── queries ────────────────────────────────────────────────────────────
-    def prob_has_one(self, player, card: Card) -> float:
+    def prob_has_one(self, player: PlayerTagSession, card: Card) -> float:
         """Probability that ``player`` holds ``card`` (1.0/0.0 once known, 0.0 once played)."""
         i, j = self._idx(card), self._col(player)
         if card in self._played:
@@ -186,7 +192,7 @@ class ProbabilityTable:
             return 1.0 if owner == player else 0.0
         return self._P[i][j]
 
-    def prob_has_at_least_one(self, player, cards: List[Card]) -> float:
+    def prob_has_at_least_one(self, player: PlayerTagSession, cards: List[Card]) -> float:
         """Probability that ``player`` holds at least one of ``cards``.
 
         Assumes the per-card events are independent. They are in fact mildly
@@ -202,21 +208,21 @@ class ProbabilityTable:
             p_none *= (1.0 - p)
         return 1.0 - p_none
 
-    def distribution(self, card: Card) -> Dict:
+    def distribution(self, card: Card) -> Dict[PlayerTagSession, float]:
         """Map of player -> probability of holding ``card`` (sums to 1)."""
         return {p: self.prob_has_one(p, card) for p in self.players}
 
-    def known_cards(self) -> Dict[Card, object]:
+    def known_cards(self) -> Dict[Card, PlayerTagSession]:
         """Cards still in a hand whose holder is known, mapped to that player."""
         return dict(self._resolved)
 
-    def played_cards(self) -> set:
+    def played_cards(self) -> Set[Card]:
         """Cards that have been played and are out of every hand."""
         return set(self._played)
 
     # ── Monte Carlo (exact joint queries) ────────────────────────────────────
     def sample_deals(self, n: int, rng: Optional[random.Random] = None
-                     ) -> List[Tuple[Dict[Card, object], float]]:
+                     ) -> List[Tuple[Deal, float]]:
         """Draw ``n`` complete valid deals, each with an importance weight.
 
         A *deal* maps every tracked card to the player holding it (known cards to
@@ -233,7 +239,7 @@ class ProbabilityTable:
         ``estimate`` for the typical entry point.
         """
         rng = rng or random.Random()
-        out: List[Tuple[Dict[Card, object], float]] = []
+        out: List[Tuple[Deal, float]] = []
         attempts, limit = 0, n * 100 + 100
         while len(out) < n and attempts < limit:
             attempts += 1
@@ -247,7 +253,7 @@ class ProbabilityTable:
                 % (len(out), n, attempts))
         return out
 
-    def estimate(self, predicate: Callable[[Dict[Card, object]], bool],
+    def estimate(self, predicate: Callable[[Deal], bool],
                  n: int = 10000, rng: Optional[random.Random] = None) -> float:
         """Probability that ``predicate(deal)`` holds, over uniform feasible deals.
 
@@ -262,7 +268,7 @@ class ProbabilityTable:
         numer = sum(w for deal, w in samples if predicate(deal))
         return numer / denom
 
-    def prob_has_at_least_one_exact(self, player, cards: List[Card],
+    def prob_has_at_least_one_exact(self, player: PlayerTagSession, cards: List[Card],
                                     n: int = 10000,
                                     rng: Optional[random.Random] = None) -> float:
         """Exact (sampled) counterpart to ``prob_has_at_least_one``.
@@ -275,19 +281,21 @@ class ProbabilityTable:
             return 0.0
         return self.estimate(lambda deal: any(deal.get(c) == player for c in targets), n, rng)
 
-    def _sample_one_deal(self, rng: random.Random):
+    def _sample_one_deal(self, rng: random.Random) -> Optional[Tuple[Deal, float]]:
         """One forward sampling pass. Returns (deal, generation_prob) or None on a dead end."""
         m = len(self.players)
-        active = [i for i in range(len(self.cards)) if self._is_active(i)]
-        cap = [int(round(c)) for c in self._cap]
-        allowed = {i: [j for j in range(m) if not self._forbidden[i][j]] for i in active}
+        active: List[int] = [i for i in range(len(self.cards)) if self._is_active(i)]
+        cap: List[int] = [int(round(c)) for c in self._cap]
+        allowed: Dict[int, List[int]] = {
+            i: [j for j in range(m) if not self._forbidden[i][j]] for i in active}
 
         assigned: Dict[int, int] = {}
-        remaining = set(active)
+        remaining: Set[int] = set(active)
         gen_p = 1.0
         while remaining:
             # Most-constrained card first (fewest still-eligible players).
-            pick_i, pick_feas = None, None
+            pick_i: Optional[int] = None
+            pick_feas: Optional[List[int]] = None
             for i in remaining:
                 feas = [j for j in allowed[i] if cap[j] > 0]
                 if not feas:
@@ -310,7 +318,7 @@ class ProbabilityTable:
             cap[chosen] -= 1
             remaining.discard(pick_i)
 
-        deal: Dict[Card, object] = {}
+        deal: Deal = {}
         for card, owner in self._resolved.items():
             deal[card] = owner
         for card in self._played:
@@ -326,7 +334,7 @@ class ProbabilityTable:
         except KeyError:
             raise KeyError("card %r is not tracked by this table" % (card,))
 
-    def _col(self, player) -> int:
+    def _col(self, player: PlayerTagSession) -> int:
         try:
             return self._pj[player]
         except KeyError:
@@ -418,7 +426,7 @@ class ProbabilityTable:
                 break
 
     # ── debugging helpers ────────────────────────────────────────────────────
-    def to_dataframe(self):
+    def to_dataframe(self) -> "pandas.DataFrame":  # noqa: F821  (lazy optional dep)
         """Return a labelled pandas DataFrame view (lazy import; debug only)."""
         import pandas as pd  # optional dependency, imported on demand
         data = {p: [self.prob_has_one(p, c) for c in self.cards] for p in self.players}
