@@ -145,13 +145,12 @@ def write_config(path: str, cfg: dict, teams: Dict[str, str], filler_teams: Dict
 
 def build_filler_teams(count: int, max_players: int,
                         registered_teams: Dict[str, str]) -> Dict[str, str]:
-    """Create `count` filler teams with random passwords."""
+    """Create `count` filler teams with known passwords."""
     filler = {}
     for i in range(1, count + 1):
         name = f'filler_{i}'
-        while name in registered_teams or name in filler:
-            name = f'filler_{i}_{secrets.token_hex(2)}'
-        filler[name] = secrets.token_hex(8)
+        assert not name in registered_teams
+        filler[name] = f"{name}_password"
     return filler
 
 
@@ -276,7 +275,8 @@ def start_filler_clients(filler_teams: Dict[str, str], max_players: int,
         ]
         env = {**os.environ, 'PYTHONPATH': os.getcwd()}
         log_file_path = log_path_base / f'{team_name}_{module}.log'
-        with open(log_file_path, 'a') as lf:
+        # Truncate on each new competition rather than appending to stale logs.
+        with open(log_file_path, 'w') as lf:
             proc = subprocess.Popen(cmd, env=env, stdout=lf, stderr=lf)
         procs.append(proc)
         _child_procs.append(proc)

@@ -109,7 +109,7 @@ class RobClaudePlayer(Player):
 
         Calibration goals:
           - QS is uniquely catastrophic (13 pts in one shot)
-          - High spades (AS, KS) risk taking QS from someone else
+          - High spades (AS, KS) risk taking QS from someone else, other spades good to keep to protect from queen
           - High clubs/diamonds force trick wins where opponents dump points
           - High hearts guarantee points AND win tricks; low hearts are nearly harmless
           - Low hearts (≤7) should be less dangerous than high safe-suit cards
@@ -249,7 +249,7 @@ class RobClaudePlayer(Player):
 
 if __name__ == '__main__':
     import time
-    players = [ClaudePlayer, RandomPlayer, RandomPlayer, RandomPlayer]
+    players = [RobClaudePlayer, RandomPlayer, RandomPlayer, RandomPlayer]
     total_games = 0
     games_won = 0
     start_time = time.time()
@@ -257,7 +257,7 @@ if __name__ == '__main__':
     with ManagedConnection() as connection:
         game_results = RunMultipleGames(connection, GameType.ANY, players, 10)
         for result in game_results:
-            if "claude_player" in str(result.winner):
+            if "rob_claude_player" in str(result.winner):
                 games_won += 1
             total_games += 1
 

@@ -2,6 +2,10 @@ directories:
   # Add the directories you want added as source here
   # By default, we've added your entire workspace ('.')
   .
+  # Exclude generated output / log dirs from indexing
+  -log
+  -results
+  -results_ci
 
 # Automatically includes all relevant targets under the 'directories' above
 derive_targets_from_directories: true

@@ -12,7 +12,7 @@ from clients.python.api.networking.ManagedConnection import ManagedConnection
 from clients.python.api.networking.SessionHelpers import RunMultipleGames, MakeAndRunMultipleSessions, WaitForAllSessionsToFinish
 from clients.python.api.Player import Player
 from clients.python.api.Round import Round
-from clients.python.api.types.Card import Card, SortCardsByRank, GroupCardsBySuit
+from clients.python.api.types.Card import Card, Suit, SortCardsByRank, GroupCardsBySuit
 from clients.python.players.random_player import RandomPlayer
 from clients.python.util.Constants import GameType
 from clients.python.api.types.PassDirection import PassDirection
@@ -20,7 +20,7 @@ from clients.python.api.types.PlayerTagSession import PlayerTagSession, PlayerTa
 
 
 class RobPlayer(Player):
-    player_tag = "rob_player"
+    player_tag = "rob_player_dev"
     message_print_logging_enabled = False
 
     def __init__(self, player_tag_session: PlayerTagSession):
@@ -44,7 +44,29 @@ class RobPlayer(Player):
         pass
 
     def get_cards_to_pass(self, pass_dir: PassDirection, receiving_player: PlayerTagSession) -> List[Card]:
-        return SortCardsByRank(self.hand, reverse=True)[:3]
+        cards_to_pass = []
+
+        # First, get rid of AS, KS, QS if we have any.
+        cards_to_pass += [c for c in self.hand if c in [Card("AS"), Card("KS"), Card("QS")]]
+
+        suit_cards = sorted(GroupCardsBySuit(self.hand).items(), key=lambda kv: len(kv[1]))
+        present_suits = [sc[0] for sc in suit_cards]
+        voided_suits = [s for s in Suit if s not in present_suits]
+
+        # Then see if there are any suits we can void.
+        for suit, cards in suit_cards:
+            if len(voided_suits) >= 1:
+                # If we already have a voided suit, lets save the rest of our passing cards for high rank.
+                break
+            # If we can void, all almost void a suit, do so.
+            if suit != Suit.SPADES and len(cards_to_pass) + len(cards) < 4:
+                cards_to_pass += cards[:3]
+
+        ranked_cards = SortCardsByRank(self.hand, reverse=True)
+        cards_to_pass += [c for c in ranked_cards if c not in cards_to_pass][:(3-len(cards_to_pass))]
+
+        assert len(cards_to_pass) == 3
+        return cards_to_pass
 
     def receive_passed_cards(self, cards: List[Card], pass_dir: PassDirection, donating_player: PlayerTagSession) -> None:
         pass
@@ -71,9 +93,9 @@ class RobPlayer(Player):
     @staticmethod
     def get_move_unlikely_to_win_trick(trick: Trick, legal_moves: List[Card]) -> Card:
         legal_moves = SortCardsByRank(legal_moves)
-        fewest_suit, cards = sorted(GroupCardsBySuit(legal_moves).items(), key=lambda kv: kv[1])[0]
+        fewest_suit, cards = sorted(GroupCardsBySuit(legal_moves).items(), key=lambda kv: len(kv[1]))[0]
         if len(trick.moves) == 0:
-            # If starting the trick, play the lowest legal card, we don't want to win tricks
+            # If starting the trick, play the lowest legal card of the suit we're closest to voiding, we don't want to win tricks
             return SortCardsByRank(cards)[0]
         else:
             if legal_moves[0].suit == trick.get_suit():
@@ -89,6 +111,14 @@ class RobPlayer(Player):
                     # If we can't guarantee that we won't win, play the lowest card
                     return legal_moves[0]
             else:
+                # We're voided on this trick, dump our worst card, first a high spade, then the highest ranking card,
+                # preferring hearts.
+                high_spades = [c for c in [Card("QS"), Card("AS"), Card("KS")] if c in legal_moves]
+                if len(high_spades) > 0:
+                    return high_spades[0]
+                high_hearts = [c for c in legal_moves if c.rank == legal_moves[-1].rank and c.suit == Suit.HEARTS]
+                if len(high_hearts) > 0:
+                    return high_hearts[0]
                 return legal_moves[-1]
 
     @staticmethod

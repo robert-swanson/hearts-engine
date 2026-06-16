@@ -1,7 +1,7 @@
 """
-tim_claude_player_moon_aggressive — ClaudePlayer + low-threshold moon offense.
+tim_claude_player_moon_aggressive — RobClaudePlayer + low-threshold moon offense.
 
-Extends ClaudePlayer's defensive heuristic with a moon-shoot offensive
+Extends RobClaudePlayer's defensive heuristic with a moon-shoot offensive
 mode. When the dealt hand has high moon-potential (threshold 13 pre-pass
 / 15 post-receive), the player commits to "shooting the moon":
   - Passes low junk (preserving points-takers + high control cards)
@@ -31,7 +31,7 @@ from clients.python.api.Round import Round
 from clients.python.api.types.Card import Card, Suit, SortCardsByRank, GroupCardsBySuit
 from clients.python.api.types.PassDirection import PassDirection
 from clients.python.api.types.PlayerTagSession import PlayerTagSession
-from clients.python.players.claude_player import RobClaudePlayer as ClaudePlayer
+from clients.python.players.rob_claude_player import RobClaudePlayer
 from clients.python.players.random_player import RandomPlayer
 from clients.python.util.Constants import GameType
 
@@ -44,8 +44,8 @@ KH = Card("KH")
 QH = Card("QH")
 
 
-class TimClaudePlayerMoonAggressive(ClaudePlayer):
-    """ClaudePlayer with aggressive moon-shoot offense (thresholds 13/15)."""
+class TimClaudePlayerMoonAggressive(RobClaudePlayer):
+    """RobClaudePlayer with aggressive moon-shoot offense (thresholds 13/15)."""
     player_tag = "tim_claude_player_moon_aggressive"
 
     PRE_PASS_THRESHOLD: float = 13.0
