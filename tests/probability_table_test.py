@@ -234,6 +234,20 @@ def test_reassign_edge_cases():
     print("PASS: reassign handles unknown card, no-op, and rejects played cards")
 
 
+def test_rule_out_on_played_is_noop():
+    """Ruling a player out of an already-played card is harmless (no error, no effect)."""
+    t = ProbabilityTable(PLAYERS, CARDS, CAPS)
+    t.play("left", C("AS"))
+    before = {p: t.prob_has_one(p, C("KS")) for p in PLAYERS}
+    t.rule_out("across", C("AS"))            # would previously raise "AS has already been played"
+    t.rule_out("left", C("AS"))
+    assert C("AS") in t.played_cards()
+    assert all(t.prob_has_one(p, C("AS")) == 0.0 for p in PLAYERS)
+    for p in PLAYERS:                        # nothing else moved
+        assert approx(t.prob_has_one(p, C("KS")), before[p])
+    print("PASS: rule_out on a played card is a harmless no-op")
+
+
 def test_prob_has_at_least_one():
     t = ProbabilityTable(PLAYERS, CARDS, CAPS)
     v = t.prob_has_at_least_one("left", [C("AH"), C("KH")])
@@ -349,6 +363,7 @@ def run():
     test_sampled_deals_are_valid()
     test_reassign_for_passing()
     test_reassign_edge_cases()
+    test_rule_out_on_played_is_noop()
     test_prob_has_at_least_one()
     test_contradiction_detected()
     test_capacity_validation()

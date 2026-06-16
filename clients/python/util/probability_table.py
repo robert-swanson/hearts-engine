@@ -120,9 +120,16 @@ class ProbabilityTable:
         self._settle()
 
     def rule_out(self, player: PlayerTagSession, card: Card) -> None:
-        """Record the known fact that ``player`` does not hold ``card``."""
+        """Record the known fact that ``player`` does not hold ``card``.
+
+        Ruling a player out of an already-played card is a no-op: the card is in
+        no one's hand, so the statement is trivially true. This makes the common
+        "void in a suit -> rule out every rank of it" idiom safe to call even for
+        ranks already on the table.
+        """
         i, j = self._idx(card), self._col(player)
-        self._reject_if_played(card)
+        if card in self._played:
+            return
         if self._resolved.get(card) == player:
             raise ContradictionError("%r is known to be held by %r" % (card, player))
         if self._void[i][j]:
