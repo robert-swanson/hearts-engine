@@ -31,6 +31,10 @@ h2 {
   border-radius: 10px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
   padding: 16px;
+  /* Wide tables (game lists, per-round breakdowns) scroll sideways within the
+     card at every width instead of spilling past its rounded edge and getting
+     clipped by the page. Matches the mobile behavior, now applied globally. */
+  overflow-x: auto;
 }
 
 table.data {
@@ -432,8 +436,7 @@ button.btn.btn--active:hover {
 
   .card-surface {
     padding: 12px;
-    /* Let wide tables scroll sideways instead of breaking the layout. */
-    overflow-x: auto;
+    /* overflow-x: auto is now on the base rule (applies at every width). */
   }
 
   table.data {
