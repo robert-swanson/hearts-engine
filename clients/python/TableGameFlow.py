@@ -38,7 +38,7 @@ def _rebuild_all_players(
             for trick in past_round.tricks:
                 p.handle_new_trick(trick)
                 for move in trick.moves:
-                    p.handle_move(move.player, move.card)
+                    p.handle_move(trick, move.player, move.card)
                     if move.player == pts and move.card in past_round.ai_hands[pts]:
                         past_round.ai_hands[pts].remove(move.card)
                 p.handle_finished_trick(trick, trick.winner)
@@ -60,14 +60,14 @@ def _rebuild_all_players(
         for trick in current_round.tricks[:-1]:
             p.handle_new_trick(trick)
             for move in trick.moves:
-                p.handle_move(move.player, move.card)
+                p.handle_move(trick, move.player, move.card)
                 if move.player == pts and move.card in current_round.ai_hands[pts]:
                     current_round.ai_hands[pts].remove(move.card)
             p.handle_finished_trick(trick, trick.winner)
 
         p.handle_new_trick(current_trick)
         for move in current_trick.moves:
-            p.handle_move(move.player, move.card)
+            p.handle_move(current_trick, move.player, move.card)
             if move.player == pts and move.card in current_round.ai_hands[pts]:
                 current_round.ai_hands[pts].remove(move.card)
 
@@ -267,7 +267,7 @@ class TableTrick(Trick):
         """Report all buffered human moves to every AI, then clear the buffer."""
         for move in self._move_buffer:
             for p in self.ai_players.values():
-                p.handle_move(move.player, move.card)
+                p.handle_move(self, move.player, move.card)
         self._move_buffer.clear()
 
     def compute_legal_moves(self, hand: List[Card]) -> List[Card]:
@@ -314,7 +314,7 @@ class TableTrick(Trick):
                 self.played_cards.append(card)
                 self.moves.append(Move(seat, card))
                 for p in self.ai_players.values():
-                    p.handle_move(seat, card)
+                    p.handle_move(self, seat, card)
                 i += 1
 
             else:

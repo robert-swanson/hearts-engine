@@ -12,9 +12,10 @@ from clients.python.api.networking.ManagedConnection import ManagedConnection
 from clients.python.api.networking.SessionHelpers import RunMultipleGames, MakeAndRunMultipleSessions, WaitForAllSessionsToFinish
 from clients.python.api.Player import Player
 from clients.python.api.Round import Round
-from clients.python.api.types.Card import Card, Suit, SortCardsByRank, GroupCardsBySuit
+from clients.python.api.types.Card import Card, Suit, Rank, SortCardsByRank, GroupCardsBySuit
 from clients.python.players.random_player import RandomPlayer
 from clients.python.util.Constants import GameType
+from clients.python.util.probability_table import ProbabilityTable
 from clients.python.api.types.PassDirection import PassDirection
 from clients.python.api.types.PlayerTagSession import PlayerTagSession, PlayerTag
 
@@ -27,7 +28,7 @@ class RobPlayer(Player):
         super().__init__(player_tag_session)
         self.hand = []
         self.current_round: Optional[Round] = None
-
+        self.probability_table: Optional[ProbabilityTable] = None
     # Game
     def initialize_for_game(self, game: Game) -> None:
         pass
@@ -39,6 +40,9 @@ class RobPlayer(Player):
     def handle_new_round(self, round: Round) -> None:
         self.hand = round.cards_in_hand
         self.current_round = round
+        self.probability_table = ProbabilityTable(self.current_round.player_order)
+        for card in self.hand:
+            self.probability_table.assign(self.player_tag_session, card)
 
     def handle_finished_round(self, round: Round, round_points: Dict[PlayerTagSession, int]) -> None:
         pass
@@ -66,11 +70,18 @@ class RobPlayer(Player):
         cards_to_pass += [c for c in ranked_cards if c not in cards_to_pass][:(3-len(cards_to_pass))]
 
         assert len(cards_to_pass) == 3
+
+        # Update probabilities
+        receiving_player = pass_dir.get_receiving_player(self.current_round.player_order, self.player_tag_session)
+        for card in cards_to_pass:
+            self.probability_table.reassign(receiving_player, card)
+
         return cards_to_pass
 
     def receive_passed_cards(self, cards: List[Card], pass_dir: PassDirection, donating_player: PlayerTagSession) -> None:
-        pass
-
+        # Update probabilities
+        for card in cards:
+            self.probability_table.assign(self.player_tag_session, card)
     # Trick
     def handle_new_trick(self, trick: Trick) -> None:
         pass
@@ -79,9 +90,14 @@ class RobPlayer(Player):
         pass
 
     # Moves
-    def handle_move(self, player: PlayerTagSession, card: Card,
+    def handle_move(self, trick: Trick, player: PlayerTagSession, card: Card,
                     report_latency_ms=None, decided_move_latency_ms=None) -> None:
-        pass
+        trick_suit = trick.get_suit()
+        if trick_suit is not None and trick_suit != card.suit:
+            # Player couldn't follow suit, so they hold no card of the trick suit.
+            for rank in Rank:
+                self.probability_table.rule_out(player, Card(f"{rank.value}{trick_suit.value}"))
+        self.probability_table.play(player, card)
 
     def get_move(self, trick: Trick, legal_moves: List[Card], move_request_latency_ms=None) -> Card:
         assert len(legal_moves) > 0, "Must have at least one legal move"

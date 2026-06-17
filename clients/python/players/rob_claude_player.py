@@ -82,7 +82,7 @@ class RobClaudePlayer(Player):
     def handle_finished_trick(self, trick: Trick, winning_player: PlayerTagSession) -> None:
         pass
 
-    def handle_move(self, player: PlayerTagSession, card: Card,
+    def handle_move(self, trick: Trick, player: PlayerTagSession, card: Card,
                     report_latency_ms=None, decided_move_latency_ms=None) -> None:
         if self.current_trick is None:
             return

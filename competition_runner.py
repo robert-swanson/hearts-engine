@@ -116,6 +116,7 @@ def write_config(path: str, cfg: dict, teams: Dict[str, str], filler_teams: Dict
         f.write(f"SERVER_ADDR={server_addr}\n")
         # Competition orchestration (read back as defaults next run)
         f.write(f"REGISTRATION_WINDOW={cfg.get('registration_window', 60)}\n")
+        f.write(f"MIN_CLIENT_WINDOW={cfg.get('min_client_window', 30)}\n")
         f.write(f"INTERVAL={cfg['interval']}\n")
         f.write(f"ALIGN_FIRST_TO_INTERVAL={1 if cfg.get('align_first_to_interval') else 0}\n")
         # Tournament rules. QUALIFYING_GAMES_PER_PLAYER is the knob the operator
@@ -329,7 +330,7 @@ def configure_rules(non_interactive: bool = False,
             'multi_team_finals':     d_bool('ALLOW_MULTI_TEAM_FINALS', False),
             'registration_window':   registration_window if registration_window is not None
                                      else d_int('REGISTRATION_WINDOW', 60),
-            'client_window':         20,
+            'min_client_window':     d_int('MIN_CLIENT_WINDOW', 30),
             'interval':              interval if interval is not None
                                      else d_int('INTERVAL', 300),
             'align_first_to_interval': d_bool('ALIGN_FIRST_TO_INTERVAL', False),
@@ -375,7 +376,8 @@ def configure_rules(non_interactive: bool = False,
         'qualifying_points':  prompt('Qualifying points (1st,2nd,3rd,4th)', d_str('QUALIFYING_POINTS', '10,5,3,1')),
         'multi_team_finals':  prompt('Allow same team in finals? (y/n)', 'y' if d_bool('ALLOW_MULTI_TEAM_FINALS', False) else 'n').lower() == 'y',
         'registration_window': registration_window,
-        'client_window':      30,
+        'min_client_window':  int(prompt('Min client window — registration floor (s)',
+                                         d_int('MIN_CLIENT_WINDOW', 30))),
         'interval':           interval if interval is not None else int(prompt('Interval between tournaments (s)', d_int('INTERVAL', 300))),
         'align_first_to_interval': prompt('Align first tournament to an interval-multiple wall-clock time? (y/n)',
                                           'y' if d_bool('ALIGN_FIRST_TO_INTERVAL', False) else 'n').lower() == 'y',
@@ -441,9 +443,9 @@ def compute_next_start(now: float, interval: int, prev_start: Optional[int],
 def run_competition(cfg: dict, real_teams: Dict[str, str],
                     config_path: str, available_modules: List[str],
                     public_addr: str = '127.0.0.1'):
-    interval      = cfg['interval']
-    client_window = cfg.get('client_window', 30)
-    host          = '127.0.0.1'
+    interval          = cfg['interval']
+    min_client_window = cfg.get('min_client_window', 30)
+    host              = '127.0.0.1'
     port          = cfg['port']
     max_players   = cfg['max_players']
 
@@ -493,10 +495,12 @@ def run_competition(cfg: dict, real_teams: Dict[str, str],
         filler_ais=cfg.get('filler_team_ais', ['random_player'] * filler_count),
         log_dir=cfg.get('log_dir', './log'))
 
-    # Registration window: opens the moment the previous tournament completes and
-    # is always at least 10s. `client_window` is the configured minimum.
+    # Registration window: opens the moment the previous tournament completes, so
+    # a repeat tournament whose start is further out than `min_client_window`
+    # opens its client window early (the full gap). `min_client_window` is just
+    # the floor; the window is always at least 10s regardless.
     align_first = cfg.get('align_first_to_interval', False)
-    min_registration = max(10, client_window)
+    min_registration = max(10, min_client_window)
 
     print(f'\n=== Starting competition loop ===')
     print(f'Teams: {list(real_teams.keys())}')

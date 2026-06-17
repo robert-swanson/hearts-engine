@@ -58,11 +58,11 @@ class DebuggerPlayer(MadisonPlayer):
         super().handle_finished_trick(trick, winning_player)
 
     # Moves
-    def handle_move(self, player: PlayerTagSession, card: Card,
+    def handle_move(self, trick: Trick, player: PlayerTagSession, card: Card,
                     report_latency_ms=None, decided_move_latency_ms=None) -> None:
         if player != self.player_tag_session:
             print(f"\t\t{self.nicknames[player]} played {card}")
-        super().handle_move(player, card, report_latency_ms=report_latency_ms,
+        super().handle_move(trick, player, card, report_latency_ms=report_latency_ms,
                             decided_move_latency_ms=decided_move_latency_ms)
 
     def get_move(self, trick: Trick, legal_moves: List[Card], move_request_latency_ms=None) -> Card:

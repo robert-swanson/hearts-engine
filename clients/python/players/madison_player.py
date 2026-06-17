@@ -55,7 +55,7 @@ class MadisonPlayer(Player):
         pass
 
     # Moves
-    def handle_move(self, player: PlayerTagSession, card: Card,
+    def handle_move(self, trick: Trick, player: PlayerTagSession, card: Card,
                     report_latency_ms=None, decided_move_latency_ms=None) -> None:
         pass
 
