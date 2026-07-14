@@ -1,6 +1,9 @@
 #pragma once
 
 #include <cstdio>
+#include <cstring>
+#include <filesystem>
+#include <system_error>
 
 #include "dates.h"
 #include "server/api/message.h"
@@ -18,11 +21,28 @@ public:
     }
 
     explicit ThreadSafeLogger(const std::filesystem::path& logFilePath) {
-        std::filesystem::create_directories(logFilePath.parent_path());
-        ASRT(!std::filesystem::exists(logFilePath), "log file %s already exists", logFilePath.c_str());
-        mLogFile = fopen(logFilePath.c_str(), "w");
+        // Log-file setup must never take the process down: the server runs many
+        // concurrent games, and aborting them all because one log file could not
+        // be created (disk full, permissions, name collision) turns a local
+        // problem into a total outage. Fall back to stderr and keep serving.
+        std::error_code ec;
+        std::filesystem::create_directories(logFilePath.parent_path(), ec);
+        if (ec)
+        {
+            fprintf(stderr, "Could not create log directory %s (%s); logging to stderr\n",
+                    logFilePath.parent_path().c_str(), ec.message().c_str());
+            mLogFile = stderr;
+            return;
+        }
+        if (std::filesystem::exists(logFilePath, ec))
+            fprintf(stderr, "Log file %s already exists; appending\n", logFilePath.c_str());
+        mLogFile = fopen(logFilePath.c_str(), "a");
         if (mLogFile == nullptr)
-            DIE("Failed to open log file %s: %s", logFilePath.c_str(), strerror(errno));
+        {
+            fprintf(stderr, "Failed to open log file %s (%s); logging to stderr\n",
+                    logFilePath.c_str(), strerror(errno));
+            mLogFile = stderr;
+        }
     }
 
     void Log(const char *message, ...)

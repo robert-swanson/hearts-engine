@@ -32,3 +32,13 @@ cc_test(
     copts = ["-std=c++17"],
     deps = [":test"],
 )
+
+cc_test(
+    name = "validation_test",
+    srcs = ["validation_gtest.cpp"],
+    copts = ["-std=c++17"],
+    deps = [
+        ":test",
+        "//server/util",
+    ],
+)

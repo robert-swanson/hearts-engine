@@ -103,6 +103,16 @@ public:
         }});
     }
 
+    // Clamp a client-derived latency to a sane range: negative (client clock
+    // skew or a lying client) becomes "unavailable" (-1); values above an hour
+    // are capped so summed stats can't be blown up by one absurd timestamp.
+    static long clampLatency(long ms)
+    {
+        static constexpr long kMaxLatencyMs = 60L * 60L * 1000L;
+        if (ms < 0) return -1;
+        return ms > kMaxLatencyMs ? kMaxLatencyMs : ms;
+    }
+
     // Returns wall-clock milliseconds since epoch.
     static long nowMs()
     {
@@ -138,16 +148,30 @@ public:
                     Game::Card card(j[Tags::CARD].get<std::string>());
                     if (legalPlays.contains(card))
                     {
-                        // Extract latency metadata from the decided_move
-                        if (j.contains(Tags::SENT_AT_MS))
+                        // Extract latency metadata from the decided_move. Parsed in
+                        // its own try/catch: the metadata is optional client-supplied
+                        // telemetry, and a malformed value must not void a legal card
+                        // (falling through would auto-play a different one). Values
+                        // are clamped — client clocks are untrusted, and a bogus
+                        // timestamp shouldn't poison the recorded stats with
+                        // negative/absurd latencies.
+                        try
                         {
-                            long clientSentAt = j[Tags::SENT_AT_MS].get<long>();
-                            mLastC2SLatencyMs  = receivedAt - clientSentAt;
-                            if (j.contains(Tags::PREV_LATENCY_MS))
+                            if (j.contains(Tags::SENT_AT_MS))
                             {
-                                mLastS2CLatencyMs = j[Tags::PREV_LATENCY_MS].get<long>();
-                                mLastThinkTimeMs  = clientSentAt - sentAt - mLastS2CLatencyMs;
+                                long clientSentAt = j[Tags::SENT_AT_MS].get<long>();
+                                mLastC2SLatencyMs  = clampLatency(receivedAt - clientSentAt);
+                                if (j.contains(Tags::PREV_LATENCY_MS))
+                                {
+                                    mLastS2CLatencyMs = clampLatency(j[Tags::PREV_LATENCY_MS].get<long>());
+                                    mLastThinkTimeMs  = (mLastS2CLatencyMs >= 0)
+                                        ? clampLatency(clientSentAt - sentAt - mLastS2CLatencyMs) : -1;
+                                }
                             }
+                        }
+                        catch (...)
+                        {
+                            mLastS2CLatencyMs = mLastC2SLatencyMs = mLastThinkTimeMs = -1;
                         }
                         return card;
                     }

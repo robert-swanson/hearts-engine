@@ -71,7 +71,7 @@ public:
 
 private:
     PlayerGameSessionID mSessionID;
-    int16_t mSeqNum;
+    uint16_t mSeqNum;
 };
 
 }

@@ -95,6 +95,12 @@ public:
         return mConnection.sessionLastReceiveWasGiveUp(mGameSessionID);
     }
 
+    // True once the underlying connection has marked this session dead (client
+    // socket EOF/reset, or a failed send). Used to prune stale lobby entries.
+    bool isDisconnected() {
+        return mConnection.isSessionDisconnected(mGameSessionID);
+    }
+
 
 private:
     uint16_t getSeqNumAndIncrement()
