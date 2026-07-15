@@ -58,8 +58,8 @@ class Rank(Enum):
 class Card:
     def __init__(self, card_str: str):
         assert len(card_str) == 2, f"Card str must be 2 chars but was '{card_str}'"
-        self.rank = Rank(card_str[0])
-        self.suit = Suit(card_str[1])
+        self.rank = Rank(card_str[0].upper())
+        self.suit = Suit(card_str[1].upper())
 
     def __repr__(self):
         return f"{self.rank.value}{self.suit.value}"
