@@ -72,3 +72,29 @@ TEST_F(TrickTest, LegalMovesForPlayer_LeadingPlayExcludesPoints)
     EXPECT_FALSE(legalMoves.contains(Card(QUEEN, SPADES)));
     EXPECT_TRUE(legalMoves.contains(Card(ACE, CLUBS)));
 }
+
+// On the first trick a player void in the led suit may not dump points (hearts
+// or the Queen of Spades) as long as they hold any non-point card.
+TEST_F(TrickTest, LegalMovesForPlayer_FirstTrickExcludesHeartsAndQueen)
+{
+    mTrick.RunTrick();
+    mPlayers[0].get()->assignHand(CardCollection{{"AH", "KH", "QS", "AS", "AD"}});
+    auto legalMoves = mTrick.legalMovesForPlayer(mPlayers[0]);
+    EXPECT_FALSE(legalMoves.contains([](Card card){return card.getSuit() == HEARTS;}));
+    EXPECT_FALSE(legalMoves.contains(Card(QUEEN, SPADES)));
+    EXPECT_TRUE(legalMoves.contains(Card(ACE, SPADES)));
+    EXPECT_TRUE(legalMoves.contains(Card(ACE, DIAMONDS)));
+}
+
+// The one exception: a player whose legal moves are entirely point cards is
+// forced to play one on the first trick.
+TEST_F(TrickTest, LegalMovesForPlayer_FirstTrickAllowsPointsWhenOnlyPoints)
+{
+    mTrick.RunTrick();
+    mPlayers[0].get()->assignHand(CardCollection{{"AH", "KH", "QS"}});
+    auto legalMoves = mTrick.legalMovesForPlayer(mPlayers[0]);
+    EXPECT_TRUE(legalMoves.contains(Card(ACE, HEARTS)));
+    EXPECT_TRUE(legalMoves.contains(Card(KING, HEARTS)));
+    EXPECT_TRUE(legalMoves.contains(Card(QUEEN, SPADES)));
+    EXPECT_EQ(legalMoves.size(), 3);
+}
