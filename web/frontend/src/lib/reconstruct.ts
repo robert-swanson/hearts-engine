@@ -61,7 +61,8 @@ export function heartsBrokenBefore(round: RoundRecord, trickIndex: number): bool
  * `Trick::legalMovesForPlayer` (server/game/trick.h):
  *  - Following a led suit: must play that suit if holding any.
  *  - Leading before hearts are broken: cannot lead a heart unless hearts-only.
- *  - First trick: leader must play the 2♣; followers cannot play the Q♠.
+ *  - First trick: leader must play the 2♣; no one may play points (hearts or
+ *    the Q♠) unless their only legal cards are points.
  * `ledSuit` is null when this player is leading the trick.
  */
 export function legalMovesForHand(
@@ -87,7 +88,9 @@ export function legalMovesForHand(
     if (leadingPlay) {
       return hand.includes(STARTING_CARD) ? [STARTING_CARD] : legal
     }
-    legal = legal.filter((c) => c !== 'QS')
+    // No points (hearts or the Q♠) on the first trick unless nothing else is legal.
+    const nonPoints = legal.filter((c) => parseCard(c).suit !== 'H' && c !== 'QS')
+    if (nonPoints.length > 0) legal = nonPoints
   }
 
   return legal
@@ -99,7 +102,8 @@ export function legalMovesForHand(
  *   - must follow the led suit if able;
  *   - the leader may not lead hearts until hearts are broken (unless they hold
  *     only hearts);
- *   - on the first trick the leader must play 2♣ and no one may play the Q♠.
+ *   - on the first trick the leader must play 2♣ and no one may play points
+ *     (hearts or the Q♠) unless their only legal cards are points.
  * Hearts are "broken" once any heart has been played in an earlier trick.
  */
 export function legalMovesBeforePlay(
@@ -143,7 +147,9 @@ export function legalMovesBeforePlay(
 
   if (trickIndex === 0) {
     if (leading) return legal.includes('2C') ? ['2C'] : legal
-    legal = legal.filter((c) => c !== 'QS')
+    // No points (hearts or the Q♠) on the first trick unless nothing else is legal.
+    const nonPoints = legal.filter((c) => c[1] !== 'H' && c !== 'QS')
+    if (nonPoints.length > 0) legal = nonPoints
   }
   return legal
 }

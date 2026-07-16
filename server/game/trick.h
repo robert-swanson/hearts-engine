@@ -133,9 +133,15 @@ public:
                 ASRT(legalMoves.contains(Constants::STARTING_CARD), "Starting card not found in first player");
                 return CardCollection{Constants::STARTING_CARD};
             }
-            legalMoves = legalMoves.filter([](Card card) {
-                return (card != Card(QUEEN, SPADES));
+            // No points (hearts or the Queen of Spades) may be played on the first
+            // trick. The only exception is when a player's legal moves are entirely
+            // point cards (e.g. void in the led suit and holding only hearts/QS), in
+            // which case they are forced to play one.
+            CardCollection nonPointMoves = legalMoves.filter([](Card card) {
+                return card.getSuit() != HEARTS and card != Card(QUEEN, SPADES);
             });
+            if (not nonPointMoves.empty())
+                legalMoves = nonPointMoves;
         }
         return legalMoves;
     }
