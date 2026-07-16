@@ -20,6 +20,7 @@ namespace Common::Server::Tags
 {
     constexpr auto TYPE = "type";
     constexpr auto STATUS = "status";
+    constexpr auto REASON = "reason";
     constexpr auto SESSION_ID = "session_id";
     constexpr auto SEQ_NUM = "seq_num";
     constexpr auto PLAYER_TAG = "player_tag";
@@ -108,4 +109,8 @@ namespace Common::Server::ServerStatus
     constexpr auto SUCCESS = "success";
 
     constexpr auto UNKNOWN_PLAYER_ID = "unknown_player_id";
+
+    // Session request rejected (bad/missing player_tag or lobby_code, or a
+    // per-connection/server resource cap was hit). Sent with a "reason" tag.
+    constexpr auto INVALID_REQUEST = "invalid_request";
 }

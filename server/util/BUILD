@@ -10,8 +10,9 @@ cc_library(
         "env.h",
         "logging.h",
         "types.h",
+        "validation.h",
     ],
-    visibility = ["//server:__subpackages__"],
+    visibility = ["//server:__subpackages__", "//tests:__pkg__"],
     deps = [
         "@boost.asio",
         "@nlohmann_json//:json",

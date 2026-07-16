@@ -60,6 +60,7 @@
 #include "server/util/env.h"
 #include "server/util/logging.h"
 #include "server/util/types.h"
+#include "server/util/validation.h"
 
 using namespace boost::asio;
 using namespace Common;
@@ -244,6 +245,36 @@ struct TournamentLobby {
             // than having to wait out a timeout before retrying.
             conn.shutdownSocket();
             return 0;
+        }
+
+        // Even an authenticated client doesn't get to inject arbitrary bytes:
+        // the tag lands in slot IDs ("team/tag/slot"), log lines, and result
+        // JSON, so it must be printable and free of the server's delimiters.
+        if (!Validation::IsValidPlayerTag(tag))
+        {
+            LOG("Registration rejected (invalid player_tag) for team '%s' from %s:%d",
+                team.c_str(), conn.clientIP(), conn.clientPort());
+            conn.shutdownSocket();
+            return 0;
+        }
+
+        // Cap registrations per team. The roster builder only ever uses the top
+        // MAX_PLAYERS_PER_TEAM entries, so a generous multiple preserves the
+        // "register extra, best-priority wins" workflow while stopping a client
+        // with valid credentials from growing the player list without bound.
+        {
+            size_t cap = std::max<size_t>(64, 4 * (size_t)std::max(cfg.maxPlayersPerTeam, 1));
+            std::lock_guard<std::mutex> lock(mtx);
+            size_t teamCount = 0;
+            for (const auto& p : players)
+                if (p.teamName == team) teamCount++;
+            if (teamCount >= cap)
+            {
+                LOG("Registration rejected (team '%s' already has %zu registrations) from %s:%d",
+                    team.c_str(), teamCount, conn.clientIP(), conn.clientPort());
+                conn.shutdownSocket();
+                return 0;
+            }
         }
 
         PlayerGameSessionID sid = sessionCounter.fetch_add(1);

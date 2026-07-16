@@ -6,6 +6,7 @@
 #include "server/game/remote_player.h"
 #include "server/util/dates.h"
 #include "server/util/env.h"
+#include "server/util/validation.h"
 #include "lobby.h"
 
 namespace Common::Server
@@ -31,17 +32,40 @@ public:
         return Matcher::instance;
     }
 
+    // Sessions one client may open on a single connection. Batch testing
+    // legitimately multiplexes 64+ sessions; this only stops a client from
+    // opening sessions (and eventually games/threads) without bound.
+    static constexpr size_t MAX_SESSIONS_PER_CONNECTION = 512;
+
+    // Distinct lobby codes the server will track at once. Lobbies are never
+    // reclaimed, so without a cap a client spamming random codes grows the map
+    // (and strands a session in each) indefinitely.
+    static constexpr size_t MAX_LOBBIES = 4096;
+
     static PlayerGameSessionID HandleSessionRequest(ManagedConnection &connection, Message::Message message)
     {
+        if (!message.hasTag(Tags::PLAYER_TAG))
+            return rejectSessionRequest(connection, "missing player_tag");
         auto playerTag = message.getTag<PlayerTag>(Tags::PLAYER_TAG);
+        if (!Validation::IsValidPlayerTag(playerTag))
+            return rejectSessionRequest(connection, "invalid player_tag");
+
         LobbyCode lobbyCode = DEFAULT_LOBBY_CODE;
         if (message.hasTag(Tags::LOBBY_CODE))
         {
             lobbyCode = message.getTag<std::string>(Tags::LOBBY_CODE);
             lobbyCode = lobbyCode.empty() ? DEFAULT_LOBBY_CODE : lobbyCode;
+            if (!Validation::IsValidLobbyCode(lobbyCode))
+                return rejectSessionRequest(connection, "invalid lobby_code");
         }
 
+        if (connection.sessionCount() >= MAX_SESSIONS_PER_CONNECTION)
+            return rejectSessionRequest(connection, "too many sessions on this connection");
+
         Matcher & matcher = GetInstance();
+        if (!matcher.lobbyAvailable(lobbyCode))
+            return rejectSessionRequest(connection, "too many active lobbies");
+
         auto session = matcher.createPlayerGameSession(connection, playerTag);
         matcher.addPlayer(session, lobbyCode);
         return session->getGameSessionID();
@@ -67,16 +91,50 @@ public:
 
     void addPlayer(const SessionRef& playerSession, const LobbyCode& lobbyCode)
     {
-        if (mLobbies.find(lobbyCode) == mLobbies.end())
+        // Session requests arrive concurrently from per-connection threads, so
+        // the lobby map itself needs a lock. Match players outside of it: a
+        // matched game does its (potentially slow) setup in Lobby::addPlayer,
+        // which must not block session requests for other lobbies.
+        Lobby* lobby;
         {
-            mLobbies.emplace(lobbyCode, lobbyCode);
+            std::lock_guard<std::mutex> lock(mLobbiesMtx);
+            auto it = mLobbies.find(lobbyCode);
+            if (it == mLobbies.end())
+                it = mLobbies.emplace(std::piecewise_construct,
+                                      std::forward_as_tuple(lobbyCode),
+                                      std::forward_as_tuple(lobbyCode)).first;
+            lobby = &it->second;
         }
-        mLobbies.at(lobbyCode).addPlayer(playerSession);
+        lobby->addPlayer(playerSession);
     }
 
+    // Whether a session request for this lobby code can be accepted without
+    // growing the lobby map past its cap.
+    bool lobbyAvailable(const LobbyCode& lobbyCode)
+    {
+        std::lock_guard<std::mutex> lock(mLobbiesMtx);
+        return mLobbies.size() < MAX_LOBBIES || mLobbies.find(lobbyCode) != mLobbies.end();
+    }
 
 private:
+    // Reject a malformed/over-limit session request: tell the client why, keep
+    // the connection alive, and create no session (0 = reserved "no session").
+    static PlayerGameSessionID rejectSessionRequest(ManagedConnection &connection, const char* reason)
+    {
+        LOG("Rejected session request from %s:%d: %s",
+            connection.clientIP(), connection.clientPort(), reason);
+        Message::SessionMessage response(
+            Message::Message(ServerMsgTypes::GAME_SESSION_RESPONSE, {
+                {Tags::STATUS, ServerStatus::INVALID_REQUEST},
+                {Tags::REASON, reason}
+            }),
+            /*sessionID=*/0, /*seqNum=*/0);
+        connection.sendOnSession(response, 0);
+        return 0;
+    }
+
     std::atomic<PlayerGameSessionID> sessionCounter;
+    std::mutex mLobbiesMtx;
     std::map<LobbyCode, Lobby> mLobbies;
 };
 }

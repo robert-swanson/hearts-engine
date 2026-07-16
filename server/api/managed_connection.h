@@ -111,8 +111,21 @@ public:
                     }
                     {
                         std::lock_guard<std::mutex> sessLock(parts->mutex);
-                        parts->unprocessedReceivedMessages.push_back(sessionMessage);
-                        parts->waitCondition.notify_all();
+                        // Cap the per-session queue: a client that floods messages
+                        // faster than the game consumes them must not grow server
+                        // memory without bound. Legitimate clients only ever have a
+                        // handful of messages in flight.
+                        static constexpr size_t kMaxQueuedMessagesPerSession = 256;
+                        if (parts->unprocessedReceivedMessages.size() >= kMaxQueuedMessagesPerSession)
+                        {
+                            LOG("Client at %s:%d flooded session %lld (queue full); dropping message",
+                                this->mClientIP, this->mClientPort, (long long) sessionId);
+                        }
+                        else
+                        {
+                            parts->unprocessedReceivedMessages.push_back(sessionMessage);
+                            parts->waitCondition.notify_all();
+                        }
                     }
                 }
             }
@@ -166,6 +179,24 @@ public:
         }
     }
 
+    // True if this specific session has been marked disconnected.
+    bool isSessionDisconnected(PlayerGameSessionID sessionId)
+    {
+        std::lock_guard<std::mutex> mapLock(mSessionsMtx);
+        auto it = playerGameSessions.find(sessionId);
+        if (it == playerGameSessions.end())
+            return true;
+        std::lock_guard<std::mutex> lock(it->second->mutex);
+        return it->second->disconnected;
+    }
+
+    // Number of sessions registered on this connection (live or disconnected).
+    size_t sessionCount()
+    {
+        std::lock_guard<std::mutex> mapLock(mSessionsMtx);
+        return playerGameSessions.size();
+    }
+
     // True if any session on this connection has been marked disconnected (the
     // ConnectionListener sets this when the client's socket hits EOF / reset).
     // Used by the tournament lobby to drop players whose clients have dropped.
@@ -205,7 +236,21 @@ public:
 
     void sendOnSession(const Message::SessionMessage& message, PlayerGameSessionID sessionID)
     {
-        send(message);
+        try
+        {
+            send(message);
+        }
+        catch (const std::exception& e)
+        {
+            // A write to a dead socket (broken pipe / connection reset) must not
+            // abort the game loop: the other three players' game keeps running and
+            // this player's remaining moves are auto-played. Mark every session on
+            // this connection disconnected so receives return immediately.
+            LOG("Send failed on session %lld to client at %s:%d (%s); marking connection dead",
+                (long long) sessionID, this->mClientIP, this->mClientPort, e.what());
+            disconnectAllSessions();
+            return;
+        }
 
         SessionParts* parts = nullptr;
         {

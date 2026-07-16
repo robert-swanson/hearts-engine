@@ -1,6 +1,7 @@
 #pragma once
 
 #include <iostream>
+#include <stdexcept>
 #include "server/util/assertions.h"
 
 namespace Common::Game
@@ -171,7 +172,11 @@ public:
 
     explicit Card(const std::string& abbreviation)
     {
-        ASRT_EQ(abbreviation.size(), 2);
+        // Throw (not ASRT) — this constructor parses client-supplied strings,
+        // and callers catch std::invalid_argument to auto-substitute a move.
+        // An assert here would let a malformed message abort the whole server.
+        if (abbreviation.size() != 2)
+            throw std::invalid_argument("Card abbreviation must be exactly 2 characters");
         rank = RankFromAbbreviation(abbreviation.substr(0, 1));
         suit = SuitFromAbbreviation(abbreviation.substr(1, 1));
     }
