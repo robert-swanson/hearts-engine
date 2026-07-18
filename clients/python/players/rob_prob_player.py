@@ -115,6 +115,7 @@ class RobProbPlayer(Player):
         best_move_probability_of_winning = 100
         best_move_dump_value = 0
         queen_played = Card("QS") in round.get_played_cards()
+        played = round.get_played_cards()
         for move in legal_moves:
             trick_suit = trick.get_suit() or move.suit
             # Determine the value of getting rid of this card.
@@ -141,11 +142,8 @@ class RobProbPlayer(Player):
             elif len(trick.moves) == 3:
                 win_probability = 1.0  # last move would definitely win
             else:
-                superior_cards = [Card(f"{r.value}{trick_suit.value}") for r in Rank if r > move.rank]
-                played = round.get_played_cards()
-                cards_in_trick = [m.card for m in trick.moves]
-                unplayed_superior_cards = [c for c in superior_cards
-                                           if c not in played and c not in cards_in_trick]
+                suit_cards = [Card(f"{r.value}{trick_suit.value}") for r in Rank]
+                unplayed_suit = [c for c in suit_cards if c not in played and c != move]
 
                 player_idx = round.player_order.index(this_player)
                 players_after = [round.player_order[(player_idx + i) % 4]
@@ -153,16 +151,19 @@ class RobProbPlayer(Player):
 
                 def would_win(deal: Deal) -> bool:
                     # I win unless a player still to act holds a higher card of the led suit.
-                    for player in players_after:
-                        for c in unplayed_superior_cards:
-                            if deal[c] == player:
+                    potential_takers = players_after
+                    for c in unplayed_suit:
+                        player: Optional[PlayerTagSession] = deal[c]
+                        if player is not None and player in potential_takers:
+                            if c.rank > move.rank:
                                 return False
+                            else:
+                                potential_takers.remove(player)
+                                if len(potential_takers) == 0:
+                                    return True
                     return True
 
-                if not unplayed_superior_cards or not players_after:
-                    win_probability = 1.0
-                else:
-                    win_probability = self.probability_table.estimate(would_win, n=100)
+                win_probability = self.probability_table.estimate(would_win, n=100)
 
                 if win_probability > 0 and win_probability < 1:
                     # Odds of saftey cut in half by each point
