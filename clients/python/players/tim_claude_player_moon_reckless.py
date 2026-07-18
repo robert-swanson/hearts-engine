@@ -1,7 +1,7 @@
 """
-tim_claude_player_moon_reckless — ClaudePlayer + very-aggressive moon offense.
+tim_claude_player_moon_reckless — RobClaudePlayer + very-aggressive moon offense.
 
-Extends ClaudePlayer's defensive heuristic with a moon-shoot offensive
+Extends RobClaudePlayer's defensive heuristic with a moon-shoot offensive
 mode at the lowest practically useful commit thresholds (11/13).
 Compared to tim_claude_player_moon_aggressive (13/15), this player commits
 to shooting in even more borderline hands.
@@ -41,7 +41,7 @@ from clients.python.api.Round import Round
 from clients.python.api.types.Card import Card, Suit, SortCardsByRank, GroupCardsBySuit
 from clients.python.api.types.PassDirection import PassDirection
 from clients.python.api.types.PlayerTagSession import PlayerTagSession
-from clients.python.players.claude_player import RobClaudePlayer as ClaudePlayer
+from clients.python.players.rob_claude_player import RobClaudePlayer
 from clients.python.players.random_player import RandomPlayer
 from clients.python.util.Constants import GameType
 
@@ -54,8 +54,8 @@ KH = Card("KH")
 QH = Card("QH")
 
 
-class TimClaudePlayerMoonReckless(ClaudePlayer):
-    """ClaudePlayer with reckless moon-shoot offense (thresholds 11/13)."""
+class TimClaudePlayerMoonReckless(RobClaudePlayer):
+    """RobClaudePlayer with reckless moon-shoot offense (thresholds 11/13)."""
     player_tag = "tim_claude_player_moon_reckless"
 
     PRE_PASS_THRESHOLD: float = 11.0

@@ -86,11 +86,12 @@ class Player(ABC):
         pass
 
     # Moves
-    def handle_move(self, player: PlayerTagSession, card: Card,
+    def handle_move(self, trick: Trick, player: PlayerTagSession, card: Card,
                     report_latency_ms: Optional[int] = None,
                     decided_move_latency_ms: Optional[int] = None) -> None:
         """
         Signals that a move was made by a player (including self).
+        :param trick: A reference object (same as passed by `handle_new_trick`) that can be queried for information about the trick
         :param player: The player who made the move
         :param card: The card that was played
         :param report_latency_ms: s2c latency of this move_report in ms (None if unavailable)

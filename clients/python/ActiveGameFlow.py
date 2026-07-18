@@ -149,7 +149,7 @@ class ActiveTrick(PassingMessenger, Trick):
                 player.handle_auto_move()
 
             self.moves.append(Move(reported_player, reported_card))
-            player.handle_move(reported_player, reported_card,
+            player.handle_move(self, reported_player, reported_card,
                                report_latency_ms=report_latency_ms,
                                decided_move_latency_ms=decided_move_c2s_ms)
 

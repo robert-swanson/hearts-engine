@@ -101,7 +101,7 @@ class TimClaudeHeuristic(Player):
             self._last_winner = winner
             self._streak = 1
 
-    def handle_move(self, player, card: Card,
+    def handle_move(self, trick: Trick, player, card: Card,
                     report_latency_ms: Optional[int] = None,
                     decided_move_latency_ms: Optional[int] = None) -> None:
         self.played_cards.add(card)

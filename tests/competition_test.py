@@ -20,6 +20,7 @@ Run from repo root:
 Exit 0 on pass, 1 on any failure.
 """
 
+import atexit
 import json
 import os
 import socket
@@ -37,12 +38,60 @@ REGISTRATION_WINDOW = 15    # seconds — short for CI; all registrations are sc
 INTERVAL            = 15    # seconds between tournaments — short so the test finishes fast
 TIMEOUT_PER_TOURNAMENT = 240  # seconds to wait for each tournament result
 RESULTS_DIR = './results'
+CONFIG_PATH = Path('tournament_server.env')
+NUM_FILLERS = 4             # fast, deterministic fillers for the pipeline test
 
 # Two real teams for this test
 TEAMS: Dict[str, str] = {
     'ci_alpha': 'ci_alpha_pw',
     'ci_beta':  'ci_beta_pw',
 }
+
+
+def seed_ci_config():
+    """Give the competition runner a small, deterministic config for this test.
+
+    competition_runner.py reads its filler roster, game counts, and per-move
+    timeout from tournament_server.env. That committed file is the *production*
+    competition config — heavyweight AI-player fillers and hundreds of finals
+    games — which cannot converge inside TIMEOUT_PER_TOURNAMENT and would make
+    this pipeline test flaky/timeout-bound. Seed a light CI roster instead
+    (NUM_FILLERS random_player fillers, few games, generous move timeout) and
+    restore the operator's original file afterward so running this test locally
+    is non-destructive."""
+    original = CONFIG_PATH.read_text() if CONFIG_PATH.exists() else None
+    filler_ais = ','.join(['random_player'] * NUM_FILLERS)
+    CONFIG_PATH.write_text(
+        "SERVER_ADDR=127.0.0.1\n"
+        f"REGISTRATION_WINDOW={REGISTRATION_WINDOW}\n"
+        "MIN_CLIENT_WINDOW=20\n"
+        f"INTERVAL={INTERVAL}\n"
+        "ALIGN_FIRST_TO_INTERVAL=0\n"
+        "QUALIFYING_GAMES_PER_PLAYER=8\n"
+        "FILLER_ONLY_IF_NEEDED=0\n"
+        "FINALS_GAMES=10\n"
+        "MAX_PLAYERS_PER_TEAM=4\n"
+        "QUALIFYING_POINTS=10,5,3,1\n"
+        "ALLOW_MULTI_TEAM_FINALS=0\n"
+        f"RESULTS_DIR={RESULTS_DIR}\n"
+        "LOG_DIR=./log\n"
+        "AUTO_MOVE_AFTER_TIMEOUTS=4\n"
+        "MOVE_TIMEOUT_MS=5000\n"
+        "MAX_CONCURRENT_GAMES_PER_TEAM=16\n"
+        "FALLBACK_PLAYER_TAG=none\n"
+        f"NUM_FILLER_TEAMS={NUM_FILLERS}\n"
+        f"FILLER_TEAM_AIS={filler_ais}\n"
+    )
+
+    def _restore():
+        # The runner rewrites tournament_server.env while it runs; put the
+        # operator's committed version back regardless of how the test exits.
+        if original is None:
+            CONFIG_PATH.unlink(missing_ok=True)
+        else:
+            CONFIG_PATH.write_text(original)
+    atexit.register(_restore)
+
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -115,7 +164,7 @@ def validate_result(data: dict, result_dir: Optional[Path], label: str) -> list:
 
     team_names = {k.split('/')[0] for k in qtotals}
     fillers = {t for t in team_names if t.startswith('filler_')}
-    expected_fillers = 4  # always 4 fillers regardless of real team count
+    expected_fillers = NUM_FILLERS  # seeded CI roster (see seed_ci_config)
     if len(fillers) != expected_fillers:
         errors.append(
             f"{label}: expected {expected_fillers} filler team(s), got {len(fillers)}: {fillers}"
@@ -207,6 +256,8 @@ def kill_clients(procs: list):
 def main():
     repo_root = Path(__file__).parent.parent
     os.chdir(repo_root)
+    # Isolate the test from the committed production roster in tournament_server.env.
+    seed_ci_config()
     Path(RESULTS_DIR).mkdir(parents=True, exist_ok=True)
     Path('log').mkdir(exist_ok=True)
 

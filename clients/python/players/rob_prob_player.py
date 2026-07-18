@@ -13,15 +13,15 @@ from clients.python.api.networking.SessionHelpers import RunMultipleGames, MakeA
 from clients.python.api.Player import Player
 from clients.python.api.Round import Round
 from clients.python.api.types.Card import Card, Suit, Rank, SortCardsByRank, GroupCardsBySuit
-from clients.python.players.random_player import RandomPlayer
+from clients.python.players.rob_player import RobPlayer
 from clients.python.util.Constants import GameType
-from clients.python.util.probability_table import ProbabilityTable
+from clients.python.util.probability_table import ProbabilityTable, Deal
 from clients.python.api.types.PassDirection import PassDirection
 from clients.python.api.types.PlayerTagSession import PlayerTagSession, PlayerTag
 
 
-class RobPlayer(Player):
-    player_tag = "rob_player_dev"
+class RobProbPlayer(Player):
+    player_tag = "rob_prob_player"
     message_print_logging_enabled = False
 
     def __init__(self, player_tag_session: PlayerTagSession):
@@ -101,41 +101,101 @@ class RobPlayer(Player):
 
     def get_move(self, trick: Trick, legal_moves: List[Card], move_request_latency_ms=None) -> Card:
         assert len(legal_moves) > 0, "Must have at least one legal move"
+        if len(legal_moves) == 1:
+            return legal_moves[0]
         if self.is_worried_about_shooting_the_moon():
             return self.get_move_likely_to_win_trick(trick, legal_moves)
         else:
-            return self.get_move_unlikely_to_win_trick(trick, legal_moves)
+            acceptable_failures = [1.0, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.05, 0.025, 0.0125, 0.00625]
+            return self.get_move_unlikely_to_win_trick(self.current_round, trick, self.player_tag_session, legal_moves, acceptable_failures[trick.trick_idx])
 
-    @staticmethod
-    def get_move_unlikely_to_win_trick(trick: Trick, legal_moves: List[Card]) -> Card:
-        legal_moves = SortCardsByRank(legal_moves)
-        fewest_suit, cards = sorted(GroupCardsBySuit(legal_moves).items(), key=lambda kv: len(kv[1]))[0]
-        if len(trick.moves) == 0:
-            # If starting the trick, play the lowest legal card of the suit we're closest to voiding, we don't want to win tricks
-            return SortCardsByRank(cards)[0]
-        else:
-            if legal_moves[0].suit == trick.get_suit():
-                current_winning_card = SortCardsByRank([m.card for m in trick.moves if m.card.suit == trick.get_suit()], reverse=True)[0]
-                sorted_non_winning_cards = [c for c in legal_moves if c < current_winning_card]
-                if len(sorted_non_winning_cards) > 0:
-                    # If we have cards lower than the wining card, play the highest one
-                    return sorted_non_winning_cards[-1]
-                elif len(trick.moves) == 3:
-                    # If we are the last player, and we have to win the trick, play the highest card
-                    return legal_moves[-1]
-                else:
-                    # If we can't guarantee that we won't win, play the lowest card
-                    return legal_moves[0]
+    def get_move_unlikely_to_win_trick(self, round: Round, trick: Trick, this_player: PlayerTagSession, legal_moves: List[Card], max_acceptable_win_probability: float) -> Card:
+        points_played = sum([m.card.get_point_value() for m in trick.moves])
+        best_move = None
+        best_move_probability_of_winning = 100
+        best_move_dump_value = 0
+        queen_played = Card("QS") in round.get_played_cards()
+        played = round.get_played_cards()
+        for move in legal_moves:
+            trick_suit = trick.get_suit() or move.suit
+            # Determine the value of getting rid of this card.
+            dump_value: int = move.rank.to_int()
+            if move.suit == Suit.SPADES:
+                if move.rank.to_int() <= Rank.JACK.to_int() and not queen_played:
+                    dump_value = 0
+                elif move == Card("QS"):
+                    dump_value = 100
+                elif move == Card("KS"):
+                    dump_value = 50
+                elif move == Card("AS"):
+                    dump_value = 60
+            # Incentivize voiding
+            num_cards_of_suit = len([c for c in self.hand if c.suit == move.suit])
+            moves_left = 12 - trick.trick_idx
+            dump_value += max(0, moves_left/4.0 - num_cards_of_suit) * 2
+            if dump_value < best_move_dump_value and best_move_probability_of_winning <= max_acceptable_win_probability:
+                continue
+
+            current_winning_rank = max([0] + [m.card.rank.to_int() for m in trick.moves if m.card.suit == trick_suit])
+            if move.suit != trick_suit or move.rank.to_int() < current_winning_rank:
+                win_probability = 0.0
+            elif len(trick.moves) == 3:
+                win_probability = 1.0  # last move would definitely win
             else:
-                # We're voided on this trick, dump our worst card, first a high spade, then the highest ranking card,
-                # preferring hearts.
-                high_spades = [c for c in [Card("QS"), Card("AS"), Card("KS")] if c in legal_moves]
-                if len(high_spades) > 0:
-                    return high_spades[0]
-                high_hearts = [c for c in legal_moves if c.rank == legal_moves[-1].rank and c.suit == Suit.HEARTS]
-                if len(high_hearts) > 0:
-                    return high_hearts[0]
-                return legal_moves[-1]
+                suit_cards = [Card(f"{r.value}{trick_suit.value}") for r in Rank]
+                unplayed_suit = [c for c in suit_cards if c not in played and c != move]
+
+                player_idx = round.player_order.index(this_player)
+                players_after = [round.player_order[(player_idx + i) % 4]
+                                 for i in range(1, 4 - len(trick.moves))]
+
+                def would_win(deal: Deal) -> bool:
+                    # I win unless a player still to act holds a higher card of the led suit.
+                    potential_takers = players_after
+                    for c in unplayed_suit:
+                        player: Optional[PlayerTagSession] = deal[c]
+                        if player is not None and player in potential_takers:
+                            if c.rank > move.rank:
+                                return False
+                            else:
+                                potential_takers.remove(player)
+                                if len(potential_takers) == 0:
+                                    return True
+                    return True
+
+                win_probability = self.probability_table.estimate(would_win, n=100)
+
+                if win_probability > 0 and win_probability < 1:
+                    # Odds of saftey cut in half by each point
+                    points_at_risk = points_played + move.get_point_value()
+                    if move == Card("KS") or move == Card("QS"):
+                        points_at_risk = min(points_at_risk, 13)
+                    if (move.suit == Suit.HEARTS):
+                        points_at_risk += 3-len(trick.moves)
+                    win_probability = 1.0 - ((1.0 - win_probability) / (2 ** points_at_risk))
+
+            use_move = False
+            if best_move is None:
+                # First move considered by default
+                use_move = True
+            elif dump_value > best_move_dump_value and (win_probability <= best_move_probability_of_winning or win_probability <= max_acceptable_win_probability):
+                # Any moves with better dump value are used as long as they're below risk tolerance or better than current risk
+                use_move = True
+            elif dump_value == best_move_dump_value and win_probability < best_move_probability_of_winning:
+                # Any moves with equal dump value are only considered if they're less risky.
+                use_move = True
+            elif dump_value < best_move_dump_value and best_move_probability_of_winning > max_acceptable_win_probability and win_probability < best_move_probability_of_winning:
+                # If current move is too risky, and this one is less risky, use it.
+                use_move = True
+            if use_move:
+                if move.get_point_value() == 13:
+                    print(f"Deciding to play QS (dump_value={dump_value}, win_probability={win_probability}), replacing move {best_move} (dump_value={best_move_dump_value}, win_probability={best_move_probability_of_winning})")
+                best_move = move
+                best_move_probability_of_winning = win_probability
+                best_move_dump_value = dump_value
+
+        return best_move
+
 
     @staticmethod
     def get_move_likely_to_win_trick(trick: Trick, legal_moves: List[Card]) -> Card:
@@ -155,7 +215,7 @@ class RobPlayer(Player):
 
 
 if __name__ == '__main__':
-    players = [RobPlayer, RandomPlayer, RandomPlayer, RandomPlayer]
+    players = [RobProbPlayer, RobPlayer, RobPlayer, RobPlayer]
     total_games = 0
     games_won = 0
     start_time = time.time()
@@ -174,6 +234,6 @@ if __name__ == '__main__':
     with ManagedConnection() as connection:
 
         for i in range(10):
-            MakeAndRunMultipleSessions(connection, GameType.ANY, RobPlayer, 2, lobby_code="ROB_{i}")
+            MakeAndRunMultipleSessions(connection, GameType.ANY, RobProbPlayer, 2, lobby_code="ROB_{i}")
             time.sleep(3)
         WaitForAllSessionsToFinish()
