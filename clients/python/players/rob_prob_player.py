@@ -1,5 +1,4 @@
 import sys
-import threading
 import time
 from pathlib import Path
 from typing import List, Dict, Optional
@@ -109,38 +108,53 @@ class RobProbPlayer(Player):
             acceptable_failures = [1.0, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.05, 0.025, 0.0125, 0.00625]
             return self.get_move_unlikely_to_win_trick(self.current_round, trick, self.player_tag_session, legal_moves, acceptable_failures[trick.trick_idx])
 
+
     def get_move_unlikely_to_win_trick(self, round: Round, trick: Trick, this_player: PlayerTagSession, legal_moves: List[Card], max_acceptable_win_probability: float) -> Card:
+        class MoveAnalysis:
+            move: Card
+            dump_value: float
+            win_probability: float
+            min_score: int
+
+        moves_analysis: List[MoveAnalysis] = []
         points_played = sum([m.card.get_point_value() for m in trick.moves])
+        queen_played = Card("QS") in round.get_played_cards()
+
         best_move = None
         best_move_probability_of_winning = 100
         best_move_dump_value = 0
-        queen_played = Card("QS") in round.get_played_cards()
+
         played = round.get_played_cards()
         for move in legal_moves:
+            moves_analysis.append(MoveAnalysis())
+            a = moves_analysis[-1]
+            a.move = move
+            a.min_score = points_played + move.get_point_value()
+
             trick_suit = trick.get_suit() or move.suit
             # Determine the value of getting rid of this card.
-            dump_value: int = move.rank.to_int()
+            a.dump_value = move.rank.to_int()
             if move.suit == Suit.SPADES:
                 if move.rank.to_int() <= Rank.JACK.to_int() and not queen_played:
-                    dump_value = 0
+                    a.dump_value = 0
                 elif move == Card("QS"):
-                    dump_value = 100
+                    a.dump_value = 100
                 elif move == Card("KS"):
-                    dump_value = 50
+                    a.dump_value = 50
                 elif move == Card("AS"):
-                    dump_value = 60
+                    a.dump_value = 60
             # Incentivize voiding
             num_cards_of_suit = len([c for c in self.hand if c.suit == move.suit])
             moves_left = 12 - trick.trick_idx
-            dump_value += max(0, moves_left/4.0 - num_cards_of_suit) * 2
-            if dump_value < best_move_dump_value and best_move_probability_of_winning <= max_acceptable_win_probability:
+            a.dump_value += max(0, moves_left/4.0 - num_cards_of_suit) * 2
+            if a.dump_value < best_move_dump_value and best_move_probability_of_winning <= max_acceptable_win_probability:
                 continue
 
             current_winning_rank = max([0] + [m.card.rank.to_int() for m in trick.moves if m.card.suit == trick_suit])
             if move.suit != trick_suit or move.rank.to_int() < current_winning_rank:
-                win_probability = 0.0
+                a.win_probability = 0.0
             elif len(trick.moves) == 3:
-                win_probability = 1.0  # last move would definitely win
+                a.win_probability = 1.0  # last move would definitely win
             else:
                 suit_cards = [Card(f"{r.value}{trick_suit.value}") for r in Rank]
                 unplayed_suit = [c for c in suit_cards if c not in played and c != move]
@@ -163,38 +177,25 @@ class RobProbPlayer(Player):
                                     return True
                     return True
 
-                win_probability = self.probability_table.estimate(would_win, n=100)
+                a.win_probability = self.probability_table.estimate(would_win, n=100)
 
-                if win_probability > 0 and win_probability < 1:
+                if a.win_probability > 0 and a.win_probability < 1:
                     # Odds of saftey cut in half by each point
                     points_at_risk = points_played + move.get_point_value()
                     if move == Card("KS") or move == Card("QS"):
                         points_at_risk = min(points_at_risk, 13)
                     if (move.suit == Suit.HEARTS):
                         points_at_risk += 3-len(trick.moves)
-                    win_probability = 1.0 - ((1.0 - win_probability) / (2 ** points_at_risk))
+                    a.win_probability = 1.0 - ((1.0 - a.win_probability) / (2 ** points_at_risk))
 
-            use_move = False
-            if best_move is None:
-                # First move considered by default
-                use_move = True
-            elif dump_value > best_move_dump_value and (win_probability <= best_move_probability_of_winning or win_probability <= max_acceptable_win_probability):
-                # Any moves with better dump value are used as long as they're below risk tolerance or better than current risk
-                use_move = True
-            elif dump_value == best_move_dump_value and win_probability < best_move_probability_of_winning:
-                # Any moves with equal dump value are only considered if they're less risky.
-                use_move = True
-            elif dump_value < best_move_dump_value and best_move_probability_of_winning > max_acceptable_win_probability and win_probability < best_move_probability_of_winning:
-                # If current move is too risky, and this one is less risky, use it.
-                use_move = True
-            if use_move:
-                if move.get_point_value() == 13:
-                    print(f"Deciding to play QS (dump_value={dump_value}, win_probability={win_probability}), replacing move {best_move} (dump_value={best_move_dump_value}, win_probability={best_move_probability_of_winning})")
-                best_move = move
-                best_move_probability_of_winning = win_probability
-                best_move_dump_value = dump_value
-
-        return best_move
+        # Choose Move
+        moves_under_risk = [a for a in moves_analysis if a.win_probability <= max_acceptable_win_probability]
+        if moves_under_risk:
+            # Choose highest dump value under risk.
+            return sorted(moves_under_risk, key=lambda a: a.dump_value, reverse=True)[0].move
+        else:
+            # Choose move with lowest score, then lowest win probability, then highest dump value
+            return sorted(moves_analysis, key=lambda a: (a.min_score, a.win_probability, 100-a.dump_value))[0].move
 
 
     @staticmethod
