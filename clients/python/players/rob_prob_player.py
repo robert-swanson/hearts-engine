@@ -52,7 +52,7 @@ class RobProbPlayer(Player):
         # First, get rid of AS, KS, QS if we have any.
         cards_to_pass += [c for c in self.hand if c in [Card("AS"), Card("KS"), Card("QS")]]
 
-        suit_cards = sorted(GroupCardsBySuit(self.hand).items(), key=lambda kv: len(kv[1]))
+        suit_cards = sorted(GroupCardsBySuit(SortCardsByRank(self.hand, reverse=True)).items(), key=lambda kv: len(kv[1]))
         present_suits = [sc[0] for sc in suit_cards]
         voided_suits = [s for s in Suit if s not in present_suits]
 
@@ -61,9 +61,13 @@ class RobProbPlayer(Player):
             if len(voided_suits) >= 1:
                 # If we already have a voided suit, lets save the rest of our passing cards for high rank.
                 break
-            # If we can void, all almost void a suit, do so.
-            if suit != Suit.SPADES and len(cards_to_pass) + len(cards) < 4:
-                cards_to_pass += cards[:3]
+            # If we can void, or almost void a suit, do so.
+            if suit != Suit.SPADES and suit != Suit.HEARTS and len(cards_to_pass) + len(cards) <= 3 + 1:
+                if (len(cards_to_pass) + len(cards) <= 3):
+                    voided_suits.append(suit)
+                num_suit_cards_to_pass = min(len(cards), 3 - len(cards_to_pass))
+                cards_to_pass += cards[:num_suit_cards_to_pass]
+                
 
         ranked_cards = SortCardsByRank(self.hand, reverse=True)
         cards_to_pass += [c for c in ranked_cards if c not in cards_to_pass][:(3-len(cards_to_pass))]
@@ -120,9 +124,8 @@ class RobProbPlayer(Player):
         points_played = sum([m.card.get_point_value() for m in trick.moves])
         queen_played = Card("QS") in round.get_played_cards()
 
-        best_move = None
-        best_move_probability_of_winning = 100
-        best_move_dump_value = 0
+        move_under_risk_found = False
+        best_move_under_risk_dump_value = 0
 
         played = round.get_played_cards()
         for move in legal_moves:
@@ -146,9 +149,11 @@ class RobProbPlayer(Player):
             # Incentivize voiding
             num_cards_of_suit = len([c for c in self.hand if c.suit == move.suit])
             moves_left = 12 - trick.trick_idx
-            a.dump_value += max(0, moves_left/4.0 - num_cards_of_suit) * 2
-            if a.dump_value < best_move_dump_value and best_move_probability_of_winning <= max_acceptable_win_probability:
-                continue
+            a.dump_value += max(0, moves_left - num_cards_of_suit)
+            if move_under_risk_found and best_move_under_risk_dump_value > a.dump_value:
+                # Early continue since we know we dont want this move even if it were safe.
+                a.win_probability = -1.0
+                continue 
 
             current_winning_rank = max([0] + [m.card.rank.to_int() for m in trick.moves if m.card.suit == trick_suit])
             if move.suit != trick_suit or move.rank.to_int() < current_winning_rank:
@@ -191,8 +196,8 @@ class RobProbPlayer(Player):
         # Choose Move
         moves_under_risk = [a for a in moves_analysis if a.win_probability <= max_acceptable_win_probability]
         if moves_under_risk:
-            # Choose highest dump value under risk.
-            return sorted(moves_under_risk, key=lambda a: a.dump_value, reverse=True)[0].move
+            # From moves under risk: Choose highest dump value, then lowest win probability.
+            return sorted(moves_under_risk, key=lambda a: (100-a.dump_value, a.win_probability))[0].move
         else:
             # Choose move with lowest score, then lowest win probability, then highest dump value
             return sorted(moves_analysis, key=lambda a: (a.min_score, a.win_probability, 100-a.dump_value))[0].move
