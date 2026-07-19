@@ -362,7 +362,7 @@ class WebHumanPlayer(Player):
     def handle_new_trick(self, trick):
         self._table.on_new_trick(trick)
 
-    def handle_move(self, player, card, report_latency_ms=None, decided_move_latency_ms=None):
+    def handle_move(self, trick, player, card, report_latency_ms=None, decided_move_latency_ms=None):
         # Keep the seat's visible hand current after every move (mine drops a
         # card; others' moves don't change it but refreshing is cheap and safe).
         self._seat.hand = self._hand_strings()
@@ -507,9 +507,9 @@ def _make_ai_cls(table: "Table", seat: Seat, base_cls: type) -> type:
         _safe("handle_new_trick", lambda: base_cls.handle_new_trick(self, trick))
         table.on_new_trick(trick)
 
-    def handle_move(self, player, card, report_latency_ms=None, decided_move_latency_ms=None):
+    def handle_move(self, trick, player, card, report_latency_ms=None, decided_move_latency_ms=None):
         _safe("handle_move", lambda: base_cls.handle_move(
-            self, player, card,
+            self, trick, player, card,
             report_latency_ms=report_latency_ms,
             decided_move_latency_ms=decided_move_latency_ms))
         table.on_move(player, card)
