@@ -56,6 +56,11 @@ jobs:
         export PYTHONPATH="$(pwd):${PYTHONPATH}"
         python3 tests/resource_guard_test.py
 
+    - name: Run player debugger test
+      run: |
+        export PYTHONPATH="$(pwd):${PYTHONPATH}"
+        python3 tests/player_debugger_test.py
+
   competition:
     runs-on: macos-latest
 
