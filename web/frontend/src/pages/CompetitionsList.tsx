@@ -51,12 +51,13 @@ export function CompetitionsList() {
               <th className="hide-sm">Teams</th>
               <th className="hide-sm">Tournaments</th>
               <th className="hide-sm">Games / tournament</th>
-              {/* Top 4 players by avg tournament points per game, so a player's
-                  progress is visible at a glance across competitions (issue #111). */}
-              <th title="Top players by average tournament points per game">1st</th>
-              <th title="Top players by average tournament points per game">2nd</th>
-              <th title="Top players by average tournament points per game">3rd</th>
-              <th title="Top players by average tournament points per game">4th</th>
+              {/* Top 4 players by avg finals points per game (qualifying when a
+                  tournament had no finals), so a player's progress is visible at a
+                  glance across competitions (issue #111). */}
+              <th title="Top players by average finals points per game (qualifying when a tournament had no finals)">1st</th>
+              <th title="Top players by average finals points per game (qualifying when a tournament had no finals)">2nd</th>
+              <th title="Top players by average finals points per game (qualifying when a tournament had no finals)">3rd</th>
+              <th title="Top players by average finals points per game (qualifying when a tournament had no finals)">4th</th>
             </tr>
           </thead>
           <tbody>

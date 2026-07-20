@@ -122,14 +122,16 @@ def _winner_id_points(summary: Optional[dict]) -> list[dict]:
 
 def _competition_top_players(competition_id: str, tournaments: list[dict],
                              limit: int = 4) -> list[dict]:
-    """The competition's leading players, by average tournament points per game.
+    """The competition's leading players, by average finals points per game.
 
-    Aggregated per (team, player_tag) over every qualifying + finals game of every
-    tournament in the competition — the same avg-points-per-game metric the
-    competition detail chart drills into, rolled up to the whole competition so the
-    list page can show at a glance how the leaders scored and whether a player
-    improved between competitions (issue #111). Returns up to `limit` entries,
-    highest average first (ties broken by team/tag)."""
+    Aggregated per (team, player_tag) over each tournament's finals games — the
+    same avg-points-per-game metric the competition detail chart drills into,
+    rolled up to the whole competition so the list page can show at a glance how
+    the leaders scored and whether a player improved between competitions
+    (issue #111). A tournament that was stopped before any finals ran contributes
+    its qualifying games instead, so an in-progress/aborted competition still
+    ranks its players (matching the finals→qualifying fallback used elsewhere).
+    Returns up to `limit` entries, highest average first (ties broken by team/tag)."""
     # (team/tag) -> list of that player's per-game tournament points. Within a game
     # we sum any slots a team ran under the same tag, matching the frontend's
     # playerAvgsForGames so the numbers agree with the detail-page drill-down.
@@ -141,17 +143,19 @@ def _competition_top_players(competition_id: str, tournaments: list[dict],
         summary = get_summary(competition_id, str(idx))
         if not summary:
             continue
-        for stage in ("qualifying", "finals"):
-            for game in summary.get(stage, []):
-                per_tp: dict[str, float] = {}
-                for entry in game.get("players", []):
-                    for full_id, score in entry.items():
-                        parts = full_id.split("/")
-                        key = f"{parts[0]}/{parts[1]}" if len(parts) >= 2 else full_id
-                        pts = (score or {}).get("tournament_points", 0)
-                        per_tp[key] = per_tp.get(key, 0) + pts
-                for key, pts in per_tp.items():
-                    pts_by_tp.setdefault(key, []).append(pts)
+        # Finals decide the tournament; fall back to qualifying only when the
+        # tournament never reached finals (stopped early / still qualifying).
+        games = summary.get("finals") or summary.get("qualifying") or []
+        for game in games:
+            per_tp: dict[str, float] = {}
+            for entry in game.get("players", []):
+                for full_id, score in entry.items():
+                    parts = full_id.split("/")
+                    key = f"{parts[0]}/{parts[1]}" if len(parts) >= 2 else full_id
+                    pts = (score or {}).get("tournament_points", 0)
+                    per_tp[key] = per_tp.get(key, 0) + pts
+            for key, pts in per_tp.items():
+                pts_by_tp.setdefault(key, []).append(pts)
 
     ranked = []
     for key, games in pts_by_tp.items():
