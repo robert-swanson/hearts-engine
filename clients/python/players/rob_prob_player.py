@@ -110,7 +110,13 @@ class RobProbPlayer(Player):
             return self.get_move_likely_to_win_trick(trick, legal_moves)
         else:
             acceptable_failures = [1.0, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.05, 0.025, 0.0125, 0.00625]
-            return self.get_move_unlikely_to_win_trick(self.current_round, trick, self.player_tag_session, legal_moves, acceptable_failures[trick.trick_idx])
+            risk_tolerance = acceptable_failures[trick.trick_idx]
+            # Take the trick if playing last, no points are played, and we have a reasonable card to lead with.
+            if len(trick.moves) == 3 and sum([m.card.get_point_value() for m in trick.moves]) == 0:
+                min_rank = min([c.rank.to_int() for c in self.hand])
+                if min_rank <= 6: 
+                    risk_tolerance = 1.0
+            return self.get_move_unlikely_to_win_trick(self.current_round, trick, self.player_tag_session, legal_moves, risk_tolerance)
 
 
     def get_move_unlikely_to_win_trick(self, round: Round, trick: Trick, this_player: PlayerTagSession, legal_moves: List[Card], max_acceptable_win_probability: float) -> Card:
