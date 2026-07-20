@@ -1,5 +1,13 @@
 import { authToken } from '../lib/auth'
 
+/** A competition's leading player, by average tournament points per game. */
+export interface TopPlayer {
+  team: string
+  tag: string
+  avg_points: number
+  games: number
+}
+
 export interface CompetitionListEntry {
   competition_id: string
   started_at: string | null
@@ -8,6 +16,8 @@ export interface CompetitionListEntry {
   num_tournaments: number
   qualifying_games: number | null
   finals_games: number | null
+  // Up to 4 leaders across the whole competition, highest avg points/game first.
+  top_players: TopPlayer[]
   is_legacy: boolean
 }
 
