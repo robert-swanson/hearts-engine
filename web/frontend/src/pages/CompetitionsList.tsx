@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom'
-import { api } from '../api/client'
+import { api, type TopPlayer } from '../api/client'
 import { useFetch, usePoll } from '../lib/useFetch'
+import { teamColor } from '../lib/playerId'
 
 function formatTime(iso: string | null): string {
   if (!iso) return '—'
@@ -9,6 +10,19 @@ function formatTime(iso: string | null): string {
 }
 
 const LIVE_REFRESH_MS = 5000
+
+// One of a competition's top players: their tag colored by team, with the team in
+// a tooltip, and their average tournament points per game. Blank when the
+// competition has fewer than 4 ranked players.
+function TopPlayerCell({ p }: { p: TopPlayer | undefined }) {
+  if (!p) return <span className="muted">—</span>
+  return (
+    <span title={`${p.team} / ${p.tag} — ${p.avg_points.toFixed(2)} avg pts over ${p.games} game${p.games === 1 ? '' : 's'}`}>
+      <span style={{ color: teamColor(p.team), fontWeight: 600 }}>{p.tag}</span>
+      <span className="muted"> · {p.avg_points.toFixed(1)}</span>
+    </span>
+  )
+}
 
 export function CompetitionsList() {
   const { data, loading, error } = useFetch(() => api.competitions(), [])
@@ -35,13 +49,21 @@ export function CompetitionsList() {
               <th>Started</th>
               <th>Competition</th>
               <th className="hide-sm">Teams</th>
-              <th>Tournaments</th>
+              <th className="hide-sm">Tournaments</th>
               <th className="hide-sm">Games / tournament</th>
+              {/* Top 4 players by avg finals points per game (qualifying when a
+                  tournament had no finals), so a player's progress is visible at a
+                  glance across competitions (issue #111). */}
+              <th title="Top players by average finals points per game (qualifying when a tournament had no finals)">1st</th>
+              <th title="Top players by average finals points per game (qualifying when a tournament had no finals)">2nd</th>
+              <th title="Top players by average finals points per game (qualifying when a tournament had no finals)">3rd</th>
+              <th title="Top players by average finals points per game (qualifying when a tournament had no finals)">4th</th>
             </tr>
           </thead>
           <tbody>
             {data.map((c) => {
               const ongoing = !c.is_legacy && c.competition_id === ongoingCid
+              const top = c.top_players ?? []
               return (
               <tr
                 key={c.competition_id}
@@ -65,12 +87,16 @@ export function CompetitionsList() {
                     <span className="muted">—</span>
                   )}
                 </td>
-                <td className="muted">{c.num_tournaments}</td>
+                <td className="muted hide-sm">{c.num_tournaments}</td>
                 <td className="muted hide-sm">
                   {c.qualifying_games != null
                     ? `${c.qualifying_games} qual · ${c.finals_games ?? '—'} finals`
                     : '—'}
                 </td>
+                <td style={{ fontSize: 12 }}><TopPlayerCell p={top[0]} /></td>
+                <td style={{ fontSize: 12 }}><TopPlayerCell p={top[1]} /></td>
+                <td style={{ fontSize: 12 }}><TopPlayerCell p={top[2]} /></td>
+                <td style={{ fontSize: 12 }}><TopPlayerCell p={top[3]} /></td>
               </tr>
               )
             })}

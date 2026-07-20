@@ -120,6 +120,58 @@ def _winner_id_points(summary: Optional[dict]) -> list[dict]:
     return []
 
 
+def _competition_top_players(competition_id: str, tournaments: list[dict],
+                             limit: int = 4) -> list[dict]:
+    """The competition's leading players, by average finals points per game.
+
+    Aggregated per (team, player_tag) over each tournament's finals games — the
+    same avg-points-per-game metric the competition detail chart drills into,
+    rolled up to the whole competition so the list page can show at a glance how
+    the leaders scored and whether a player improved between competitions
+    (issue #111). A tournament that was stopped before any finals ran contributes
+    its qualifying games instead, so an in-progress/aborted competition still
+    ranks its players (matching the finals→qualifying fallback used elsewhere).
+    Returns up to `limit` entries, highest average first (ties broken by team/tag)."""
+    # (team/tag) -> list of that player's per-game tournament points. Within a game
+    # we sum any slots a team ran under the same tag, matching the frontend's
+    # playerAvgsForGames so the numbers agree with the detail-page drill-down.
+    pts_by_tp: dict[str, list[float]] = {}
+    for t in tournaments:
+        idx = t.get("index")
+        if idx is None:
+            continue
+        summary = get_summary(competition_id, str(idx))
+        if not summary:
+            continue
+        # Finals decide the tournament; fall back to qualifying only when the
+        # tournament never reached finals (stopped early / still qualifying).
+        games = summary.get("finals") or summary.get("qualifying") or []
+        for game in games:
+            per_tp: dict[str, float] = {}
+            for entry in game.get("players", []):
+                for full_id, score in entry.items():
+                    parts = full_id.split("/")
+                    key = f"{parts[0]}/{parts[1]}" if len(parts) >= 2 else full_id
+                    pts = (score or {}).get("tournament_points", 0)
+                    per_tp[key] = per_tp.get(key, 0) + pts
+            for key, pts in per_tp.items():
+                pts_by_tp.setdefault(key, []).append(pts)
+
+    ranked = []
+    for key, games in pts_by_tp.items():
+        if not games:
+            continue
+        team, _, tag = key.partition("/")
+        ranked.append({
+            "team": team,
+            "tag": tag or key,
+            "avg_points": sum(games) / len(games),
+            "games": len(games),
+        })
+    ranked.sort(key=lambda r: (-r["avg_points"], r["team"], r["tag"]))
+    return ranked[:limit]
+
+
 def _tournament_row(competition_id: str, index: str,
                     began_at: Optional[str], ended_at: Optional[str],
                     complete: Optional[bool]) -> dict:
@@ -216,6 +268,8 @@ def list_competitions() -> list[dict]:
                 "num_tournaments": len(meta.get("tournaments", [])),
                 "qualifying_games": meta.get("qualifying_games"),
                 "finals_games": meta.get("finals_games"),
+                "top_players": _competition_top_players(
+                    meta["competition_id"], meta.get("tournaments", [])),
                 "is_legacy": False,
             })
     legacy = _legacy_competition()
@@ -228,6 +282,8 @@ def list_competitions() -> list[dict]:
             "num_tournaments": len(legacy.get("tournaments", [])),
             "qualifying_games": legacy.get("qualifying_games"),
             "finals_games": legacy.get("finals_games"),
+            "top_players": _competition_top_players(
+                legacy["competition_id"], legacy.get("tournaments", [])),
             "is_legacy": True,
         })
     out.sort(key=lambda c: c["started_at"] or "", reverse=True)
