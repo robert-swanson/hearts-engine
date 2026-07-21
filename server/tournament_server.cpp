@@ -98,6 +98,14 @@ struct TournamentConfig {
     int64_t startAt;                      // unix timestamp
 };
 
+// Optional override for competition.json's "started_at". The competition dir name
+// (competition_id) doubles as its start timestamp by default, but a caller may
+// give the competition a human-readable name/label as its id (e.g. a tuning-step
+// description) while still wanting the UI to sort by real wall-clock time. When
+// set (via --competition-started-at=), this dir-name-style timestamp is written to
+// "started_at" instead of the competition_id, keeping time-sorting correct.
+static std::string g_competitionStartedAt;
+
 static TournamentConfig loadConfig(int64_t startAt, int portOverride)
 {
     TournamentConfig cfg;
@@ -1018,7 +1026,11 @@ static void writeResults(
             try { f >> comp; } catch(...) { comp = json::object(); }
         }
         comp["competition_id"]    = competitionId;
-        comp["started_at"]        = competitionId; // competition dir name is its start timestamp
+        // The competition dir name is its start timestamp by default, but a caller
+        // may give it a descriptive name and pass the real timestamp separately so
+        // the UI still sorts by time (see g_competitionStartedAt).
+        comp["started_at"]        = g_competitionStartedAt.empty()
+                                        ? competitionId : g_competitionStartedAt;
         comp["qualifying_games"]  = cfg.qualifyingGames;
         comp["finals_games"]      = cfg.finalsGames;
         json teamNames = json::array();
@@ -1241,6 +1253,8 @@ int main(int argc, char** argv)
             competitionId = arg.substr(17);
         else if (arg.substr(0, 19) == "--tournament-index=")
             tournamentIndex = arg.substr(19);
+        else if (arg.substr(0, 25) == "--competition-started-at=")
+            g_competitionStartedAt = arg.substr(25);
     }
     if (startAt == 0)
         startAt = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()) + 30;

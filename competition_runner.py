@@ -440,9 +440,36 @@ def compute_next_start(now: float, interval: int, prev_start: Optional[int],
 
 # ─── Main loop ────────────────────────────────────────────────────────────────
 
+def _timestamp_id() -> str:
+    """A dir-name style timestamp, matching the server's own format so the web
+    backend can parse it: '2026-5-15_13-36-12.409'."""
+    now = time.localtime()
+    ms = int((time.time() % 1) * 1000)
+    return (f"{now.tm_year}-{now.tm_mon}-{now.tm_mday}_"
+            f"{now.tm_hour:02d}-{now.tm_min:02d}-{now.tm_sec:02d}.{ms:03d}")
+
+
+def _unique_competition_id(name: str, results_dir: str) -> str:
+    """Turn a human-readable name into a filesystem-safe, unique competition id
+    (also the UI title). Keeps [A-Za-z0-9._-], collapses everything else to '_',
+    and appends _2/_3/... if a results dir of that name already exists so a tuning
+    run never clobbers or merges into an earlier step's logs."""
+    slug = ''.join(c if (c.isalnum() or c in '._-') else '_' for c in name.strip())
+    slug = slug.strip('_') or 'competition'
+    base = Path(results_dir)
+    candidate = slug
+    n = 2
+    while (base / candidate).exists():
+        candidate = f"{slug}_{n}"
+        n += 1
+    return candidate
+
+
 def run_competition(cfg: dict, real_teams: Dict[str, str],
                     config_path: str, available_modules: List[str],
-                    public_addr: str = '127.0.0.1'):
+                    public_addr: str = '127.0.0.1',
+                    name: Optional[str] = None,
+                    max_tournaments: Optional[int] = None):
     interval          = cfg['interval']
     min_client_window = cfg.get('min_client_window', 30)
     host              = '127.0.0.1'
@@ -453,11 +480,18 @@ def run_competition(cfg: dict, real_teams: Dict[str, str],
     # nested under a directory named by the competition's start time. The
     # tournament_server writes each tournament under <results>/<competition_id>/<index>/.
     # Format mirrors the server's own timestamp dir names (web backend parses it).
-    now = time.localtime()
-    ms = int((time.time() % 1) * 1000)
-    competition_id = (f"{now.tm_year}-{now.tm_mon}-{now.tm_mday}_"
-                      f"{now.tm_hour:02d}-{now.tm_min:02d}-{now.tm_sec:02d}.{ms:03d}")
+    # started_at is always a real timestamp so the web UI sorts competitions by
+    # time. The competition_id doubles as the UI title: by default it *is* the
+    # timestamp, but --name lets it be a descriptive label (e.g. a tuning step)
+    # while started_at (passed separately to the server) keeps the sort correct.
+    started_at = _timestamp_id()
+    if name:
+        competition_id = _unique_competition_id(name, cfg['results_dir'])
+    else:
+        competition_id = started_at
     print(f"Competition id: {competition_id} (results under {cfg['results_dir']}/{competition_id}/)")
+    if name:
+        print(f"  Title: {competition_id!r}  |  started_at (for time-sort): {started_at}")
 
     # Resource guard (issue #100): a runaway run has watchdog-panicked the host
     # before. Sample memory pressure + per-child RSS for forensics, and kill the
@@ -535,6 +569,7 @@ def run_competition(cfg: dict, real_teams: Dict[str, str],
              f'--port={port}',  # ports live in config.env only (issue #99)
              f'--start-at={start_at}',
              f'--competition-id={competition_id}',
+             f'--competition-started-at={started_at}',
              f'--tournament-index={tournament_num}'],
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         _child_procs.append(server_proc)
@@ -569,6 +604,12 @@ def run_competition(cfg: dict, real_teams: Dict[str, str],
         # cadence is governed by start_at relative to the previous start.
         print(f'Tournament #{tournament_num} finished.')
 
+        # Bounded mode (--num-tournaments): stop after the requested count so the
+        # runner exits cleanly (e.g. a single self-contained run for tuning).
+        if max_tournaments is not None and tournament_num >= max_tournaments:
+            print(f'Reached requested {max_tournaments} tournament(s); exiting.')
+            return
+
 
 # ─── Entry point ─────────────────────────────────────────────────────────────
 
@@ -585,6 +626,14 @@ def main():
     parser.add_argument('--qualifying-games-per-player', type=int, default=None, metavar='N',
                         help='Qualifying games each participating player plays '
                              '(overrides tournament_server.env)')
+    parser.add_argument('--name', type=str, default=None, metavar='LABEL',
+                        help='Human-readable competition name, used as the competition id / '
+                             'title (e.g. a tuning-step description). Made filesystem-safe and '
+                             'uniquified against existing results. The UI still sorts by real '
+                             'start time (recorded separately). Defaults to a timestamp.')
+    parser.add_argument('--num-tournaments', type=int, default=None, metavar='N',
+                        help='Run exactly N tournaments in this competition then exit '
+                             '(default: loop forever). Use --num-tournaments=1 for a single run.')
     args = parser.parse_args()
 
     non_interactive = args.non_interactive
@@ -697,7 +746,8 @@ def main():
     # ── Run competition loop ───────────────────────────────────────────────
 
     config_path = 'tournament_server.env'
-    run_competition(cfg, real_teams, config_path, available_modules, public_addr=public_addr)
+    run_competition(cfg, real_teams, config_path, available_modules, public_addr=public_addr,
+                    name=args.name, max_tournaments=args.num_tournaments)
 
 
 if __name__ == '__main__':
