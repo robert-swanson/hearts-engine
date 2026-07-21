@@ -1,3 +1,4 @@
+import os
 import sys
 import time
 from pathlib import Path
@@ -17,6 +18,38 @@ from clients.python.util.Constants import GameType
 from clients.python.util.probability_table import ProbabilityTable, Deal
 from clients.python.api.types.PassDirection import PassDirection
 from clients.python.api.types.PlayerTagSession import PlayerTagSession, PlayerTag
+
+
+# Per-trick risk posture: the maximum win probability we tolerate on trick i.
+# Index 0 (trick 0) is 1.0 (we never dodge the opening trick), and the array is
+# meant to be non-increasing. This is the knob tune_acceptable_failures.py
+# optimizes; it overrides the default at runtime via the env var below (a
+# comma-separated list of 13 floats) so the tuner can try candidates without
+# editing this file. Falls back to the hand-tuned default when unset/malformed.
+DEFAULT_ACCEPTABLE_FAILURES = [1.0, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.05, 0.025, 0.0125, 0.00625]
+ACCEPTABLE_FAILURES_ENV = "ROB_PROB_ACCEPTABLE_FAILURES"
+
+
+def _load_acceptable_failures() -> List[float]:
+    raw = os.environ.get(ACCEPTABLE_FAILURES_ENV)
+    if not raw:
+        return list(DEFAULT_ACCEPTABLE_FAILURES)
+    try:
+        vals = [float(x) for x in raw.split(",") if x.strip() != ""]
+    except ValueError:
+        print(f"WARN: could not parse {ACCEPTABLE_FAILURES_ENV}={raw!r}; using default",
+              file=sys.stderr)
+        return list(DEFAULT_ACCEPTABLE_FAILURES)
+    if len(vals) != len(DEFAULT_ACCEPTABLE_FAILURES):
+        print(f"WARN: {ACCEPTABLE_FAILURES_ENV} has {len(vals)} values, "
+              f"expected {len(DEFAULT_ACCEPTABLE_FAILURES)}; using default", file=sys.stderr)
+        return list(DEFAULT_ACCEPTABLE_FAILURES)
+    return vals
+
+
+ACCEPTABLE_FAILURES = _load_acceptable_failures()
+if os.environ.get(ACCEPTABLE_FAILURES_ENV):
+    print(f"rob_prob_player: acceptable_failures = {ACCEPTABLE_FAILURES}", file=sys.stderr)
 
 
 class RobProbPlayer(Player):
@@ -109,8 +142,7 @@ class RobProbPlayer(Player):
         if self.is_worried_about_shooting_the_moon():
             return self.get_move_likely_to_win_trick(trick, legal_moves)
         else:
-            acceptable_failures = [1.0, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.05, 0.025, 0.0125, 0.00625]
-            risk_tolerance = acceptable_failures[trick.trick_idx]
+            risk_tolerance = ACCEPTABLE_FAILURES[trick.trick_idx]
             # Take the trick if playing last, no points are played, and we have a reasonable card to lead with.
             if len(trick.moves) == 3 and sum([m.card.get_point_value() for m in trick.moves]) == 0:
                 min_rank = min([c.rank.to_int() for c in self.hand])
