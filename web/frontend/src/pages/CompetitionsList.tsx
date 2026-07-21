@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { api, type TopPlayer } from '../api/client'
-import { useFetch, usePoll } from '../lib/useFetch'
+import { usePoll } from '../lib/useFetch'
 import { teamColor } from '../lib/playerId'
 
 function formatTime(iso: string | null): string {
@@ -25,7 +25,10 @@ function TopPlayerCell({ p }: { p: TopPlayer | undefined }) {
 }
 
 export function CompetitionsList() {
-  const { data, loading, error } = useFetch(() => api.competitions(), [])
+  // Poll (not a one-shot fetch) so competitions that start while this page is open
+  // — e.g. a tuning run creating one competition per step — appear without a manual
+  // reload. usePoll keeps the current rows on screen between refreshes (no flash).
+  const { data, loading, error } = usePoll(() => api.competitions(), LIVE_REFRESH_MS, [])
   // The currently-running competition (if any), so we can badge it as live. Polls
   // quietly; `{}`/null just means nothing is running right now.
   const { data: live } = usePoll(() => api.live(), LIVE_REFRESH_MS, [])
