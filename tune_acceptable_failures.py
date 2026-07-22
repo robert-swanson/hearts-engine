@@ -50,8 +50,26 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 REPO_ROOT = Path(__file__).resolve().parent
 
-# Default vector being tuned: RobProbPlayer's per-trick acceptable_failures.
+# Fallback starting vector if the player's own default can't be imported. The
+# preferred start is the tuned player's current default (see resolve_start_vector),
+# so a fresh run continues from wherever the last one left the player.
 DEFAULT_START = [1.0, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.05, 0.025, 0.0125, 0.00625]
+
+
+def resolve_start_vector(args) -> List[float]:
+    """Where to begin the search: an explicit --start, else the tuned player's
+    current in-code default (so we resume from the last accepted vector), else the
+    generic fallback."""
+    if args.start:
+        return [float(x) for x in args.start.split(',') if x.strip() != '']
+    if args.player_tag == 'rob_prob_player':
+        try:
+            from clients.python.players.rob_prob_player import DEFAULT_ACCEPTABLE_FAILURES
+            print('  (start = rob_prob_player.DEFAULT_ACCEPTABLE_FAILURES)')
+            return list(DEFAULT_ACCEPTABLE_FAILURES)
+        except Exception as e:
+            print(f'  (could not import player default: {e}; using fallback)')
+    return list(DEFAULT_START)
 
 
 # ─── Config read from tournament_server.env ───────────────────────────────────
@@ -139,6 +157,15 @@ class Evaluator:
         self.csv_file = csv_file
         self.objective_fn = OBJECTIVES[args.objective]
         self.run_counter = 0
+        # Ratchet: the best full vector ever measured, so the process can never
+        # end worse than the best config it actually saw (the per-index local
+        # search can otherwise drift downhill on noise). Tracked at per-candidate
+        # granularity (i.e. after averaging --repeats), which is the decision unit.
+        self.best_objective = float('-inf')
+        self.best_vector: Optional[List[float]] = None
+        self.best_meta: Optional[dict] = None
+        self.running_best_run = float('-inf')  # best single-competition objective (for the CSV column)
+        self.candidates: List[dict] = []        # every candidate's mean objective + vector, for the top-N report
 
     def _run_one_competition(self, vector: List[float], label: str) -> Optional[Dict[str, float]]:
         """Run a single competition with the vector injected via the env var,
@@ -223,8 +250,10 @@ class Evaluator:
 
     def evaluate(self, vector: List[float], idx: int, cand: float) -> Optional[float]:
         """Evaluate a full vector (averaging over --repeats), log each run to CSV,
-        and return the mean objective (higher == better), or None if all runs failed."""
+        update the global ratchet, and return the mean objective (higher == better),
+        or None if all runs failed."""
         objectives: List[float] = []
+        comp_ids: List[str] = []
         for r in range(self.args.repeats):
             self.run_counter += 1
             label = f'{self.args.label_prefix}_idx{idx:02d}_v{cand:.4f}'
@@ -249,6 +278,9 @@ class Evaluator:
             else:
                 obj = self.objective_fn(scores)
                 objectives.append(obj)
+                comp_ids.append(scores['competition_id'])
+                if obj > self.running_best_run:
+                    self.running_best_run = obj
                 row.update({
                     'objective': f'{obj:.4f}',
                     'competition_id': scores['competition_id'],
@@ -263,11 +295,23 @@ class Evaluator:
                       f'(mean_pts={scores["mean_tournament_points"]:.3f}, '
                       f'mean_score={scores["mean_game_score"]:.2f}, '
                       f'n={int(scores["n_games"])})', flush=True)
+            row['running_best'] = ('' if self.running_best_run == float('-inf')
+                                   else f'{self.running_best_run:.4f}')
             self.csv_writer.writerow(row)
             self.csv_file.flush()
         if not objectives:
             return None
-        return sum(objectives) / len(objectives)
+        mean = sum(objectives) / len(objectives)
+        self.candidates.append({'objective': mean, 'vector': list(vector),
+                                'idx': idx, 'cand': cand, 'competition_ids': comp_ids})
+        # Ratchet on the per-candidate mean.
+        if mean > self.best_objective:
+            self.best_objective = mean
+            self.best_vector = list(vector)
+            self.best_meta = {'idx': idx, 'cand': cand, 'objective': mean,
+                              'competition_ids': comp_ids}
+            print(f'      ★ new best-so-far objective {mean:.4f}', flush=True)
+        return mean
 
 
 # ─── The hill-climb ────────────────────────────────────────────────────────────
@@ -286,10 +330,18 @@ def tune(values: List[float], evaluator: Evaluator, args) -> List[float]:
     last_idx = args.max_index if args.max_index is not None else len(values) - 1
     for idx in range(1, min(last_idx, len(values) - 1) + 1):
         prev = values[idx - 1]
-        step = rnd(0.1 * prev)
-        # Monotonic assumption: this element is bounded above by the preceding one.
-        v0 = rnd(clamp(values[idx], 0.0, prev))
-        print(f'\n=== Index {idx} — starting value {v0} (upper bound {prev}, step {step}) ===')
+        step = rnd(max(args.step_frac * prev, args.min_step))
+        # Bounds. By default the value is free within [min_value, max_value]; with
+        # --monotonic it is additionally capped at the preceding element (the old,
+        # non-increasing assumption). A candidate must beat the running best of this
+        # index's search by more than --min-improvement to be accepted, which lets a
+        # noise threshold suppress chasing sub-noise wiggles.
+        hi = min(args.max_value, prev) if args.monotonic else args.max_value
+        lo = args.min_value
+        margin = args.min_improvement
+        v0 = rnd(clamp(values[idx], lo, hi))
+        print(f'\n=== Index {idx} — starting value {v0} '
+              f'(bounds [{lo}, {hi}], step {step}) ===')
         if step <= 0:
             print('  step is 0; nothing to search, keeping value.')
             values[idx] = v0
@@ -305,20 +357,20 @@ def tune(values: List[float], evaluator: Evaluator, args) -> List[float]:
 
         direction = 0
         # Probe up first.
-        up = rnd(clamp(best_v + step, 0.0, prev))
+        up = rnd(clamp(best_v + step, lo, hi))
         if up != best_v:
             s = evaluator.evaluate(_with(values, idx, up), idx, up)
-            if s is not None and s > best_score:
+            if s is not None and s > best_score + margin:
                 best_v, best_score, direction = up, s, +1
                 print(f'  up improved -> value={best_v} objective={best_score:.4f}; continuing up')
             else:
                 print(f'  up did not improve (objective={_fmt(s)}); trying down')
         # If up didn't help, probe down.
         if direction == 0:
-            down = rnd(clamp(v0 - step, 0.0, prev))
+            down = rnd(clamp(v0 - step, lo, hi))
             if down != v0:
                 s = evaluator.evaluate(_with(values, idx, down), idx, down)
-                if s is not None and s > best_score:
+                if s is not None and s > best_score + margin:
                     best_v, best_score, direction = down, s, -1
                     print(f'  down improved -> value={best_v} objective={best_score:.4f}; continuing down')
                 else:
@@ -330,12 +382,12 @@ def tune(values: List[float], evaluator: Evaluator, args) -> List[float]:
 
         # Continue stepping in the chosen direction while it keeps improving.
         while True:
-            nxt = rnd(clamp(best_v + direction * step, 0.0, prev))
+            nxt = rnd(clamp(best_v + direction * step, lo, hi))
             if nxt == best_v:
                 print('  hit a bound; stopping this index.')
                 break
             s = evaluator.evaluate(_with(values, idx, nxt), idx, nxt)
-            if s is not None and s > best_score:
+            if s is not None and s > best_score + margin:
                 best_v, best_score = nxt, s
                 print(f'  improved -> value={best_v} objective={best_score:.4f}; continuing')
             else:
@@ -362,7 +414,7 @@ def _fmt(s: Optional[float]) -> str:
 
 def main():
     p = argparse.ArgumentParser(
-        description='Tune a monotonic per-trick risk-posture vector by running competitions.',
+        description='Tune a per-trick risk-posture vector by running competitions.',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     p.add_argument('--player-tag', default='rob_prob_player',
                    help='player_tag of the player being tuned (must be a filler AI in '
@@ -375,10 +427,29 @@ def main():
     p.add_argument('--objective', choices=list(OBJECTIVES), default='tournament_points',
                    help='What to maximize from the tuned player\'s qualifying games.')
     p.add_argument('--repeats', type=int, default=1,
-                   help='Competitions per candidate; averaged to reduce noise.')
+                   help='Competitions per candidate; averaged to reduce noise. This is '
+                        'the main lever against the ~0.15 objective noise at 700 qual '
+                        'games: run-to-run noise falls as 1/sqrt(repeats).')
     p.add_argument('--max-index', type=int, default=None,
                    help='Tune only indices 1..MAX_INDEX (default: all). Handy for '
                         'smoke-testing the tuner cheaply.')
+    p.add_argument('--monotonic', action='store_true',
+                   help='Cap each element at the preceding one (non-increasing vector). '
+                        'Off by default: elements are free within [--min-value, --max-value], '
+                        'so a value may exceed its predecessor.')
+    p.add_argument('--max-value', type=float, default=1.0,
+                   help='Upper bound for every element (these are probabilities).')
+    p.add_argument('--min-value', type=float, default=0.0,
+                   help='Lower bound for every element.')
+    p.add_argument('--step-frac', type=float, default=0.1,
+                   help='Step size as a fraction of the preceding element (step = '
+                        'step_frac * value[idx-1]).')
+    p.add_argument('--min-step', type=float, default=0.0,
+                   help='Floor on the step size, so tiny preceding values do not stall '
+                        'the search (useful now that values may grow, not just shrink).')
+    p.add_argument('--min-improvement', type=float, default=0.0,
+                   help='A candidate must beat the current best by more than this to be '
+                        'accepted. Set near the noise floor (~0.1) to stop chasing noise.')
     p.add_argument('--qualifying-games-per-player', type=int, default=None,
                    help='Override qualifying games/player (small = faster, noisier; '
                         'use for smoke-testing the tuner). Omit to use tournament_server.env.')
@@ -407,11 +478,9 @@ def main():
         print(f'WARNING: player_tag {args.player_tag!r} is not in FILLER_TEAM_AIS '
               f'({filler_ais}); it will not appear in results and every eval will fail.')
 
-    if args.start:
-        start = [float(x) for x in args.start.split(',') if x.strip() != '']
-    else:
-        start = list(DEFAULT_START)
+    start = resolve_start_vector(args)
     print(f'Tuning {args.player_tag} via {args.env_var} ({len(start)} values).')
+    print(f'  start: {start}')
     print(f'Objective: maximize {args.objective}. Repeats/candidate: {args.repeats}. '
           f'Results dir: {results_dir}')
     if args.qualifying_games_per_player is not None:
@@ -425,7 +494,7 @@ def main():
     csv_path.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = [
         'run', 'timestamp', 'idx', 'candidate', 'repeat', 'objective_metric',
-        'objective', 'mean_tournament_points', 'mean_game_score',
+        'objective', 'running_best', 'mean_tournament_points', 'mean_game_score',
         'total_tournament_points', 'wins', 'moon_shots', 'n_games',
         'competition_id', 'vector',
     ]
@@ -443,11 +512,40 @@ def main():
         csv_file.close()
 
     elapsed = time.time() - start_time
-    print('\n' + '=' * 60)
+    as_env = lambda v: ','.join(f'{x:g}' for x in v)
+    print('\n' + '=' * 66)
     print(f'DONE in {elapsed / 60:.1f} min. Total competitions run: {evaluator.run_counter}')
-    print(f'Tuned vector:\n  {final}')
-    print(f'As {args.env_var}:\n  {",".join(f"{v:g}" for v in final)}')
-    print(f'Full log: {csv_path}')
+
+    # Final sequential vector (left-to-right assembly) vs the ratcheted optimum
+    # (the single best-scoring candidate ever measured). With a noisy objective the
+    # sequential vector can drift below configs seen earlier, so the ratchet is the
+    # answer to keep — but note its tail indices may still sit at their start values
+    # if the best run happened before those indices were tuned.
+    print(f'\nFinal sequential vector:\n  {final}\n  {as_env(final)}')
+    if evaluator.best_vector is not None:
+        bm = evaluator.best_meta or {}
+        print(f'\n★ RATCHET — best config actually measured (objective {evaluator.best_objective:.4f}, '
+              f'found tuning idx {bm.get("idx")} @ {bm.get("cand"):.5f}):')
+        print(f'  {evaluator.best_vector}')
+        print(f'  {as_env(evaluator.best_vector)}')
+        best_path = csv_path.with_suffix('.best.txt')
+        best_path.write_text(as_env(evaluator.best_vector) + '\n')
+        print(f'  (written to {best_path})')
+
+    # Top candidates, so the noise spread is visible and you can eyeball the pick.
+    top = sorted(evaluator.candidates, key=lambda c: c['objective'], reverse=True)[:8]
+    if top:
+        print('\nTop candidates by objective:')
+        for c in top:
+            print(f'  {c["objective"]:.4f}  (idx {c["idx"]:>2} @ {c["cand"]:.5f})  {as_env(c["vector"])}')
+    all_objs = [c['objective'] for c in evaluator.candidates]
+    if len(all_objs) > 1:
+        import statistics
+        print(f'\nObjective spread over {len(all_objs)} candidates: '
+              f'min={min(all_objs):.3f} max={max(all_objs):.3f} '
+              f'mean={statistics.mean(all_objs):.3f} std={statistics.pstdev(all_objs):.3f} '
+              f'— if std is comparable to the gaps between picks, raise --repeats.')
+    print(f'\nFull log: {csv_path}')
 
 
 if __name__ == '__main__':
