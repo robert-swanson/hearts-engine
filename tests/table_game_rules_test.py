@@ -10,14 +10,18 @@ pin the actual rules directly, independent of any player strategy:
   * no point cards (hearts / Q of spades) on the first trick unless forced,
   * hearts can't be led until broken, but *can* be discarded when following,
   * follow-suit is enforced,
-  * shoot-the-moon scoring (all 26 points => shooter 0, everyone else 26).
+  * shoot-the-moon scoring (all 26 points => shooter 0, everyone else 26),
+  * the round's played-card ledger isn't double-counted.
 
 Run directly (no pytest): ``python3 tests/table_game_rules_test.py``.
 """
 import sys
+import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "web" / "backend"))
 
 from clients.python.TableGameFlow import TableTrick, TableRound
 from clients.python.api.Trick import Move
@@ -136,6 +140,66 @@ def test_normal_scoring_not_moon():
     print("  PASS: ordinary rounds are scored per-trick with no moon adjustment")
 
 
+def test_played_cards_not_double_counted():
+    """Drive a full all-AI round and confirm the round's played-card ledger holds
+    each of the 52 cards exactly once. The trick appends every move to the list
+    it shares with the round, so the round must not also re-add them."""
+    import table  # web/backend, on sys.path above
+
+    deck = [str(c) for c in Card.make_deck()]
+    hands = {i: deck[i * 13:(i + 1) * 13] for i in range(4)}
+
+    session = table.TableSession("RULES")
+    seats_cfg = [
+        {"kind": "ai", "name": f"Bot{i}", "ai_type": "random_player"}
+        for i in range(4)
+    ]
+    assert session.configure(seats_cfg) is None
+    assert session.start() is None
+
+    def round0_done():
+        g = session.game
+        return (g is not None and g.rounds
+                and len(g.rounds[0].tricks) == 13
+                and g.rounds[0].tricks[-1].winner is not None)
+
+    deadline = time.time() + 30.0
+    try:
+        while time.time() < deadline and not round0_done():
+            p = session.pending
+            if p is None:
+                if session.status in ("finished", "error"):
+                    break
+                time.sleep(0.005)
+                continue
+            kind = p["kind"]
+            if kind == "pass_direction":
+                session.submit({"direction": "KEEPER"})   # no passing — simplest
+            elif kind == "deal_hand":
+                # Seat index is encoded in the subject "Starting hand for Bot<i>".
+                seat = int(p["subject"].replace("Bot", ""))
+                session.submit({"cards": list(hands[seat])})
+            elif kind == "instruct":
+                session.submit({"ack": True})              # AI play instructions
+            else:
+                raise AssertionError(f"unexpected prompt {kind!r} in all-AI round")
+            # Give the engine thread a beat to advance to the next prompt.
+            for _ in range(200):
+                if session.pending is not p or round0_done():
+                    break
+                time.sleep(0.005)
+
+        assert round0_done(), f"round 0 never completed (status={session.status})"
+        ledger = session.game.rounds[0].tricks[-1].played_cards
+        assert len(ledger) == 52, f"expected 52 played cards, got {len(ledger)} (double-counted?)"
+        assert len(set(ledger)) == 52, f"played-card ledger has duplicates: {len(set(ledger))} unique"
+        print("  PASS: the round's played-card ledger holds all 52 cards exactly once")
+    finally:
+        session.abort()
+        if session.thread is not None:
+            session.thread.join(timeout=10)
+
+
 def run():
     print("Table Game Rules Tests")
     print("======================")
@@ -148,6 +212,7 @@ def run():
     test_must_follow_suit()
     test_shoot_the_moon()
     test_normal_scoring_not_moon()
+    test_played_cards_not_double_counted()
     print("\nAll table game rules tests PASSED")
 
 

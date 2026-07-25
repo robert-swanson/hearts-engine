@@ -247,7 +247,8 @@ class TableRound(Round):
             table_trick.run_trick(game, self)
             self.ai_players = table_trick.ai_players  # may have been rebuilt by undo
 
-            played_cards.extend(m.card for m in table_trick.moves)
+            # `played_cards` is the same list the trick appends each move to as
+            # it plays, so it already holds this trick's cards — don't re-add them.
             last_winner = table_trick.get_winner()
 
         round_points = self.get_round_points()
