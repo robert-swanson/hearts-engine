@@ -46,6 +46,27 @@
   font-weight: 700;
   margin-bottom: 14px;
 }
+/* Structured instruction: name(s) + real card faces instead of "QS, 2C, …". */
+.table-instruct__action {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  margin-bottom: 14px;
+}
+.table-instruct__actor {
+  font-size: 20px;
+  font-weight: 700;
+}
+.table-instruct__verb {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--muted, #9aa);
+}
+.table-instruct__cards {
+  display: inline-flex;
+  gap: 6px;
+}
 .table-instruct__btn { min-width: 140px; }
 
 /* --- Card picker ----------------------------------------------------------- */

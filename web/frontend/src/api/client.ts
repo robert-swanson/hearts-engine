@@ -364,7 +364,18 @@ export type TablePending =
       error: string | null
     }
   | { kind: 'pick_player'; prompt: string; players: { pid: string; name: string }[] }
-  | { kind: 'instruct'; prompt: string; message: string }
+  | {
+      kind: 'instruct'
+      prompt: string
+      message: string
+      // Structured breakdown of the instruction so the UI can render real cards
+      // rather than two-letter codes. `action` is null (cards empty) for any
+      // message that doesn't match a known shape — fall back to `message` then.
+      action?: 'play' | 'pass' | null
+      actor?: string | null
+      recipient?: string | null
+      cards?: string[]
+    }
 
 export interface TablePublic {
   player_order: string[]
@@ -372,6 +383,11 @@ export interface TablePublic {
   round_idx: number
   pass_direction: string
   scores: Record<string, number>
+  // Points taken in the current round so far (running; final once complete).
+  round_points: Record<string, number>
+  // Round-by-round history (pass direction + completed tricks + round scores),
+  // same shape as the live view so it reuses TrickRow / the scoreboard layout.
+  rounds: LiveRound[]
   current_trick: { trick_idx: number; leader: string | null; moves: LiveMove[] } | null
   completed_tricks: number
   ai_hands: Record<string, string[]>

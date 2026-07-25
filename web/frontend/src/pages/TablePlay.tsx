@@ -10,10 +10,16 @@ import type {
   AiTypeOption,
 } from '../api/client'
 import { useTableSocket, type TableSendAction, type TableSeatDraft } from '../lib/tableSocket'
+import type { LiveRound } from '../api/client'
 import { Card } from '../components/Card'
+import { TrickRow } from '../components/TrickRow'
 import { RANK_ORDER, SUIT_ORDER, SUIT_SYMBOL, isRedSuit, sortBySuitThenRank, type Suit } from '../lib/cards'
+import { columnSeats, CENTER } from '../lib/seating'
+import { useColumnSlide } from '../lib/useColumnSlide'
 import './LivePlay.css'
 import './TablePlay.css'
+
+const PASS_ABBR: Record<string, string> = { Left: 'L', Right: 'R', Across: 'A', Keeper: '—' }
 
 const SUIT_LABEL: Record<Suit, string> = { C: 'Clubs', D: 'Diamonds', H: 'Hearts', S: 'Spades' }
 
@@ -221,6 +227,10 @@ function TablePlayView({ snapshot, send }: { snapshot: TableSnapshot; send: (a: 
 
       {pub && <TableBoard pub={pub} pending={pending} />}
 
+      {/* Round-by-round scoreboard + expandable per-round tricks (what's happened
+          so far), mirroring the live/tournament history. */}
+      {pub && (pub.rounds?.length ?? 0) > 0 && <TableRoundHistory pub={pub} />}
+
       {snapshot.inference && pub && <InferencePanel inference={snapshot.inference} pub={pub} />}
     </>
   )
@@ -281,10 +291,32 @@ function PromptPanel({
   }
 
   if (pending.kind === 'instruct') {
+    const cards = pending.cards ?? []
+    const structured = !!pending.action && cards.length > 0
     return (
       <div className="card-surface table-prompt table-prompt--instruct">
         <div className="table-instruct__label">Do this at the table</div>
-        <div className="table-instruct__msg">{pending.message}</div>
+        {structured ? (
+          <div className="table-instruct__action">
+            <span className="table-instruct__actor">{pending.actor}</span>
+            <span className="table-instruct__verb">
+              {pending.action === 'pass' ? 'passes' : 'plays'}
+            </span>
+            <span className="table-instruct__cards">
+              {sortBySuitThenRank(cards).map((c) => (
+                <Card key={c} code={c} size="md" />
+              ))}
+            </span>
+            {pending.action === 'pass' && pending.recipient && (
+              <>
+                <span className="table-instruct__verb">to</span>
+                <span className="table-instruct__actor">{pending.recipient}</span>
+              </>
+            )}
+          </div>
+        ) : (
+          <div className="table-instruct__msg">{pending.message}</div>
+        )}
         <button className="btn table-instruct__btn" onClick={() => respond({ ack: true })}>Done →</button>
       </div>
     )
@@ -547,6 +579,166 @@ function TableBoard({ pub, pending }: { pub: TablePublic; pending: TablePending 
         </div>
       </div>
     </div>
+  )
+}
+
+// --- Round history: scoreboard with expandable per-round tricks --------------
+// A shared header names each player as a column; every round is a row of the
+// points each player took that round, plus a Total row carrying the running
+// game score. Clicking a round expands its completed tricks inline (same
+// TrickRow UI as the live/tournament views), so the operator can review what's
+// already been played. The live (in-progress) round is expanded by default.
+
+function TableRoundHistory({ pub }: { pub: TablePublic }) {
+  const rounds = pub.rounds ?? []
+  // No "me" at a physical table — center the trick columns on the first seat by
+  // default; a column click recenters on whoever was clicked.
+  const defaultSel = pub.player_order[0]
+  const [selOverride, setSelOverride] = useState<string | null>(null)
+  const selected = selOverride ?? defaultSel
+  // Per-round manual expand override (round_idx -> expanded?), else the live rule.
+  const [overrides, setOverrides] = useState<Record<number, boolean>>({})
+  const { selectColumn, containerRef } = useColumnSlide(pub.player_order, selected, setSelOverride)
+
+  if (!selected || rounds.length === 0) return null
+
+  const nameOf = (pid: string) => pub.players[pid]?.name ?? pid
+  const isLiveRound = (r: LiveRound) => pub.round_idx === r.round_idx && !r.complete
+  const gridStyle = { ['--player-cols' as string]: String(pub.player_order.length) } as React.CSSProperties
+
+  return (
+    <div className="card-surface live-scores" ref={containerRef}>
+      <div className="live-scores__row live-scores__row--head" style={gridStyle}>
+        <div className="live-scores__round muted">Round</div>
+        <div className="live-scores__pass muted">Pass</div>
+        {pub.player_order.map((pid) => (
+          <div key={pid} className="live-scores__pts live-scores__name" title={nameOf(pid)}>
+            {nameOf(pid)}
+          </div>
+        ))}
+      </div>
+
+      {rounds.map((r) => {
+        const expanded = overrides[r.round_idx] ?? isLiveRound(r)
+        const toggle = () => setOverrides((prev) => ({ ...prev, [r.round_idx]: !expanded }))
+        return (
+          <TableRoundRow
+            key={r.round_idx}
+            round={r}
+            expanded={expanded}
+            onToggle={toggle}
+            pub={pub}
+            selected={selected}
+            nameOf={nameOf}
+            selectColumn={selectColumn}
+            gridStyle={gridStyle}
+          />
+        )
+      })}
+
+      <div className="live-scores__row live-scores__row--total" style={gridStyle}>
+        <div className="live-scores__round">Total</div>
+        <div className="live-scores__pass" />
+        {pub.player_order.map((pid) => (
+          <div key={pid} className="live-scores__pts">{pub.scores[pid] ?? 0}</div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function TableRoundRow({
+  round,
+  expanded,
+  onToggle,
+  pub,
+  selected,
+  nameOf,
+  selectColumn,
+  gridStyle,
+}: {
+  round: LiveRound
+  expanded: boolean
+  onToggle: () => void
+  pub: TablePublic
+  selected: string
+  nameOf: (pid: string) => string
+  selectColumn: (col: number) => void
+  gridStyle: React.CSSProperties
+}) {
+  const dir = round.pass_direction
+  const seats = columnSeats(pub.player_order, selected)
+  const tricks = round.tricks ?? []
+  const isLive = pub.round_idx === round.round_idx && !round.complete
+
+  return (
+    <>
+      <button
+        className={`live-scores__row live-scores__row--round ${isLive ? 'is-live' : ''}`}
+        style={gridStyle}
+        onClick={onToggle}
+        aria-expanded={expanded}
+      >
+        <div className="live-scores__round">
+          <span className={`live-round__chevron ${expanded ? 'is-open' : ''}`}>▸</span>
+          <span className="live-scores__rnum">{round.round_idx + 1}</span>
+          {isLive && <span className="live-scores__livedot" title="Live round" />}
+        </div>
+        <div className="live-scores__pass">{dir ? PASS_ABBR[dir] ?? dir[0] : '—'}</div>
+        {pub.player_order.map((pid) => {
+          // Completed rounds show the final delta; the live round shows running
+          // points so far; not-yet-played rounds show a placeholder dot.
+          const done = round.complete
+          const val = done ? round.scores[pid] ?? 0 : isLive ? pub.round_points[pid] ?? 0 : null
+          return (
+            <div key={pid} className={`live-scores__pts ${done ? '' : 'is-pending'}`}>
+              {val == null ? '·' : val}
+            </div>
+          )
+        })}
+      </button>
+
+      {expanded &&
+        (tricks.length > 0 ? (
+          <div className="live-scores__detail">
+            <div className="live-tricks">
+              {/* Column header aligned with the trick rows; click to recenter. */}
+              <div className="trick-row">
+                <div className="trick-row__label" />
+                <div className="trick-row__grid">
+                  {seats.map((pid, col) => {
+                    const isCenter = col === CENTER
+                    return (
+                      <div
+                        key={col}
+                        className={`trick-col ${isCenter ? 'trick-col--center' : 'trick-col--clickable'}`}
+                        onClick={isCenter ? undefined : () => selectColumn(col)}
+                        title={isCenter ? undefined : `Center on ${nameOf(pid)}`}
+                      >
+                        <div className="trick-col__seat">{nameOf(pid)}</div>
+                      </div>
+                    )
+                  })}
+                </div>
+                <div className="trick-row__pts" />
+              </div>
+              {tricks.map((t) => (
+                <TrickRow
+                  key={t.trick_idx}
+                  trick={t}
+                  trickIndex={t.trick_idx}
+                  playerOrder={pub.player_order}
+                  selected={selected}
+                />
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="live-scores__detail">
+            <p className="muted" style={{ fontSize: 13, margin: 0 }}>No tricks yet…</p>
+          </div>
+        ))}
+    </>
   )
 }
 

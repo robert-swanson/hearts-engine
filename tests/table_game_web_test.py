@@ -130,7 +130,54 @@ def assert_play_greying(session, pending):
     assert any(not c["disabled"] for c in pending["cards"]), "all cards greyed!"
 
 
+def assert_public_history(session):
+    """The round/trick history the scoreboard renders must be well-formed and
+    reflect the tricks already completed this round."""
+    pub = session._public_state()
+    rounds = pub["rounds"]
+    assert isinstance(rounds, list) and rounds, "public state carries no rounds"
+
+    pids = set(pub["player_order"])
+    # round_points covers every seat and is non-negative.
+    assert set(pub["round_points"]) == pids, pub["round_points"]
+    assert all(v >= 0 for v in pub["round_points"].values()), pub["round_points"]
+
+    live = next(r for r in rounds if r["round_idx"] == pub["round_idx"])
+    # Every trick reported in the live round is complete (has a winner + 4 cards)
+    # and its history matches the completed-trick count.
+    assert len(live["tricks"]) == pub["completed_tricks"], (live, pub["completed_tricks"])
+    for t in live["tricks"]:
+        assert t["winner"] in pids, t
+        assert t["first_player"] in pids, t
+        assert len(t["moves"]) == 4, t
+        assert all(re.fullmatch(r"[2-9TJQKA][CDHS]", c) for c in t["moves"]), t
+        assert t["points"] >= 0, t
+    assert set(live["scores"]) == pids, live["scores"]
+
+
+def test_parse_instruct():
+    """The instruction parser splits both engine message shapes into structured
+    action/actor/recipient/cards (so the UI can draw real cards)."""
+    play = table._parse_instruct("Bot(4): play QS")
+    assert play == {"action": "play", "actor": "Bot(4)", "recipient": None, "cards": ["QS"]}, play
+
+    passing = table._parse_instruct("Alice(1): pass [QS, 2C, TH] to Bob(2)")
+    assert passing == {
+        "action": "pass",
+        "actor": "Alice(1)",
+        "recipient": "Bob(2)",
+        "cards": ["QS", "2C", "TH"],
+    }, passing
+
+    # Anything that isn't a known shape falls back to plain text (action None).
+    other = table._parse_instruct("Shuffle the deck")
+    assert other == {"action": None, "actor": None, "recipient": None, "cards": []}, other
+
+    print("PASS: instruction parser (play / pass / fallback)")
+
+
 def run():
+    test_parse_instruct()
     hands = build_hands()
     ref = Referee(hands)
     session = table.TableSession("TEST")
@@ -173,6 +220,13 @@ def run():
             session.submit({"pid": holder})
 
         elif kind == "instruct":
+            # The structured breakdown the UI renders as real card faces. This
+            # KEEPER round never passes, so every instruction is an AI play.
+            assert pending["action"] == "play", pending
+            assert re.fullmatch(r"[2-9TJQKA][CDHS]", pending["cards"][0]), pending
+            assert len(pending["cards"]) == 1, pending
+            assert "Bot" in (pending["actor"] or ""), pending
+            assert pending["message"].endswith(pending["cards"][0]), pending
             ref.note_ai_play(pending["message"])
             session.submit({"ack": True})
 
@@ -196,9 +250,11 @@ def run():
                 expect_alice_replay = True
                 continue
 
-            # Once a trick has completed, confirm we're seeing played-card greying.
+            # Once a trick has completed, confirm we're seeing played-card greying
+            # and that the round history now carries that finished trick.
             if session._public_state()["completed_tricks"] >= 1:
                 saw_play_after_trick = True
+                assert_public_history(session)
 
             session.submit({"card": ref.play(seat)})
             human_plays += 1
