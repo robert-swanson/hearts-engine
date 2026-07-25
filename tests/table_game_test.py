@@ -41,17 +41,24 @@ def _make_hands(round_idx: int) -> Dict[PlayerTagSession, List[Card]]:
 
 def _legal_moves(hand: List[Card], moves: List[Tuple], played: List[Card], trick_idx: int) -> List[Card]:
     legal = list(hand)
-    if moves:
+    leading = not moves
+    if not leading:
         suit = moves[0][1].suit
         in_suit = [c for c in legal if c.suit == suit]
         if in_suit:
             legal = in_suit
-    if not any(c.suit == Suit.HEARTS for c in played):
+    # Hearts may only be restricted on the lead (never when discarding off-suit).
+    if leading and not any(c.suit == Suit.HEARTS for c in played):
         non_hearts = [c for c in legal if c.suit != Suit.HEARTS]
         if non_hearts:
             legal = non_hearts
     if trick_idx == 0:
-        legal = [c for c in legal if c != Card("QS")] or legal
+        if leading:
+            two_c = Card("2C")
+            return [two_c] if two_c in legal else legal
+        non_points = [c for c in legal if c.suit != Suit.HEARTS and c != Card("QS")]
+        if non_points:
+            legal = non_points
     return legal
 
 
@@ -151,6 +158,11 @@ def simulate_game(num_ai: int) -> Tuple[List[str], Dict[PlayerTagSession, int]]:
             hearts = sum(1 for _, c in moves if c.suit == Suit.HEARTS)
             qs = any(c == Card("QS") for _, c in moves)
             round_pts[last_winner] += hearts + (13 if qs else 0)
+
+        # Shoot the moon: a player taking all 26 points scores 0; everyone else 26.
+        shooter = next((s for s, pts in round_pts.items() if pts == 26), None)
+        if shooter is not None:
+            round_pts = {s: (0 if s == shooter else 26) for s in SEATS}
 
         for seat in SEATS:
             cumulative[seat] += round_pts[seat]

@@ -130,11 +130,16 @@ def wait_for_pending(session, prev, timeout=15.0):
     raise TimeoutError(f"timed out waiting for a prompt (status={session.status})")
 
 
-# Reasons that assert a card *cannot be held* by the player. Greying a held
-# card with any of these is a soundness violation; only the follow-suit reason
-# ("Must follow ...") may legitimately grey a card the player actually holds.
-IMPOSSIBLE_REASON_RE = re.compile(
-    r"known to hold it|Ruled out|is void in|Already played this round"
+# Reasons that legitimately grey a card the player *does* hold because it would
+# be an illegal *play* (not because they can't hold it). These mirror the
+# engine's legal-move rules. Greying a genuinely-held card for any *other*
+# reason (e.g. "known to hold it", "Ruled out", "is void in", "Already played
+# this round") is a soundness violation — those assert the card can't be held.
+LEGAL_RESTRICTION_PREFIXES = (
+    "Must follow",
+    "The first trick must be led",
+    "No point cards",
+    "Hearts haven't been broken",
 )
 
 
@@ -166,11 +171,14 @@ def assert_play_sound(ref: Referee, session, pending: dict):
     states = {c["code"]: c for c in pending["cards"]}
 
     # 1) No card the player truly holds may be greyed as impossible-to-hold.
+    #    Legal-play restrictions (follow-suit, first-trick 2C / no points, hearts
+    #    not broken) legitimately grey a card the player *does* hold; only an
+    #    impossibility claim about a genuinely-held card is a soundness bug.
     for code in real:
         st = states[code]
         if st["disabled"]:
             reason = st["reason"] or ""
-            assert reason.startswith("Must follow"), (
+            assert reason.startswith(LEGAL_RESTRICTION_PREFIXES), (
                 f"SOUND-GREYING VIOLATION: {SEAT_NAMES[seat]} holds {code} but it "
                 f"was greyed as impossible: {reason!r}"
             )

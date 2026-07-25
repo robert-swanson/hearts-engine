@@ -36,6 +36,11 @@ jobs:
         export PYTHONPATH="$(pwd):${PYTHONPATH}"
         python3 tests/table_game_inference_test.py
 
+    - name: Run table game rules test
+      run: |
+        export PYTHONPATH="$(pwd):${PYTHONPATH}"
+        python3 tests/table_game_rules_test.py
+
     - name: Run SDK resilience test
       run: |
         export PYTHONPATH="$(pwd):${PYTHONPATH}"
