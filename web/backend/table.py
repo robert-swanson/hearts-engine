@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import queue
 import random
+import re
 import secrets
 import string
 import threading
@@ -400,7 +401,9 @@ class WebTableIO:
                 return match
 
     def instruct(self, prompt: str) -> None:
-        self._set_pending({"kind": "instruct", "prompt": prompt, "message": prompt})
+        pending = {"kind": "instruct", "prompt": prompt, "message": prompt}
+        pending.update(_parse_instruct(prompt))
+        self._set_pending(pending)
         self._await()  # any ack value
         self._clear_pending()
 
@@ -410,6 +413,76 @@ def _subject(prompt: str) -> Optional[str]:
     if prompt.startswith("Starting hand for "):
         return prompt[len("Starting hand for ") :].strip()
     return None
+
+
+_CARD_RE = r"[2-9TJQKA][CDHS]"
+# Engine instruction strings are built from real Card/player objects in
+# ``TableGameFlow`` and always take one of two shapes:
+#   "<actor>: play <card>"                    (an AI's move to make on the table)
+#   "<actor>: pass [<c1>, <c2>, <c3>] to <recipient>"   (an AI's cards to pass)
+# Player tags are sanitized to ``[A-Za-z0-9_-]`` (no spaces/colons/brackets), so
+# these anchors parse unambiguously. We surface the pieces structurally so the UI
+# can render the actual cards instead of the raw two-letter codes.
+_INSTRUCT_PLAY_RE = re.compile(rf"^(?P<actor>.+): play (?P<card>{_CARD_RE})$")
+_INSTRUCT_PASS_RE = re.compile(rf"^(?P<actor>.+): pass \[(?P<cards>.*)\] to (?P<recipient>.+)$")
+
+
+def _parse_instruct(prompt: str) -> dict:
+    """Extract ``action``/``actor``/``recipient``/``cards`` from an instruction.
+
+    Returns a dict always carrying those four keys; ``action`` is ``None`` (and
+    ``cards`` empty) for any message that doesn't match a known shape, so the UI
+    falls back to the plain message text.
+    """
+    m = _INSTRUCT_PLAY_RE.match(prompt)
+    if m:
+        return {
+            "action": "play",
+            "actor": m.group("actor"),
+            "recipient": None,
+            "cards": [m.group("card")],
+        }
+    m = _INSTRUCT_PASS_RE.match(prompt)
+    if m:
+        cards = [c.strip() for c in m.group("cards").split(",")]
+        cards = [c for c in cards if re.fullmatch(_CARD_RE, c)]
+        return {
+            "action": "pass",
+            "actor": m.group("actor"),
+            "recipient": m.group("recipient"),
+            "cards": cards,
+        }
+    return {"action": None, "actor": None, "recipient": None, "cards": []}
+
+
+def _trick_view(trick) -> dict:
+    """A completed trick as the frontend ``TrickRow`` expects it: cards in play
+    order, the leader, the winner, and the points the winner took."""
+    moves = [str(m.card) for m in trick.moves]
+    first_player = str(trick.moves[0].player) if trick.moves else None
+    hearts = sum(1 for m in trick.moves if m.card.suit == Suit.HEARTS)
+    had_qs = any(m.card == Card("QS") for m in trick.moves)
+    return {
+        "trick_idx": trick.trick_idx,
+        "first_player": first_player,
+        "moves": moves,
+        "winner": str(trick.winner) if trick.winner is not None else None,
+        "points": hearts + (13 if had_qs else 0),
+    }
+
+
+def _round_view(rnd) -> dict:
+    """A round's public history: pass direction, its finished tricks (in order),
+    per-player round points, and whether the round has finished scoring."""
+    completed = [t for t in rnd.tricks if t.winner is not None]
+    scores = {str(p): pts for p, pts in rnd.get_round_points().items()}
+    return {
+        "round_idx": rnd.round_idx,
+        "pass_direction": rnd.pass_direction.value,
+        "tricks": [_trick_view(t) for t in completed],
+        "scores": scores,
+        "complete": len(completed) == 13,
+    }
 
 
 # --- Engine wiring -----------------------------------------------------------
@@ -558,6 +631,17 @@ class TableSession:
             for p, pts in r.get_round_points().items():
                 scores[str(p)] = scores.get(str(p), 0) + pts
 
+        # Points taken in the current round so far (running; final once complete).
+        round_points = {pid: 0 for pid in pids}
+        for p, pts in rnd.get_round_points().items():
+            round_points[str(p)] = pts
+
+        # Full round-by-round history: each round's pass direction, its completed
+        # tricks (so the operator can review earlier play), and per-player round
+        # scores. Drives the expandable scoreboard, mirroring the live/tournament
+        # views.
+        rounds = [_round_view(r) for r in game.rounds]
+
         trick = rnd.tricks[-1] if rnd.tricks else None
         current_trick = None
         if trick is not None:
@@ -580,6 +664,8 @@ class TableSession:
             "round_idx": rnd.round_idx,
             "pass_direction": rnd.pass_direction.value,
             "scores": scores,
+            "round_points": round_points,
+            "rounds": rounds,
             "current_trick": current_trick,
             "completed_tricks": len([t for t in rnd.tricks if t.winner is not None]),
             "ai_hands": ai_hands,
