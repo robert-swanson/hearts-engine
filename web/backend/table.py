@@ -366,12 +366,16 @@ class WebTableIO:
                     reason = "Ruled out — must be in another player's hand"
             disabled[str(card)] = reason
 
-        # Follow-suit: if the player provably holds a card of the led suit, every
-        # other suit is an illegal play even if they could hold it.
+        # Additional restrictions mirror the engine's legal-move rules
+        # (see TableTrick.compute_legal_moves). Each only greys a card when we
+        # can *prove* — from guaranteed knowledge — that the player has a legal
+        # alternative, so a genuinely-legal play is never blocked.
         rnd = game.rounds[-1]
         trick = rnd.tricks[-1]
         if trick.moves:
             lead = trick.moves[0].card.suit
+            # Follow-suit: if the player provably holds a card of the led suit,
+            # every other suit is an illegal play even if they could hold it.
             holds_lead = any(c.suit == lead for c in me["guaranteed"])
             if holds_lead:
                 for card in holdable:
@@ -379,6 +383,32 @@ class WebTableIO:
                         disabled[str(card)] = (
                             f"Must follow {SUIT_NAME[lead]} ({player.player_tag} is known to hold it)"
                         )
+            # First trick: no point cards (hearts / Q♠) may be played unless the
+            # player is known to hold nothing but points.
+            if trick.trick_idx == 0 and any(
+                c.suit != Suit.HEARTS and c != Card("QS") for c in me["guaranteed"]
+            ):
+                for card in holdable:
+                    if (card.suit == Suit.HEARTS or card == Card("QS")) and str(card) not in disabled:
+                        disabled[str(card)] = "No point cards may be played on the first trick"
+        else:
+            # Leading a trick.
+            if trick.trick_idx == 0:
+                # The first trick must be led with the 2 of clubs (the leader is,
+                # by construction, the player holding it).
+                two_c = Card("2C")
+                for card in holdable:
+                    if card != two_c and str(card) not in disabled:
+                        disabled[str(card)] = "The first trick must be led with the 2 of clubs"
+                disabled.pop(str(two_c), None)
+            else:
+                # Can't lead hearts until they're broken — unless the player is
+                # known to hold nothing but hearts.
+                hearts_broken = any(c.suit == Suit.HEARTS for c in played)
+                if not hearts_broken and any(c.suit != Suit.HEARTS for c in me["guaranteed"]):
+                    for card in holdable:
+                        if card.suit == Suit.HEARTS and str(card) not in disabled:
+                            disabled[str(card)] = "Hearts haven't been broken yet"
         return disabled
 
     def ask_for_player(self, prompt: str, players: List[PlayerTagSession]) -> PlayerTagSession:

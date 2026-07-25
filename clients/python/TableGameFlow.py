@@ -186,6 +186,12 @@ class TableRound(Round):
             hearts = sum(1 for m in trick.moves if m.card.suit == Suit.HEARTS)
             had_qs = any(m.card == Card("QS") for m in trick.moves)
             player_to_points[trick.winner] += hearts + (13 if had_qs else 0)
+
+        # Shoot the moon: a player who takes all 26 points scores 0 while every
+        # other player is charged the full 26 (matches the server's scoreRound).
+        for shooter, points in player_to_points.items():
+            if points == 26:
+                return {p: (0 if p == shooter else 26) for p in self.player_order}
         return player_to_points
 
     def run_round(self, game: 'TableGame'):
@@ -241,7 +247,8 @@ class TableRound(Round):
             table_trick.run_trick(game, self)
             self.ai_players = table_trick.ai_players  # may have been rebuilt by undo
 
-            played_cards.extend(m.card for m in table_trick.moves)
+            # `played_cards` is the same list the trick appends each move to as
+            # it plays, so it already holds this trick's cards — don't re-add them.
             last_winner = table_trick.get_winner()
 
         round_points = self.get_round_points()
@@ -271,21 +278,38 @@ class TableTrick(Trick):
         self._move_buffer.clear()
 
     def compute_legal_moves(self, hand: List[Card]) -> List[Card]:
+        """Legal moves for the player to move, mirroring the server's rules
+        (see ``server/game/trick.h::legalMovesForPlayer``)."""
         legal = list(hand)
-        if self.moves:
+        leading = not self.moves
+
+        # Must follow the led suit when able.
+        if not leading:
             suit = self.moves[0].card.suit
             in_suit = [c for c in legal if c.suit == suit]
             if in_suit:
                 legal = in_suit
 
-        hearts_broken = any(c.suit == Suit.HEARTS for c in self.played_cards)
-        if not hearts_broken:
-            non_hearts = [c for c in legal if c.suit != Suit.HEARTS]
-            if non_hearts:
-                legal = non_hearts
+        # Hearts can't be *led* until they've been broken — but they may always
+        # be discarded when following a suit you're void in (that's how hearts
+        # get broken). This restriction therefore only applies to the lead.
+        if leading:
+            hearts_broken = any(c.suit == Suit.HEARTS for c in self.played_cards)
+            if not hearts_broken:
+                non_hearts = [c for c in legal if c.suit != Suit.HEARTS]
+                if non_hearts:
+                    legal = non_hearts
 
         if self.trick_idx == 0:
-            legal = [c for c in legal if c != Card("QS")] or legal
+            if leading:
+                # The very first trick of a round must be led with the 2 of clubs.
+                two_of_clubs = Card("2C")
+                return [two_of_clubs] if two_of_clubs in legal else legal
+            # No point cards (hearts or the Queen of Spades) may be played on the
+            # first trick unless a player has nothing else that's legal.
+            non_points = [c for c in legal if c.suit != Suit.HEARTS and c != Card("QS")]
+            if non_points:
+                legal = non_points
 
         return legal
 
