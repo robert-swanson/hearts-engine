@@ -50,6 +50,22 @@ export function RoundDetail({ lobby = false }: { lobby?: boolean }) {
     roundIdx: Number(roundIdx),
   }
 
+  // The panel is only shown for games that recorded any logs; within such a game
+  // an individual move may still have none (an empty-state is shown then).
+  const gameHasLogs = (data.move_logs?.length ?? 0) > 0
+  const logsFor = (player: string, phase: string, trickIndex?: number): string[] | undefined => {
+    if (!gameHasLogs) return undefined
+    return (data.move_logs ?? [])
+      .filter(
+        (e) =>
+          e.author === player &&
+          e.phase === phase &&
+          e.round_idx === Number(roundIdx) &&
+          (trickIndex === undefined || e.trick_idx === trickIndex),
+      )
+      .map((e) => e.text)
+  }
+
   const handleCardClick = (player: string, _card: string, trickIndex: number) => {
     const { hand, playedCard } = handBeforePlay(round, data.player_order, player, trickIndex)
     const legal = legalMovesBeforePlay(round, data.player_order, player, trickIndex)
@@ -60,6 +76,7 @@ export function RoundDetail({ lobby = false }: { lobby?: boolean }) {
       highlight: playedCard ? [playedCard] : [],
       legal,
       footer: `Gold ring = card played. Greyed-out cards weren't legal to play here. (${hand.length} card${hand.length === 1 ? '' : 's'} in hand)`,
+      logs: logsFor(player, 'move', trickIndex),
       debugCommand: buildDebugCommand(debugCtx, {
         seatIndex: data.player_order.indexOf(player),
         playerFullId: player,
@@ -88,6 +105,7 @@ export function RoundDetail({ lobby = false }: { lobby?: boolean }) {
       hand,
       highlight,
       footer: `Highlighted cards were passed to ${displayString(nameOf(recipient))}.`,
+      logs: logsFor(selected, 'pass'),
       // No throughTrick → the sim runs the whole round, starting with the pass.
       debugCommand: buildDebugCommand(debugCtx, {
         seatIndex: data.player_order.indexOf(selected),
