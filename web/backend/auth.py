@@ -170,4 +170,15 @@ def redact_game(detail: dict, principal: Optional[dict]) -> dict:
                 if ri is not None and player_order[ri].startswith(prefix):
                     visible[pid] = cards
         rnd["cards_passed"] = visible or None
+
+    # Per-move logs a player produced reveal that player's own reasoning/hand, so
+    # they're as private as cards_passed: a team sees only logs authored by its
+    # own players (admins short-circuit above and see all); anyone else sees none.
+    logs = detail.get("move_logs")
+    if isinstance(logs, list):
+        if team:
+            prefix = f"{team}/"
+            detail["move_logs"] = [e for e in logs if str(e.get("author", "")).startswith(prefix)]
+        else:
+            detail["move_logs"] = []
     return detail
