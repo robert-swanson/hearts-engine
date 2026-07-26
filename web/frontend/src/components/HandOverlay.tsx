@@ -1,6 +1,7 @@
 import type { PlayerDisplay } from '../lib/playerId'
 import { SUIT_ORDER, type Suit } from '../lib/cards'
 import { Card } from './Card'
+import { CopyButton } from './CopyButton'
 import { PlayerName } from './PlayerName'
 import './HandOverlay.css'
 
@@ -13,6 +14,21 @@ export interface HandOverlayData {
   // cards get a green ring, the rest are faded. Omit for non-play overlays.
   legal?: string[]
   footer: string
+  // When present, a copy-able `player_debugger.py` command that replays this
+  // exact move with a live Player (see clients/python/player_debugger.py).
+  debugCommand?: string
+}
+
+function DebugCommand({ command }: { command: string }) {
+  return (
+    <div className="overlay-debugcmd">
+      <div className="overlay-debugcmd__head">
+        <span>Debug this move — run from the repo root</span>
+        <CopyButton text={command} label="Copy command" className="overlay-debugcmd__copy" />
+      </div>
+      <code className="overlay-debugcmd__code">{command}</code>
+    </div>
+  )
 }
 
 interface HandOverlayProps {
@@ -64,6 +80,7 @@ export function HandOverlay({ data, name, onClose }: HandOverlayProps) {
           </div>
         )}
         <div className="overlay-footer">{data.footer}</div>
+        {data.debugCommand && <DebugCommand command={data.debugCommand} />}
       </div>
     </div>
   )

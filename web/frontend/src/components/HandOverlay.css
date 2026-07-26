@@ -88,3 +88,46 @@
   font-size: 12px;
   color: #888;
 }
+
+.overlay-debugcmd {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid #eee;
+}
+
+.overlay-debugcmd__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: #666;
+}
+
+.overlay-debugcmd__copy {
+  border: 1px solid #c7c7c7;
+  background: #f6f6f6;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.overlay-debugcmd__copy:hover {
+  background: #ececec;
+}
+
+.overlay-debugcmd__code {
+  display: block;
+  background: #1e1e1e;
+  color: #e6e6e6;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre;
+}

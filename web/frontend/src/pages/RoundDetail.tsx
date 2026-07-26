@@ -10,6 +10,8 @@ import { handBeforePlay, handBeforePassing, legalMovesBeforePlay } from '../lib/
 import { TrickRow } from '../components/TrickRow'
 import { HandOverlay, type HandOverlayData } from '../components/HandOverlay'
 import { Card } from '../components/Card'
+import { CopyButton } from '../components/CopyButton'
+import { buildDebugCommand, type DebugCommandContext } from '../lib/debugCommand'
 import { useAuth } from '../lib/auth'
 
 export function RoundDetail({ lobby = false }: { lobby?: boolean }) {
@@ -38,6 +40,16 @@ export function RoundDetail({ lobby = false }: { lobby?: boolean }) {
   const seats = columnSeats(data.player_order, selected)
   const nameOf = nameResolver(data.player_order)
 
+  // Context for building `player_debugger.py` commands that replay a move.
+  const debugCtx: DebugCommandContext = {
+    origin: window.location.origin,
+    lobby,
+    cid,
+    index,
+    gameId,
+    roundIdx: Number(roundIdx),
+  }
+
   const handleCardClick = (player: string, _card: string, trickIndex: number) => {
     const { hand, playedCard } = handBeforePlay(round, data.player_order, player, trickIndex)
     const legal = legalMovesBeforePlay(round, data.player_order, player, trickIndex)
@@ -48,6 +60,11 @@ export function RoundDetail({ lobby = false }: { lobby?: boolean }) {
       highlight: playedCard ? [playedCard] : [],
       legal,
       footer: `Gold ring = card played. Greyed-out cards weren't legal to play here. (${hand.length} card${hand.length === 1 ? '' : 's'} in hand)`,
+      debugCommand: buildDebugCommand(debugCtx, {
+        seatIndex: data.player_order.indexOf(player),
+        playerFullId: player,
+        throughTrick: trickIndex,
+      }),
     })
   }
 
@@ -71,6 +88,11 @@ export function RoundDetail({ lobby = false }: { lobby?: boolean }) {
       hand,
       highlight,
       footer: `Highlighted cards were passed to ${displayString(nameOf(recipient))}.`,
+      // No throughTrick → the sim runs the whole round, starting with the pass.
+      debugCommand: buildDebugCommand(debugCtx, {
+        seatIndex: data.player_order.indexOf(selected),
+        playerFullId: selected,
+      }),
     })
   }
 
@@ -146,6 +168,15 @@ export function RoundDetail({ lobby = false }: { lobby?: boolean }) {
             · Click a player's column header to center the view on them.
           </span>
         </span>
+        <CopyButton
+          className="btn debug-round-btn"
+          label={`Copy debug command · ${displayString(nameOf(selected))}`}
+          copiedLabel="Copied debug command!"
+          text={buildDebugCommand(debugCtx, {
+            seatIndex: data.player_order.indexOf(selected),
+            playerFullId: selected,
+          })}
+        />
       </div>
 
       <div className="card-surface passing-section">
