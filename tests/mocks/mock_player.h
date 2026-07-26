@@ -12,7 +12,7 @@ public:
     MockPlayer() : Player("mock_player"){
     };
 
-    MOCK_METHOD(void, notifyStartGame, (std::vector<PlayerID> playerOrder));
+    MOCK_METHOD(void, notifyStartGame, (std::vector<PlayerID> playerOrder, const std::string& gameId, const std::string& resultsRelDir));
     MOCK_METHOD(void, notifyStartRound, (int roundIndex, PassDirection passDirection, CardCollection hand));
     MOCK_METHOD(CardCollection, getCardsToPass, (PassDirection direction));
     MOCK_METHOD(void, notifyReceivedCards, (const CardCollection& receivedCards, const CardCollection& donatedCards));

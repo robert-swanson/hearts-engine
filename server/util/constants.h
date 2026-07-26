@@ -28,6 +28,12 @@ namespace Common::Server::Tags
     constexpr auto PLAYER_SESSION_ID = "player_session_id";
     constexpr auto GAME_TYPE = "game_type";
     constexpr auto PLAYER_ORDER = "player_order";
+    // Optional start_game fields: the recorded game's id and its results
+    // directory relative to RESULTS_DIR ("lobby" for lobby games), so SDK clients
+    // can persist per-move logs next to the recorded game. See
+    // clients/python/util/MoveLogging.py.
+    constexpr auto GAME_ID = "game_id";
+    constexpr auto RESULTS_REL_DIR = "results_rel_dir";
     constexpr auto PASS_DIRECTION = "pass_direction";
     constexpr auto CARDS = "cards";
     constexpr auto CARD = "card";

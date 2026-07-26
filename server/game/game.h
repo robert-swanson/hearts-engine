@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string>
 #include <utility>
 
 #include "objects/player.h"
@@ -13,9 +14,11 @@ class Game
 {
 public:
     explicit Game(PlayerArray players, std::shared_ptr<GameLogger> gameLogger,
-                  GameObserver* observer = nullptr):
+                  GameObserver* observer = nullptr,
+                  std::string gameId = "", std::string resultsRelDir = ""):
     mPlayers(players), mRankings(players), mMaxScore(0),
-    mGameLogger(std::move(gameLogger)), mObserver(observer)
+    mGameLogger(std::move(gameLogger)), mObserver(observer),
+    mGameId(std::move(gameId)), mResultsRelDir(std::move(resultsRelDir))
     {
     }
 
@@ -55,7 +58,7 @@ private:
     void notifyStartGame()
     {
         for (PlayerRef & player : mPlayers)
-            player->notifyStartGame(PlayerArrayToIds(mPlayers));
+            player->notifyStartGame(PlayerArrayToIds(mPlayers), mGameId, mResultsRelDir);
     }
 
     void notifyEndGame()
@@ -97,5 +100,7 @@ private:
     int mCurrentRoundIdx = 0;
     std::shared_ptr<GameLogger> mGameLogger;
     GameObserver* mObserver;
+    std::string mGameId;         // recorded game id, forwarded to clients in start_game
+    std::string mResultsRelDir;  // game's results dir relative to RESULTS_DIR (e.g. "lobby")
 };
 }

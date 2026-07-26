@@ -60,8 +60,11 @@ public:
             for (const auto& p : players)
                 recorder.result.playerOrder.push_back(p->getTagSession());
 
+            // Pass the recorded game id + its results subdir ("lobby") so the
+            // start_game message tells clients where to persist per-move logs.
             Common::Game::Game game(
-                {players[0], players[1], players[2], players[3]}, logger, &recorder);
+                {players[0], players[1], players[2], players[3]}, logger, &recorder,
+                gameId, "lobby");
             game.runGame();
 
             try
