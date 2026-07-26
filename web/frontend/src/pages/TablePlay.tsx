@@ -7,6 +7,7 @@ import type {
   TablePublic,
   TableInference,
   TableCardState,
+  TableAiAction,
   AiTypeOption,
 } from '../api/client'
 import { useTableSocket, type TableSendAction, type TableSeatDraft } from '../lib/tableSocket'
@@ -114,6 +115,7 @@ export function TableView() {
 
       {error && <p className="live-error">{error}</p>}
       {snapshot.error && <p className="live-error">Engine error: {snapshot.error}</p>}
+      {snapshot.warning && <p className="live-error table-warning">⚠ {snapshot.warning}</p>}
 
       {status === 'lobby' ? (
         <TableLobby snapshot={snapshot} send={send} />
@@ -222,6 +224,10 @@ function TablePlayView({ snapshot, send }: { snapshot: TableSnapshot; send: (a: 
     <>
       {pub && <TableInfoBar pub={pub} />}
 
+      {/* Everything the AIs have played/passed since the last report, shown at
+          once so a run of consecutive AI moves takes no per-move tap. */}
+      <AiActionsPanel actions={snapshot.ai_actions} pending={pending} respond={respond} />
+
       {/* The prompt the engine is waiting on — the operator's main interaction. */}
       <PromptPanel key={promptKey(pending)} pending={pending} respond={respond} status={snapshot.status} />
 
@@ -238,10 +244,67 @@ function TablePlayView({ snapshot, send }: { snapshot: TableSnapshot; send: (a: 
 
 function promptKey(p: TablePending | null): string {
   if (!p) return 'idle'
+  if (p.kind === 'ai_batch') return 'ai_batch'
   if (p.kind === 'human_play') return `play-${p.player}-${p.trick_idx}`
   if (p.kind === 'deal_hand' || p.kind === 'pass_received' || p.kind === 'cards')
     return `${p.kind}-${p.subject ?? ''}-${p.num_cards}-${p.prompt}`
   return `${p.kind}-${p.prompt}`
+}
+
+// --- Batched AI actions: what to physically do for the AIs -------------------
+// A run of consecutive AI plays/passes is shown together, each row naming the
+// player and the card(s), so the operator can place them all without a tap per
+// move. The list clears itself when the next table event is reported. At an
+// all-AI table (nothing else to report) a "Placed them →" ack paces each trick.
+
+function AiActionsPanel({
+  actions,
+  pending,
+  respond,
+}: {
+  actions: TableAiAction[]
+  pending: TablePending | null
+  respond: (v: unknown) => void
+}) {
+  if (actions.length === 0) return null
+  const needsAck = pending?.kind === 'ai_batch'
+  return (
+    <div className="card-surface table-ai-actions">
+      <div className="table-ai-actions__label">
+        Do {actions.length > 1 ? 'these' : 'this'} for the AI{actions.length > 1 ? 's' : ''}
+      </div>
+      <div className="table-ai-actions__list">
+        {actions.map((a, i) => (
+          <div key={`${a.message}-${i}`} className="table-ai-action">
+            {a.action && a.cards.length > 0 ? (
+              <>
+                <span className="table-ai-action__actor">{a.actor}</span>
+                <span className="table-ai-action__verb">{a.action === 'pass' ? 'passes' : 'plays'}</span>
+                <span className="table-ai-action__cards">
+                  {sortBySuitThenRank(a.cards).map((c) => (
+                    <Card key={c} code={c} size="md" />
+                  ))}
+                </span>
+                {a.action === 'pass' && a.recipient && (
+                  <>
+                    <span className="table-ai-action__verb">to</span>
+                    <span className="table-ai-action__actor">{a.recipient}</span>
+                  </>
+                )}
+              </>
+            ) : (
+              <span className="table-ai-action__msg">{a.message}</span>
+            )}
+          </div>
+        ))}
+      </div>
+      {needsAck && (
+        <button className="btn table-ai-actions__btn" onClick={() => respond({ ack: true })}>
+          Placed them →
+        </button>
+      )}
+    </div>
+  )
 }
 
 function TableInfoBar({ pub }: { pub: TablePublic }) {
@@ -290,37 +353,9 @@ function PromptPanel({
     )
   }
 
-  if (pending.kind === 'instruct') {
-    const cards = pending.cards ?? []
-    const structured = !!pending.action && cards.length > 0
-    return (
-      <div className="card-surface table-prompt table-prompt--instruct">
-        <div className="table-instruct__label">Do this at the table</div>
-        {structured ? (
-          <div className="table-instruct__action">
-            <span className="table-instruct__actor">{pending.actor}</span>
-            <span className="table-instruct__verb">
-              {pending.action === 'pass' ? 'passes' : 'plays'}
-            </span>
-            <span className="table-instruct__cards">
-              {sortBySuitThenRank(cards).map((c) => (
-                <Card key={c} code={c} size="md" />
-              ))}
-            </span>
-            {pending.action === 'pass' && pending.recipient && (
-              <>
-                <span className="table-instruct__verb">to</span>
-                <span className="table-instruct__actor">{pending.recipient}</span>
-              </>
-            )}
-          </div>
-        ) : (
-          <div className="table-instruct__msg">{pending.message}</div>
-        )}
-        <button className="btn table-instruct__btn" onClick={() => respond({ ack: true })}>Done →</button>
-      </div>
-    )
-  }
+  // An all-AI batch acknowledgement is rendered inline by AiActionsPanel (which
+  // owns the queued cards), so there is no separate prompt panel for it.
+  if (pending.kind === 'ai_batch') return null
 
   if (pending.kind === 'pass_direction') {
     return (
@@ -395,6 +430,8 @@ function PromptPanel({
         count={pending.num_cards}
         submitLabel={`Submit ${pending.num_cards} card${pending.num_cards > 1 ? 's' : ''}`}
         onSubmit={(codes) => respond({ cards: codes })}
+        allowDefer={pending.allow_defer}
+        onDefer={() => respond({ defer: true })}
         error={pending.error}
       />
     </div>
@@ -413,6 +450,8 @@ function CardPicker({
   onSubmit,
   allowUndo,
   onUndo,
+  allowDefer,
+  onDefer,
   error,
   defaultSuit,
 }: {
@@ -422,6 +461,8 @@ function CardPicker({
   onSubmit: (codes: string[]) => void
   allowUndo?: boolean
   onUndo?: () => void
+  allowDefer?: boolean
+  onDefer?: () => void
   error?: string | null
   defaultSuit?: Suit | null
 }) {
@@ -530,6 +571,15 @@ function CardPicker({
       {allowUndo && (
         <div className="card-picker__undo">
           <button className="btn btn--ghost" onClick={onUndo}>↶ Undo last move</button>
+        </div>
+      )}
+
+      {allowDefer && (
+        <div className="card-picker__defer">
+          <button className="btn btn--ghost" onClick={onDefer}>Input later ⏱</button>
+          <span className="muted card-picker__defer-hint">
+            Haven't passed yet? Skip this for now — you'll be asked again once every hand is entered.
+          </span>
         </div>
       )}
     </div>

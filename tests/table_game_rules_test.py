@@ -179,8 +179,8 @@ def test_played_cards_not_double_counted():
                 # Seat index is encoded in the subject "Starting hand for Bot<i>".
                 seat = int(p["subject"].replace("Bot", ""))
                 session.submit({"cards": list(hands[seat])})
-            elif kind == "instruct":
-                session.submit({"ack": True})              # AI play instructions
+            elif kind == "ai_batch":
+                session.submit({"ack": True})              # batched AI play instructions
             else:
                 raise AssertionError(f"unexpected prompt {kind!r} in all-AI round")
             # Give the engine thread a beat to advance to the next prompt.

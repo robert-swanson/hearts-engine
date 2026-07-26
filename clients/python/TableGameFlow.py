@@ -1,5 +1,5 @@
 from collections import defaultdict
-from typing import List, Optional, Dict, Type
+from typing import List, Optional, Dict, Tuple, Type
 
 from clients.python.api.Game import Game
 from clients.python.api.Player import Player
@@ -8,7 +8,7 @@ from clients.python.api.Trick import Trick, Move
 from clients.python.api.types.Card import Card, Suit
 from clients.python.api.types.PassDirection import PassDirection
 from clients.python.api.types.PlayerTagSession import PlayerTagSession, PlayerTag
-from clients.python.util.table_game.TableGameCLI import TableGameCLI, UndoMove
+from clients.python.util.table_game.TableGameCLI import TableGameCLI, UndoMove, DEFER
 from clients.python.util.table_game.CardValidation import BlacklistedCardsValidator, UNIQUE_CARDS_VALIDATOR
 
 
@@ -147,34 +147,43 @@ class TableRound(Round):
         self.ai_configs = ai_configs
         self.cli = cli
 
-        # Ask for each AI's starting hand; cross-validate against already-entered AI hands
+        # Hands are dealt interleaved with passing in run_round (see
+        # _setup_hands_and_pass) so the operator handles one physical hand at a
+        # time. These are populated as that walk proceeds.
         self.ai_hands: Dict[PlayerTagSession, List[Card]] = {}
-        for pts in player_order:
-            if pts in ai_players:
-                already_dealt = [c for hand in self.ai_hands.values() for c in hand]
-                validators = [UNIQUE_CARDS_VALIDATOR, BlacklistedCardsValidator(already_dealt)]
-                cards = cli.ask_for_cards(f"Starting hand for {pts.player_tag}", validators, 13)
-                self.ai_hands[pts] = cards
+        # A snapshot of every AI hand exactly as dealt, before any pass mutates
+        # it. Used to validate the cards a *human* reports passing: a human passes
+        # from their own dealt hand, so a passed card can never be one an AI was
+        # dealt. Validating against the live (mid-pass) ai_hands instead would let
+        # a card an AI has already given away become selectable — and be
+        # mis-entered as a human pass — landing it in two hands at once.
+        self.ai_hands_dealt: Dict[PlayerTagSession, List[Card]] = {}
 
-        first_hand = next(iter(self.ai_hands.values()), [])
-        super().__init__(round_idx, pass_direction, player_order, first_hand)
+        super().__init__(round_idx, pass_direction, player_order, [])
 
         self.ai_hands_at_tricks_start: Dict[PlayerTagSession, List[Card]] = {}
         self.ai_received_cards: Dict[PlayerTagSession, List[Card]] = {}
         self.ai_donating_cards: Dict[PlayerTagSession, List[Card]] = {}
+        self._human_passes_seen: List[Card] = []
 
     def get_trick_order(self, last_winner: Optional[PlayerTagSession]) -> List[PlayerTagSession]:
         if last_winner is not None:
             first = last_winner
         else:
-            # Check if any AI holds 2C; otherwise ask the CLI.
-            # Use `or` so ask_for_player is only called when next() returns None
-            # (Python evaluates all arguments before calling next(), so passing
-            # ask_for_player() directly as the default would always invoke it).
-            first = (
-                next((pts for pts, hand in self.ai_hands.items() if Card("2C") in hand), None)
-                or self.cli.ask_for_player("Who has the 2 of clubs?", self.player_order)
-            )
+            # The 2 of clubs leads the first trick. Every AI hand is known, so if
+            # an AI holds it we lead with that AI outright. Otherwise it must be a
+            # human — and only the humans are possible holders, so never offer an
+            # AI (which we can prove doesn't have it). With a single human at the
+            # table that human is the only possible holder, so skip the question
+            # entirely and lead with them (they'll simply be asked to play the 2C).
+            first = next((pts for pts, hand in self.ai_hands.items() if Card("2C") in hand), None)
+            if first is None:
+                humans = [p for p in self.player_order if p not in self.ai_hands]
+                if len(humans) == 1:
+                    first = humans[0]
+                else:
+                    candidates = humans or self.player_order
+                    first = self.cli.ask_for_player("Who has the 2 of clubs?", candidates)
         start_idx = self.player_order.index(first)
         return self.player_order[start_idx:] + self.player_order[:start_idx]
 
@@ -194,44 +203,125 @@ class TableRound(Round):
                 return {p: (0 if p == shooter else 26) for p in self.player_order}
         return player_to_points
 
-    def run_round(self, game: 'TableGame'):
-        # Notify each AI of round start, pointing round.cards_in_hand at their own hand
-        for pts, p in self.ai_players.items():
-            self.cards_in_hand = self.ai_hands[pts]
-            p.handle_new_round(self)
+    def _pass_chain_order(self) -> List[PlayerTagSession]:
+        """Players in pass-chain order for dealing + passing.
 
-        # Restore cards_in_hand to first AI for CLI card-tracking features
+        We follow the "passes to" links so that, whenever possible, a player's
+        donor is handled before them — letting the operator deal a hand, pass it,
+        and receive the incoming cards in a single physical pickup. The walk
+        starts at a human (so the first AI reached receives from that human, whose
+        pass may already be known), then continues through every cycle so no
+        player is missed. With four players LEFT/RIGHT form one cycle and ACROSS
+        two; either way every player appears exactly once.
+        """
+        receiver_of = {
+            p: self.pass_direction.get_receiving_player(self.player_order, p)
+            for p in self.player_order
+        }
+        humans = [p for p in self.player_order if p not in self.ai_players]
+        first = humans[0] if humans else self.player_order[0]
+        starts = [first] + [p for p in self.player_order if p != first]
+        order: List[PlayerTagSession] = []
+        visited = set()
+        for start in starts:
+            cur = start
+            while cur not in visited:
+                visited.add(cur)
+                order.append(cur)
+                cur = receiver_of[cur]
+        return order
+
+    def _ask_human_pass(self, donor: PlayerTagSession, receiver: PlayerTagSession, allow_defer: bool):
+        """Ask what a *human* donor passed to ``receiver`` (or defer).
+
+        A human passes from their own dealt hand, so a passed card can never be a
+        card any AI was dealt, nor one already reported as another human's pass.
+        Blacklisting the *dealt* AI hands (a stable snapshot) rather than the
+        live, mid-pass ai_hands is what keeps this sound regardless of the order
+        receivers are resolved in. Returns the 3 cards, or ``DEFER`` if the
+        operator chose to enter them later.
+        """
+        forbidden = [c for hand in self.ai_hands_dealt.values() for c in hand]
+        forbidden += self._human_passes_seen
+        validators = [UNIQUE_CARDS_VALIDATOR, BlacklistedCardsValidator(forbidden)]
+        received = self.cli.ask_for_cards(
+            f"What did {donor.player_tag} pass to {receiver.player_tag}?",
+            validators, 3, allow_defer=allow_defer)
+        if received is DEFER:
+            return DEFER
+        self._human_passes_seen.extend(received)
+        return received
+
+    def _apply_received(self, receiver: PlayerTagSession, received: List[Card], donor: PlayerTagSession):
+        """Fold the cards ``receiver`` got into its hand (its own donation has
+        already been removed) and notify the AI."""
+        self.ai_received_cards[receiver] = list(received)
+        self.ai_hands[receiver].extend(received)  # donated already removed
+        self.ai_players[receiver].receive_passed_cards(received, self.pass_direction, donor)
+
+    def _setup_hands_and_pass(self):
+        """Deal every AI hand and resolve passing, interleaved in pass-chain order
+        so the operator handles one physical hand at a time. Human passes whose
+        cards aren't in hand yet can be deferred (``DEFER``) and are collected at
+        the end, once every hand is entered and every AI pass is known."""
+        deferred: List[Tuple[PlayerTagSession, PlayerTagSession]] = []  # (receiver, donor)
+        passed: set = set()  # AIs whose pass has been decided
+
+        for pts in self._pass_chain_order():
+            if pts not in self.ai_players:
+                continue  # humans hold their own cards — nothing to enter
+
+            # 1. Deal this AI's hand (cross-validated against hands entered so far).
+            already = [c for hand in self.ai_hands.values() for c in hand]
+            validators = [UNIQUE_CARDS_VALIDATOR, BlacklistedCardsValidator(already)]
+            hand = self.cli.ask_for_cards(f"Starting hand for {pts.player_tag}", validators, 13)
+            self.ai_hands[pts] = hand
+            self.ai_hands_dealt[pts] = list(hand)
+            self.cards_in_hand = self.ai_hands[pts]
+            self.ai_players[pts].handle_new_round(self)
+
+            if self.pass_direction == PassDirection.KEEPER:
+                continue
+
+            # 2. Decide + instruct this AI's pass, removing the donated cards from
+            #    its hand at once so the model never counts a card in two hands.
+            receiving = self.pass_direction.get_receiving_player(self.player_order, pts)
+            donating = self.ai_players[pts].get_cards_to_pass(self.pass_direction, receiving)
+            self.ai_donating_cards[pts] = list(donating)
+            for c in donating:
+                if c in self.ai_hands[pts]:
+                    self.ai_hands[pts].remove(c)
+            self.cli.instruct(f"{pts.player_tag}: pass {list(donating)} to {receiving.player_tag}")
+            passed.add(pts)
+
+            # 3. Resolve what this AI received from its donor.
+            donor = self.pass_direction.get_donating_player(self.player_order, pts)
+            if donor in self.ai_players:
+                if donor in passed:
+                    self._apply_received(pts, list(self.ai_donating_cards[donor]), donor)
+                else:
+                    deferred.append((pts, donor))  # donor AI not dealt yet (cycle start)
+            else:
+                received = self._ask_human_pass(donor, pts, allow_defer=True)
+                if received is DEFER:
+                    deferred.append((pts, donor))
+                else:
+                    self._apply_received(pts, received, donor)
+
+        # Collect everything left: deferred human passes (asked now, with every
+        # hand known) and any AI-to-AI receive that outran its donor.
+        for pts, donor in deferred:
+            if donor in self.ai_players:
+                received = list(self.ai_donating_cards[donor])
+            else:
+                received = self._ask_human_pass(donor, pts, allow_defer=False)
+            self._apply_received(pts, received, donor)
+
         if self.ai_hands:
             self.cards_in_hand = next(iter(self.ai_hands.values()))
 
-        if self.pass_direction != PassDirection.KEEPER:
-            # Phase 1: get every AI's chosen pass cards and show instructions to the go-between
-            for pts, p in self.ai_players.items():
-                receiving = self.pass_direction.get_receiving_player(self.player_order, pts)
-                donating_cards = p.get_cards_to_pass(self.pass_direction, receiving)
-                self.ai_donating_cards[pts] = donating_cards
-                self.cli.instruct(f"{pts.player_tag}: pass {donating_cards} to {receiving.player_tag}")
-
-            # Phase 2: resolve what each AI receives
-            for pts, p in self.ai_players.items():
-                donating = self.pass_direction.get_donating_player(self.player_order, pts)
-
-                if donating in self.ai_players:
-                    # Donor is an AI — we already know exactly what they're passing
-                    received = list(self.ai_donating_cards[donating])
-                    print(f"[auto] {donating.player_tag} passes {received} to {pts.player_tag}")
-                else:
-                    # Donor is human — ask the go-between; blacklist all cards held by any AI
-                    all_ai_cards = [c for hand in self.ai_hands.values() for c in hand]
-                    validators = [UNIQUE_CARDS_VALIDATOR, BlacklistedCardsValidator(all_ai_cards)]
-                    received = self.cli.ask_for_cards(
-                        f"What did {donating.player_tag} pass to {pts.player_tag}?", validators, 3)
-
-                self.ai_received_cards[pts] = received
-                new_hand = [c for c in self.ai_hands[pts] + received if c not in self.ai_donating_cards[pts]]
-                self.ai_hands[pts].clear()
-                self.ai_hands[pts].extend(new_hand)
-                p.receive_passed_cards(received, self.pass_direction, donating)
+    def run_round(self, game: 'TableGame'):
+        self._setup_hands_and_pass()
 
         for pts in self.ai_hands:
             self.ai_hands_at_tricks_start[pts] = list(self.ai_hands[pts])

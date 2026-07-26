@@ -47,7 +47,7 @@ import live  # noqa: E402  (live performs the SDK path bootstrap on import)
 from live import AI_TYPES, ai_type_options, default_ai_type, _sanitize  # noqa: E402
 
 from clients.python.TableGameFlow import TableGame  # noqa: E402
-from clients.python.util.table_game.TableGameCLI import UndoMove  # noqa: E402
+from clients.python.util.table_game.TableGameCLI import UndoMove, DEFER  # noqa: E402
 from clients.python.util.table_game.CardValidation import (  # noqa: E402
     BlacklistedCardsValidator,
     _is_valid_card_str,
@@ -226,6 +226,13 @@ class WebTableIO:
         self.session.pending = None
         self.session.broadcast()
 
+    def _resolve(self):
+        """A reportable prompt (or an all-AI batch) has been answered. Any AI
+        actions buffered for the operator to perform have, by now, been placed
+        at the table, so drop them and clear the prompt in one broadcast."""
+        self.session.ai_actions = []
+        self._clear_pending()
+
     @staticmethod
     def _blacklist(validators) -> set:
         out: set = set()
@@ -262,10 +269,11 @@ class WebTableIO:
                 pd = PassDirection[(name or default.name).upper()]
             except KeyError:
                 continue
-            self._clear_pending()
+            self._resolve()
             return pd
 
-    def ask_for_cards(self, prompt: str, validators, num_cards: int, validate_with=None):
+    def ask_for_cards(self, prompt: str, validators, num_cards: int, validate_with=None,
+                      allow_defer: bool = False):
         validate_with = validate_with or []
         disabled_cards = self._blacklist(validators)
         if "Starting hand" in prompt:
@@ -273,7 +281,7 @@ class WebTableIO:
             reason = "Already entered as another player's card"
         elif "pass" in prompt:
             kind = "pass_received"
-            reason = "Known to be held by an AI player"
+            reason = "An AI was dealt this card — the human can't have passed it"
         else:
             kind = "cards"
             reason = "Unavailable"
@@ -286,15 +294,19 @@ class WebTableIO:
                     "prompt": prompt,
                     "subject": _subject(prompt),
                     "num_cards": num_cards,
+                    "allow_defer": allow_defer,
                     "cards": self._card_states(disabled),
                     "error": error,
                 }
             )
             resp = self._await()
+            if allow_defer and isinstance(resp, dict) and resp.get("defer"):
+                self._resolve()
+                return DEFER
             picked = resp.get("cards") if isinstance(resp, dict) else None
             chosen = self._validate_card_list(picked, validators, num_cards, validate_with)
             if chosen is not None:
-                self._clear_pending()
+                self._resolve()
                 return chosen
             error = f"Please pick {num_cards} valid card(s)."
 
@@ -337,11 +349,11 @@ class WebTableIO:
             )
             resp = self._await()
             if allow_undo and isinstance(resp, dict) and resp.get("undo"):
-                self._clear_pending()
+                self._resolve()
                 raise UndoMove()
             code = resp.get("card") if isinstance(resp, dict) else None
             if isinstance(code, str) and _is_valid_card_str(code.upper(), validators, validate_with):
-                self._clear_pending()
+                self._resolve()
                 return Card(code.upper())
             error = "That card can't have been played there."
 
@@ -427,15 +439,46 @@ class WebTableIO:
             pid = resp.get("pid") if isinstance(resp, dict) else None
             match = next((p for p in players if str(p) == pid), None)
             if match is not None:
-                self._clear_pending()
+                self._resolve()
                 return match
 
+    # Number of buffered AI actions (a full trick's worth) after which an all-AI
+    # table pauses for one acknowledgement — see :meth:`instruct`.
+    _BATCH_ACK_SIZE = 4
+
     def instruct(self, prompt: str) -> None:
-        pending = {"kind": "instruct", "prompt": prompt, "message": prompt}
-        pending.update(_parse_instruct(prompt))
-        self._set_pending(pending)
-        self._await()  # any ack value
-        self._clear_pending()
+        """Queue an AI table action for the operator to physically perform.
+
+        Historically every AI move blocked here for its own "Done" tap, so a run
+        of consecutive AI plays meant a tap each. Instead we now *accumulate* the
+        actions into ``session.ai_actions`` and return immediately, letting the
+        engine race ahead through the whole run. The operator sees every queued
+        action at once (grouped by player) and never taps to advance past them —
+        the next time a real *table event* has to be reported (a human's play, an
+        AI's dealt hand, the pass direction) provides the natural pause, and
+        answering that prompt clears the placed cards (see :meth:`_resolve`).
+
+        The one exception is a table with *no* human seats: nothing there ever
+        prompts the operator, so the engine would otherwise sprint through the
+        whole game. For that case alone we pause once per trick's worth of moves
+        for a single acknowledgement so the operator can keep up.
+        """
+        parsed = _parse_instruct(prompt)
+        self.session.ai_actions.append(
+            {
+                "message": prompt,
+                "action": parsed["action"],
+                "actor": parsed["actor"],
+                "recipient": parsed["recipient"],
+                "cards": parsed["cards"],
+            }
+        )
+        if not self.session.has_human_seat() and len(self.session.ai_actions) >= self._BATCH_ACK_SIZE:
+            self._set_pending({"kind": "ai_batch"})
+            self._await()  # any ack value
+            self._resolve()
+        else:
+            self.session.broadcast()
 
 
 def _subject(prompt: str) -> Optional[str]:
@@ -543,6 +586,10 @@ class TableSession:
         self.status = "lobby"  # "lobby" | "playing" | "finished" | "error"
         self.error: Optional[str] = None
         self.pending: Optional[dict] = None
+        # AI table actions the engine has queued but the operator hasn't cleared
+        # yet — a run of consecutive AI moves shown together so no per-move tap is
+        # needed. Cleared when the next reportable prompt is answered.
+        self.ai_actions: List[dict] = []
         self.response_queue: "queue.Queue" = queue.Queue()
 
         # Seat config (lobby phase): each {kind: "human"|"ai", name, ai_type}.
@@ -622,6 +669,7 @@ class TableSession:
             self.error = f"{type(e).__name__}: {e}"
         finally:
             self.pending = None
+            self.ai_actions = []
             self.broadcast()
 
     def abort(self):
@@ -635,6 +683,12 @@ class TableSession:
         return None
 
     # -- snapshots ----------------------------------------------------------
+    def has_human_seat(self) -> bool:
+        """True if any seat is a real person whose plays get reported. Such a
+        seat produces a reportable prompt every trick, which is what paces the
+        batched AI instructions; an all-AI table has none and needs its own."""
+        return any(s.get("kind") == "human" for s in self.seats)
+
     def _seat_kind(self, index: int) -> str:
         return self.seats[index]["kind"] if 0 <= index < len(self.seats) else "ai"
 
@@ -722,18 +776,44 @@ class TableSession:
             for p, k in knowledge.items()
         }
 
+    @staticmethod
+    def _partition_warning(inference: Optional[dict]) -> Optional[str]:
+        """Defensive guard: the app's model must be a valid partition of the deck
+        — no card provably held by two players at once. If two players' *known*
+        cards overlap, the model is corrupt (the exact ">52 cards, held by two
+        players" failure), so surface it to the operator instead of silently
+        scoring the rest of the game wrong. Normal play never trips this; it's a
+        safety net behind the pass validation that prevents the known cause."""
+        if not inference:
+            return None
+        owners: Dict[str, str] = {}
+        for info in inference.values():
+            for card in info.get("guaranteed", []):
+                prev = owners.get(card)
+                if prev is not None and prev != info["name"]:
+                    return (
+                        f"Card {card} is recorded as held by both {prev} and "
+                        f"{info['name']} — the game state is inconsistent. Scores "
+                        f"from here may be wrong; please review recent entries."
+                    )
+                owners[card] = info["name"]
+        return None
+
     def snapshot(self) -> dict:
+        inference = self._inference() if self.status == "playing" else None
         return {
             "type": "state",
             "server_now": time.time(),
             "code": self.code,
             "status": self.status,
             "error": self.error,
+            "warning": self._partition_warning(inference),
             "seats": list(self.seats),
             "ai_type_options": ai_type_options(),
             "pending": self.pending,
+            "ai_actions": list(self.ai_actions),
             "public": self._public_state() if self.status != "lobby" else None,
-            "inference": self._inference() if self.status == "playing" else None,
+            "inference": inference,
         }
 
     # -- broadcast (engine thread -> asyncio bridge) ------------------------

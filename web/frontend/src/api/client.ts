@@ -349,6 +349,10 @@ export type TablePending =
       prompt: string
       subject: string | null
       num_cards: number
+      // When true (a human's pass whose cards may not be in hand yet), the
+      // operator can defer this question to the end of setup via an "input
+      // later" button instead of entering cards now.
+      allow_defer?: boolean
       cards: TableCardState[]
       error: string | null
     }
@@ -364,18 +368,22 @@ export type TablePending =
       error: string | null
     }
   | { kind: 'pick_player'; prompt: string; players: { pid: string; name: string }[] }
-  | {
-      kind: 'instruct'
-      prompt: string
-      message: string
-      // Structured breakdown of the instruction so the UI can render real cards
-      // rather than two-letter codes. `action` is null (cards empty) for any
-      // message that doesn't match a known shape — fall back to `message` then.
-      action?: 'play' | 'pass' | null
-      actor?: string | null
-      recipient?: string | null
-      cards?: string[]
-    }
+  // Only ever raised at an all-AI table (no human plays to pace on): a "cards
+  // placed?" acknowledgement after a trick's worth of buffered AI actions. The
+  // actions themselves are carried on `ai_actions`, not here.
+  | { kind: 'ai_batch' }
+
+// One AI table action the operator must physically perform — a play or a pass —
+// buffered so a run of consecutive AI moves is shown together instead of one tap
+// at a time. `action` is null (cards empty) for any engine message that doesn't
+// match a known shape; render `message` verbatim then.
+export interface TableAiAction {
+  message: string
+  action: 'play' | 'pass' | null
+  actor: string | null
+  recipient: string | null
+  cards: string[]
+}
 
 export interface TablePublic {
   player_order: string[]
@@ -406,9 +414,15 @@ export interface TableSnapshot {
   code: string
   status: TableStatus
   error: string | null
+  // Non-fatal consistency warning (e.g. a card recorded in two hands). Surfaced
+  // as a banner so the operator can catch a bad state instead of scoring wrong.
+  warning?: string | null
   seats: TableSeat[]
   ai_type_options: AiTypeOption[]
   pending: TablePending | null
+  // AI plays/passes queued for the operator to perform, shown together so a run
+  // of consecutive AI moves needs no per-move tap. Empty when nothing is pending.
+  ai_actions: TableAiAction[]
   public: TablePublic | null
   inference: TableInference | null
 }
