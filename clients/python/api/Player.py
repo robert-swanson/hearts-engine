@@ -12,6 +12,11 @@ from clients.python.api.types.PlayerTagSession import PlayerTagSession, PlayerTa
 class Player(ABC):
     player_tag: PlayerTag = None
     message_print_logging_enabled: bool = False
+    # When True (or the HEARTS_MOVE_LOGS env flag is set), this player's print()
+    # output is captured per move and persisted next to the recorded game, so the
+    # web UI can show "why did this player make this move". See
+    # clients/python/util/MoveLogging.py.
+    move_logging_enabled: bool = False
 
     def __init__(self, player_tag_session: PlayerTagSession):
         self.player_tag_session = player_tag_session
