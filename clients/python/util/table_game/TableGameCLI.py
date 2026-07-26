@@ -6,6 +6,12 @@ from typing import Dict, List, TypeVar, Type, Optional
 class UndoMove(Exception):
     pass
 
+
+# Sentinel returned by ``ask_for_cards`` when the operator chooses to enter the
+# answer later (used for a human's pass, which may not have physically happened
+# yet). The caller re-asks it once everything else has been entered.
+DEFER = object()
+
 from clients.python.api.Game import Game
 from clients.python.api.types.Card import Card, CondensedDeckRepr
 from clients.python.api.types.PassDirection import PassDirection
@@ -155,12 +161,15 @@ class TableGameCLI:
     SUIT_GROUP_PATTERN = rf"([CDHS]):\s*(.*)"
 
     def ask_for_cards(self, prompt: str, validators: List[CardsValidator], num_cards: int,
-                      validate_with: Optional[List[Card]] = None) -> List[Card]:
+                      validate_with: Optional[List[Card]] = None, allow_defer: bool = False) -> List[Card]:
         if validate_with is None:
             validate_with = []
         self.card_selection = []
         while len(self.card_selection) < num_cards:
-            cards_line = self.input(f"{prompt}, card {len(self.card_selection) + 1}/{num_cards}: ")
+            suffix = " (or 'later' to defer)" if allow_defer else ""
+            cards_line = self.input(f"{prompt}, card {len(self.card_selection) + 1}/{num_cards}{suffix}: ")
+            if allow_defer and cards_line.strip().lower() == "later":
+                return DEFER
             cards_line = cards_line.upper().strip()
             line_cards = []
 

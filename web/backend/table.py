@@ -47,7 +47,7 @@ import live  # noqa: E402  (live performs the SDK path bootstrap on import)
 from live import AI_TYPES, ai_type_options, default_ai_type, _sanitize  # noqa: E402
 
 from clients.python.TableGameFlow import TableGame  # noqa: E402
-from clients.python.util.table_game.TableGameCLI import UndoMove  # noqa: E402
+from clients.python.util.table_game.TableGameCLI import UndoMove, DEFER  # noqa: E402
 from clients.python.util.table_game.CardValidation import (  # noqa: E402
     BlacklistedCardsValidator,
     _is_valid_card_str,
@@ -272,7 +272,8 @@ class WebTableIO:
             self._resolve()
             return pd
 
-    def ask_for_cards(self, prompt: str, validators, num_cards: int, validate_with=None):
+    def ask_for_cards(self, prompt: str, validators, num_cards: int, validate_with=None,
+                      allow_defer: bool = False):
         validate_with = validate_with or []
         disabled_cards = self._blacklist(validators)
         if "Starting hand" in prompt:
@@ -293,11 +294,15 @@ class WebTableIO:
                     "prompt": prompt,
                     "subject": _subject(prompt),
                     "num_cards": num_cards,
+                    "allow_defer": allow_defer,
                     "cards": self._card_states(disabled),
                     "error": error,
                 }
             )
             resp = self._await()
+            if allow_defer and isinstance(resp, dict) and resp.get("defer"):
+                self._resolve()
+                return DEFER
             picked = resp.get("cards") if isinstance(resp, dict) else None
             chosen = self._validate_card_list(picked, validators, num_cards, validate_with)
             if chosen is not None:

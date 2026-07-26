@@ -39,6 +39,23 @@ def _make_hands(round_idx: int) -> Dict[PlayerTagSession, List[Card]]:
     return {SEATS[i]: deck[i * 13:(i + 1) * 13] for i in range(4)}
 
 
+def _pass_chain_order(pass_dir: PassDirection, ai_seats, human_seats) -> List[PlayerTagSession]:
+    """Mirror of TableRound._pass_chain_order: walk 'passes to' links, starting
+    from a human, covering every cycle exactly once."""
+    receiver_of = {s: pass_dir.get_receiving_player(SEATS, s) for s in SEATS}
+    first = human_seats[0] if human_seats else SEATS[0]
+    starts = [first] + [s for s in SEATS if s != first]
+    order: List[PlayerTagSession] = []
+    visited = set()
+    for start in starts:
+        cur = start
+        while cur not in visited:
+            visited.add(cur)
+            order.append(cur)
+            cur = receiver_of[cur]
+    return order
+
+
 def _legal_moves(hand: List[Card], moves: List[Tuple], played: List[Card], trick_idx: int) -> List[Card]:
     legal = list(hand)
     leading = not moves
@@ -90,27 +107,40 @@ def simulate_game(num_ai: int) -> Tuple[List[str], Dict[PlayerTagSession, int]]:
     for round_idx in range(100):  # safety cap; game ends well before
         hands = _make_hands(round_idx)
 
-        # Hand entry: only AI seats need explicit hand input
-        for seat in ai_seats:
-            lines.append(" ".join(repr(c) for c in hands[seat]))
+        # Dealing + passing is interleaved in pass-chain order (mirroring
+        # TableRound._setup_hands_and_pass): for each AI reached we enter its
+        # hand, confirm its pass instruction, then — if its donor is a human —
+        # enter what that human passed (an AI donor is auto-resolved, no input).
+        donating: Dict[PlayerTagSession, List[Card]] = {
+            seat: sorted(hands[seat], key=repr)[:3] for seat in SEATS
+        }
+        chain = _pass_chain_order(pass_dir, ai_seats, human_seats)
+        passed: set = set()
+        deferred: List[Tuple[PlayerTagSession, PlayerTagSession]] = []
+        for seat in chain:
+            if seat not in ai_seats:
+                continue
+            lines.append(" ".join(repr(c) for c in hands[seat]))  # hand entry
+            if pass_dir == PassDirection.KEEPER:
+                continue
+            lines.append("")  # instruct confirmation for this AI's pass
+            passed.add(seat)
+            donor = pass_dir.get_donating_player(SEATS, seat)
+            if donor in ai_seats:
+                if donor not in passed:
+                    deferred.append((seat, donor))  # cycle start — auto-resolved later
+            else:
+                lines.append(" ".join(repr(c) for c in donating[donor]))  # human pass
 
-        # Pass phase
+        # Deferred receives collected at the end. AI donors are auto (no input);
+        # a human donor here would need input, but the chain always resolves a
+        # human's pass at its receiver, so only AI donors reach this point.
+        for seat, donor in deferred:
+            if donor in human_seats:
+                lines.append(" ".join(repr(c) for c in donating[donor]))
+
+        # Apply passes to all hands (both AI and human) for the simulation itself.
         if pass_dir != PassDirection.KEEPER:
-            donating: Dict[PlayerTagSession, List[Card]] = {
-                seat: sorted(hands[seat], key=repr)[:3] for seat in SEATS
-            }
-
-            # Phase 1: one instruct confirmation per AI seat
-            for _ in ai_seats:
-                lines.append("")
-
-            # Phase 2: when a human donates to an AI, enter the 3 passed cards
-            for seat in ai_seats:
-                donor = pass_dir.get_donating_player(SEATS, seat)
-                if donor in human_seats:
-                    lines.append(" ".join(repr(c) for c in donating[donor]))
-
-            # Apply passes to all hands (both AI and human)
             for seat in SEATS:
                 donor = pass_dir.get_donating_player(SEATS, seat)
                 hands[seat] = (

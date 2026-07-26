@@ -430,6 +430,8 @@ function PromptPanel({
         count={pending.num_cards}
         submitLabel={`Submit ${pending.num_cards} card${pending.num_cards > 1 ? 's' : ''}`}
         onSubmit={(codes) => respond({ cards: codes })}
+        allowDefer={pending.allow_defer}
+        onDefer={() => respond({ defer: true })}
         error={pending.error}
       />
     </div>
@@ -448,6 +450,8 @@ function CardPicker({
   onSubmit,
   allowUndo,
   onUndo,
+  allowDefer,
+  onDefer,
   error,
   defaultSuit,
 }: {
@@ -457,6 +461,8 @@ function CardPicker({
   onSubmit: (codes: string[]) => void
   allowUndo?: boolean
   onUndo?: () => void
+  allowDefer?: boolean
+  onDefer?: () => void
   error?: string | null
   defaultSuit?: Suit | null
 }) {
@@ -565,6 +571,15 @@ function CardPicker({
       {allowUndo && (
         <div className="card-picker__undo">
           <button className="btn btn--ghost" onClick={onUndo}>↶ Undo last move</button>
+        </div>
+      )}
+
+      {allowDefer && (
+        <div className="card-picker__defer">
+          <button className="btn btn--ghost" onClick={onDefer}>Input later ⏱</button>
+          <span className="muted card-picker__defer-hint">
+            Haven't passed yet? Skip this for now — you'll be asked again once every hand is entered.
+          </span>
         </div>
       )}
     </div>

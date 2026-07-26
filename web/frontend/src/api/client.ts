@@ -349,6 +349,10 @@ export type TablePending =
       prompt: string
       subject: string | null
       num_cards: number
+      // When true (a human's pass whose cards may not be in hand yet), the
+      // operator can defer this question to the end of setup via an "input
+      // later" button instead of entering cards now.
+      allow_defer?: boolean
       cards: TableCardState[]
       error: string | null
     }

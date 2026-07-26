@@ -179,6 +179,18 @@
   flex-wrap: wrap;
   min-height: 40px;
 }
+
+.card-picker__defer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--border, #2a3140);
+  padding-top: 10px;
+}
+.card-picker__defer-hint {
+  font-size: 12px;
+}
 .card-picker__undo { margin-top: 4px; }
 
 /* --- Inference panel ------------------------------------------------------- */
