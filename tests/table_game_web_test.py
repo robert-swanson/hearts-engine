@@ -88,11 +88,6 @@ class Referee:
         seat, code = self.stack.pop()
         self.played.discard(code)
 
-    def note_ai_play(self, message: str):
-        m = re.search(r"play\s+([0-9TJQKA][CDHS])\s*$", message)
-        if m:
-            self.played.add(m.group(1))
-
 
 def wait_for_pending(session, prev, timeout=15.0):
     """Block until a *new* prompt appears (or the game ends). Returns the pending
@@ -128,6 +123,17 @@ def assert_play_greying(session, pending):
 
     # 3) The player to move must always have at least one legal (non-greyed) card.
     assert any(not c["disabled"] for c in pending["cards"]), "all cards greyed!"
+
+
+def assert_ai_actions_wellformed(session):
+    """Every buffered AI action (the batched instructions the operator performs
+    without a per-move tap) must be a structured single-card play by the Bot."""
+    ai_tag = session.game.player_order[AI_SEAT].player_tag.tag
+    for a in session.ai_actions:
+        assert a["action"] == "play", a
+        assert a["actor"] == ai_tag, (a, ai_tag)
+        assert len(a["cards"]) == 1 and re.fullmatch(r"[2-9TJQKA][CDHS]", a["cards"][0]), a
+        assert a["message"].endswith(a["cards"][0]), a
 
 
 def assert_public_history(session):
@@ -197,6 +203,7 @@ def run():
     did_undo = False
     expect_alice_replay = False
     saw_play_after_trick = False
+    saw_batched_ai = False
     guard = 0
 
     while True:
@@ -219,20 +226,13 @@ def run():
             holder = next(p["pid"] for p in pending["players"] if seat_of(p["pid"]) == 0)
             session.submit({"pid": holder})
 
-        elif kind == "instruct":
-            # The structured breakdown the UI renders as real card faces. This
-            # KEEPER round never passes, so every instruction is an AI play.
-            assert pending["action"] == "play", pending
-            assert re.fullmatch(r"[2-9TJQKA][CDHS]", pending["cards"][0]), pending
-            assert len(pending["cards"]) == 1, pending
-            assert "Bot" in (pending["actor"] or ""), pending
-            assert pending["message"].endswith(pending["cards"][0]), pending
-            ref.note_ai_play(pending["message"])
-            session.submit({"ack": True})
-
         elif kind == "human_play":
             seat = seat_of(pending["player"])
             assert_play_greying(session, pending)
+
+            # The AI's plays are batched onto session.ai_actions rather than each
+            # blocking for its own tap. Whatever is queued here must be sound.
+            assert_ai_actions_wellformed(session)
 
             if expect_alice_replay:
                 # The move we just undid was Alice's lead; the engine must be
@@ -255,6 +255,11 @@ def run():
             if session._public_state()["completed_tricks"] >= 1:
                 saw_play_after_trick = True
                 assert_public_history(session)
+                # By the first human prompt of trick 1, the Bot's trick-0 play has
+                # been buffered (with no tap) and is waiting to be placed — proof
+                # the batched, tap-free AI flow is working.
+                if session.ai_actions:
+                    saw_batched_ai = True
 
             session.submit({"card": ref.play(seat)})
             human_plays += 1
@@ -264,11 +269,14 @@ def run():
                 break
 
         else:
+            # With a human at the table the AI never raises its own prompt
+            # (no 'ai_batch' / legacy 'instruct') — its moves are batched silently.
             raise AssertionError(f"unexpected prompt kind {kind!r}: {pending}")
 
     # Tear the game down and confirm the engine thread exits cleanly.
     assert did_undo, "undo path was never exercised"
     assert saw_play_after_trick, "never reached a second trick"
+    assert saw_batched_ai, "AI plays were never batched onto ai_actions"
     session.abort()
     session.thread.join(timeout=10)
     assert not session.thread.is_alive(), "engine thread did not stop after abort"
@@ -277,5 +285,56 @@ def run():
     print("PASS: web table-game adapter (prompt flow, greying, undo, teardown)")
 
 
+def test_all_ai_batches():
+    """An all-AI table has no human plays to pace on, so the engine pauses once
+    per trick's worth of buffered AI moves for a single acknowledgement — that's
+    the only case that still taps to advance past the AIs."""
+    deck = [str(c) for c in Card.make_deck()]
+    hands = {0: deck[0:13], 1: deck[13:26], 2: deck[26:39], 3: deck[39:52]}
+    session = table.TableSession("ALLAI")
+    seats_cfg = [
+        {"kind": "ai", "name": f"Bot{i}", "ai_type": "random_player"} for i in range(4)
+    ]
+    assert session.configure(seats_cfg) is None
+    assert not session.has_human_seat()
+    assert session.start() is None
+
+    name_to_seat = {f"Bot{i}": i for i in range(4)}
+    prev = None
+    batches = 0
+    guard = 0
+    while batches < 3:
+        guard += 1
+        assert guard < 200, "engine not progressing"
+        pending = wait_for_pending(session, prev)
+        assert pending is not None, "game ended before we saw enough batches"
+        prev = pending
+        kind = pending["kind"]
+
+        if kind == "pass_direction":
+            session.submit({"direction": "KEEPER"})
+        elif kind == "deal_hand":
+            session.submit({"cards": list(hands[name_to_seat[pending["subject"]]])})
+        elif kind == "pick_player":
+            session.submit({"pid": pending["players"][0]["pid"]})
+        elif kind == "ai_batch":
+            actions = session.ai_actions
+            # Exactly one trick's worth of AI plays are shown per acknowledgement.
+            assert len(actions) == table.WebTableIO._BATCH_ACK_SIZE, actions
+            for a in actions:
+                assert a["action"] == "play", a
+                assert re.fullmatch(r"[2-9TJQKA][CDHS]", a["cards"][0]), a
+            batches += 1
+            session.submit({"ack": True})
+        else:
+            raise AssertionError(f"unexpected prompt kind {kind!r}: {pending}")
+
+    session.abort()
+    session.thread.join(timeout=10)
+    assert not session.thread.is_alive(), "engine thread did not stop after abort"
+    print("PASS: all-AI table paces one ack per trick's worth of moves")
+
+
 if __name__ == "__main__":
     run()
+    test_all_ai_batches()

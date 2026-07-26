@@ -29,45 +29,60 @@
 
 .table-prompt--done h2 { color: var(--accent, #6cf); }
 
-/* AI instruction: a loud "do this physically" callout. */
-.table-prompt--instruct {
+/* Batched AI actions: a loud "do these physically" callout listing every
+   queued AI play/pass at once, each row naming the player, so a run of
+   consecutive AI moves needs no per-move tap. */
+.table-ai-actions {
   border: 1px solid var(--accent, #6cf);
   background: linear-gradient(180deg, rgba(80, 160, 255, 0.10), rgba(80, 160, 255, 0.03));
 }
-.table-instruct__label {
+.table-ai-actions__label {
   font-size: 11px;
   letter-spacing: 2px;
   text-transform: uppercase;
   color: var(--accent, #6cf);
-  margin-bottom: 6px;
+  margin-bottom: 10px;
 }
-.table-instruct__msg {
-  font-size: 20px;
-  font-weight: 700;
-  margin-bottom: 14px;
+.table-ai-actions__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
-/* Structured instruction: name(s) + real card faces instead of "QS, 2C, …". */
-.table-instruct__action {
+/* One queued action: name + real card faces instead of "QS, 2C, …". Rows after
+   the first get a hairline divider so a multi-player run stays legible. */
+.table-ai-action {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px 10px;
-  margin-bottom: 14px;
+  gap: 6px 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
-.table-instruct__actor {
-  font-size: 20px;
+.table-ai-action:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+.table-ai-action__actor {
+  font-size: 19px;
   font-weight: 700;
 }
-.table-instruct__verb {
+.table-ai-action__verb {
   font-size: 15px;
   font-weight: 500;
   color: var(--muted, #9aa);
 }
-.table-instruct__cards {
+.table-ai-action__cards {
   display: inline-flex;
   gap: 6px;
 }
-.table-instruct__btn { min-width: 140px; }
+.table-ai-action__msg {
+  font-size: 18px;
+  font-weight: 700;
+}
+.table-ai-actions__btn {
+  min-width: 140px;
+  margin-top: 14px;
+}
 
 /* --- Card picker ----------------------------------------------------------- */
 

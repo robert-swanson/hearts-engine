@@ -118,6 +118,23 @@ class Referee:
         raise AssertionError(f"no seat holds {card}")
 
 
+def drain_ai_actions(ref, session):
+    """Fold the batched AI actions into the referee's ground truth.
+
+    AI plays and passes used to arrive as one ``instruct`` prompt each; they now
+    accumulate on ``session.ai_actions`` (no per-move tap) and are cleared when
+    the next reportable prompt is answered. So at every reportable prompt we
+    replay whatever the AIs did since the last one: pin each AI's donated cards
+    to the referee and advance its hand for each AI play."""
+    for a in session.ai_actions:
+        if a["action"] == "pass":
+            seat = name_to_seat(a["actor"])
+            assert seat in AI_SEATS, "only AIs announce passes"
+            ref.record_ai_donation(seat, a["cards"])
+        elif a["action"] == "play":
+            ref.play(name_to_seat(a["actor"]), a["cards"][0])
+
+
 def wait_for_pending(session, prev, timeout=15.0):
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -256,21 +273,10 @@ def run():
             seat = name_to_seat(pending["subject"])
             session.submit({"cards": list(deal[seat])})
 
-        elif kind == "instruct":
-            m = re.match(r"(\S+):\s+pass\s+\[([^\]]*)\]\s+to\s+(\S+)", pending["message"])
-            if m:
-                donor_seat = name_to_seat(m.group(1))
-                cards = [c.strip() for c in m.group(2).split(",") if c.strip()]
-                assert donor_seat in AI_SEATS, "only AIs announce passes via instruct"
-                ref.record_ai_donation(donor_seat, cards)
-            else:
-                m2 = re.search(r"(\S+):\s+play\s+([0-9TJQKA][CDHS])", pending["message"])
-                if m2:
-                    ref.play(name_to_seat(m2.group(1)), m2.group(2))
-                    played_any = True
-            session.submit({"ack": True})
-
         elif kind == "pass_received":
+            # The AIs' passes are batched here (no per-pass tap); record them so
+            # the referee can apply the full LEFT pass.
+            drain_ai_actions(ref, session)
             # "What did <human> pass to <ai>?" — answer with that human's pass.
             saw_pass_received = True
             m = re.search(r"What did (\S+) pass", pending["prompt"])
@@ -279,12 +285,16 @@ def run():
             session.submit({"cards": list(ref.donated[donor_seat])})
 
         elif kind == "pick_player":
+            drain_ai_actions(ref, session)
             saw_pick_player = True
             holder = ref.holder_of("2C")
             pid = next(p["pid"] for p in pending["players"] if seat_of(p["pid"]) == holder)
             session.submit({"pid": pid})
 
         elif kind == "human_play":
+            # Fold in any AI plays batched since the last prompt before checking
+            # soundness against the engine's current state.
+            drain_ai_actions(ref, session)
             assert_play_sound(ref, session, pending)
             assert_inference_sound(ref, session)
             seat = seat_of(pending["player"])
