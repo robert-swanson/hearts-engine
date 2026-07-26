@@ -29,6 +29,16 @@
 
 .table-prompt--done h2 { color: var(--accent, #6cf); }
 
+/* Consistency warning (a card recorded in two hands, etc.) — amber, distinct
+   from the red engine-error banner. */
+.table-warning {
+  color: #d98a00;
+  border: 1px solid rgba(217, 138, 0, 0.5);
+  background: rgba(217, 138, 0, 0.08);
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+
 /* Batched AI actions: a loud "do these physically" callout listing every
    queued AI play/pass at once, each row naming the player, so a run of
    consecutive AI moves needs no per-move tap. */
@@ -131,8 +141,11 @@
 .card-picker__ranks {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  /* Generous spacing between cards: taps used to clip a neighbouring card and
+     toggle the wrong one. Extra gap keeps each card its own tap target. */
+  gap: 16px 14px;
   justify-content: center;
+  padding: 2px;
 }
 
 .card-picker__reason {
@@ -161,7 +174,7 @@
 }
 .card-picker__chosen {
   display: flex;
-  gap: 6px;
+  gap: 10px;
   align-items: center;
   flex-wrap: wrap;
   min-height: 40px;

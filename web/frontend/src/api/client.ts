@@ -410,6 +410,9 @@ export interface TableSnapshot {
   code: string
   status: TableStatus
   error: string | null
+  // Non-fatal consistency warning (e.g. a card recorded in two hands). Surfaced
+  // as a banner so the operator can catch a bad state instead of scoring wrong.
+  warning?: string | null
   seats: TableSeat[]
   ai_type_options: AiTypeOption[]
   pending: TablePending | null

@@ -115,6 +115,7 @@ export function TableView() {
 
       {error && <p className="live-error">{error}</p>}
       {snapshot.error && <p className="live-error">Engine error: {snapshot.error}</p>}
+      {snapshot.warning && <p className="live-error table-warning">⚠ {snapshot.warning}</p>}
 
       {status === 'lobby' ? (
         <TableLobby snapshot={snapshot} send={send} />

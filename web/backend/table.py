@@ -280,7 +280,7 @@ class WebTableIO:
             reason = "Already entered as another player's card"
         elif "pass" in prompt:
             kind = "pass_received"
-            reason = "Known to be held by an AI player"
+            reason = "An AI was dealt this card — the human can't have passed it"
         else:
             kind = "cards"
             reason = "Unavailable"
@@ -771,19 +771,44 @@ class TableSession:
             for p, k in knowledge.items()
         }
 
+    @staticmethod
+    def _partition_warning(inference: Optional[dict]) -> Optional[str]:
+        """Defensive guard: the app's model must be a valid partition of the deck
+        — no card provably held by two players at once. If two players' *known*
+        cards overlap, the model is corrupt (the exact ">52 cards, held by two
+        players" failure), so surface it to the operator instead of silently
+        scoring the rest of the game wrong. Normal play never trips this; it's a
+        safety net behind the pass validation that prevents the known cause."""
+        if not inference:
+            return None
+        owners: Dict[str, str] = {}
+        for info in inference.values():
+            for card in info.get("guaranteed", []):
+                prev = owners.get(card)
+                if prev is not None and prev != info["name"]:
+                    return (
+                        f"Card {card} is recorded as held by both {prev} and "
+                        f"{info['name']} — the game state is inconsistent. Scores "
+                        f"from here may be wrong; please review recent entries."
+                    )
+                owners[card] = info["name"]
+        return None
+
     def snapshot(self) -> dict:
+        inference = self._inference() if self.status == "playing" else None
         return {
             "type": "state",
             "server_now": time.time(),
             "code": self.code,
             "status": self.status,
             "error": self.error,
+            "warning": self._partition_warning(inference),
             "seats": list(self.seats),
             "ai_type_options": ai_type_options(),
             "pending": self.pending,
             "ai_actions": list(self.ai_actions),
             "public": self._public_state() if self.status != "lobby" else None,
-            "inference": self._inference() if self.status == "playing" else None,
+            "inference": inference,
         }
 
     # -- broadcast (engine thread -> asyncio bridge) ------------------------
