@@ -272,6 +272,11 @@ table.data tbody tr.row-link a {
   margin-bottom: 14px;
 }
 
+/* Push the round-level "copy debug command" button to the right of the hint. */
+.debug-round-btn {
+  margin-left: auto;
+}
+
 button.btn,
 select.btn {
   font-size: 13px;
