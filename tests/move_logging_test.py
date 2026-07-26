@@ -104,7 +104,9 @@ def test_logger_writes_sidecar():
         lg.sink("thinking\n")
         path = lg.write_sidecar()
         assert path is not None
-        expected = Path(d) / "lobby" / "logs" / "game_9" / f"{sanitize_seat('A(1)')}.json"
+        # write_sidecar returns a resolved path; resolve the expected too so this
+        # holds on macOS (where /var is a symlink to /private/var).
+        expected = (Path(d) / "lobby" / "logs" / "game_9" / f"{sanitize_seat('A(1)')}.json").resolve()
         assert path == expected and path.is_file()
         doc = json.loads(path.read_text())
         assert doc["game_id"] == "game_9" and doc["author"] == "A(1)"
