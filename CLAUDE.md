@@ -68,6 +68,19 @@ connect → request session (player_tag, lobby_code)   # game_type is accepted b
 
 See `clients/python/players/rob_player.py` for a full strategic example and `clients/python/players/claude_player.py` for a danger-scoring approach.
 
+## Debugging a Player Against a Recorded Game
+
+`clients/python/player_debugger.py` re-plays a recorded game from its JSON and drives one seat with a live `Player`, comparing the player's choices to what that seat actually did. Every other card is forced to match the record, so the player always sees the real game unfold; when its own pick differs, the discrepancy is logged and play continues on the documented card.
+
+```bash
+# Paste a game or round URL from the web UI (interactive prompts fill the rest):
+python3 clients/python/player_debugger.py https://host/lobby/g/<game>/r/<round>
+# Or fully scripted:
+python3 clients/python/player_debugger.py <url> --player rob_player_dev --seat 0 --non-interactive
+```
+
+Accepts web-UI URLs (`/c/<cid>/t/<i>/g/<game>[/r/<round>]`, `/lobby/g/<game>[/r/<round>]`), backend API URLs, or a local game JSON path. The game is read from the local `results/` dir when present (no server needed), else fetched over HTTP. A round-scoped URL defaults to that round only, through all 13 tricks; a game-scoped URL replays the whole game. The seat's dealt/played hands and legal moves are reconstructed from the record (mirroring `server/game/trick.h`), and player-raised exceptions are reported rather than fatal.
+
 ## Key Types
 
 - **Card:** two-char string, rank + suit — e.g. `"QS"`, `"2C"`, `"TH"` (T = 10)
