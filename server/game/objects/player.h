@@ -16,7 +16,9 @@ public:
 
 
     // Notifying virtual functions
-    virtual void notifyStartGame(std::vector<PlayerID> playerOrder) = 0;
+    virtual void notifyStartGame(std::vector<PlayerID> playerOrder,
+                                 const std::string& gameId = "",
+                                 const std::string& resultsRelDir = "") = 0;
     virtual void notifyStartRound(int roundIndex, PassDirection passDirection, CardCollection hand) = 0;
     virtual CardCollection getCardsToPass(PassDirection direction) = 0;
     virtual void notifyReceivedCards(const CardCollection& receivedCards, const CardCollection& donatedCards) = 0;

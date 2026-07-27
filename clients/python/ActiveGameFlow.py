@@ -1,5 +1,5 @@
 import time
-from typing import List
+from typing import List, Optional
 
 from clients.python.api.Game import Game
 from clients.python.api.Player import Player
@@ -9,11 +9,21 @@ from clients.python.api.networking.Messenger import PassingMessenger, Messenger
 from clients.python.api.types.Card import StrListToCards, Card
 from clients.python.api.types.PassDirection import PassDirection
 from clients.python.api.types.PlayerTagSession import MakePlayerTagSessions, MakePlayerTagSession, PlayerTagSession
+from clients.python.util import StdoutRouter
 from clients.python.util.Constants import ServerMsgTypes, Tags, ClientMsgTypes, MoveSource
+from clients.python.util.MoveLogging import PlayerMoveLogger, move_logging_enabled
 
 
 def _now_ms() -> int:
     return int(time.time() * 1000)
+
+
+def _set_log_ctx(player: Player, round_idx: int, trick_idx: Optional[int],
+                 seat: str, phase: str) -> None:
+    """Update the player's move-log context (no-op when logging is off)."""
+    logger = getattr(player, "_move_logger", None)
+    if logger is not None:
+        logger.set_context(round_idx, trick_idx, seat, phase)
 
 
 class ActiveGame(PassingMessenger, Game):
@@ -26,23 +36,54 @@ class ActiveGame(PassingMessenger, Game):
         player_order = MakePlayerTagSessions(start_game_msg[Tags.PLAYER_ORDER])
         Game.__init__(self, player_order)
 
+        # Per-move log capture: when the server tells us where the recorded game
+        # lives (game_id + results_rel_dir) and logging is enabled, capture this
+        # player's print() output tagged with the move being decided, and write a
+        # sidecar next to the game at the end. Absent fields → no-op.
+        self._move_logger = None
+        self._log_sink = None
+        game_id = start_game_msg.get(Tags.GAME_ID)
+        results_rel_dir = start_game_msg.get(Tags.RESULTS_REL_DIR)
+        if game_id and results_rel_dir and move_logging_enabled(type(self.player)):
+            logger = PlayerMoveLogger(game_id, results_rel_dir, str(self.player.player_tag_session))
+            if logger.results_dir is not None:
+                self._move_logger = logger
+                self.player._move_logger = logger
+                # Registered on this (the session's) thread; other seats' sessions
+                # run on their own threads and stay isolated.
+                self._log_sink = StdoutRouter.add_sink(logger.sink)
+
     def run_game(self, player: Player):
-        player.initialize_for_game(self)
+        _set_log_ctx(player, 0, None, str(player.player_tag_session), "round")
+        try:
+            player.initialize_for_game(self)
 
-        while True:
-            active_round = ActiveRound(self.messenger, player, self.player_order)
-            self.rounds.append(active_round)
-            active_round.run_round(player)
+            while True:
+                active_round = ActiveRound(self.messenger, player, self.player_order)
+                self.rounds.append(active_round)
+                active_round.run_round(player)
 
-            if self.get_next_message_type() == ServerMsgTypes.END_GAME:
-                break
+                if self.get_next_message_type() == ServerMsgTypes.END_GAME:
+                    break
 
-        end_game_msg = self.messenger.receive_type(ServerMsgTypes.END_GAME)
-        self.players_to_points = {MakePlayerTagSession(tagSession): pts
-                                  for tagSession, pts in end_game_msg[Tags.PLAYER_TO_GAME_POINTS].items()}
-        winner = MakePlayerTagSession(end_game_msg[Tags.WINNING_PLAYER])
-        player.handle_end_game(self.players_to_points, winner)
-        self.winner = winner
+            end_game_msg = self.messenger.receive_type(ServerMsgTypes.END_GAME)
+            self.players_to_points = {MakePlayerTagSession(tagSession): pts
+                                      for tagSession, pts in end_game_msg[Tags.PLAYER_TO_GAME_POINTS].items()}
+            winner = MakePlayerTagSession(end_game_msg[Tags.WINNING_PLAYER])
+            player.handle_end_game(self.players_to_points, winner)
+            self.winner = winner
+        finally:
+            self._finalize_move_logging()
+
+    def _finalize_move_logging(self) -> None:
+        if self._move_logger is not None:
+            try:
+                self._move_logger.write_sidecar()
+            except Exception:
+                pass  # log persistence must never break a game
+        if self._log_sink is not None:
+            StdoutRouter.remove_sink(self._log_sink)
+            self._log_sink = None
 
 
 class ActiveRound(PassingMessenger, Round):
@@ -64,10 +105,13 @@ class ActiveRound(PassingMessenger, Round):
 
     def run_round(self, player: Player):
         assert player is self.player
+        own_seat = str(self.player.player_tag_session)
+        _set_log_ctx(player, self.round_idx, None, own_seat, "round")
         self.player.handle_new_round(self)
 
         if self.pass_direction != PassDirection.KEEPER:
             self.receiving_player = self.get_receiving_player()
+            _set_log_ctx(player, self.round_idx, None, own_seat, "pass")
             self.donating_cards = self.player.get_cards_to_pass(self.pass_direction, self.receiving_player)
             assert len(self.donating_cards) == 3, f"Player {self.player.player_tag_session} tried to pass {len(self.donating_cards)} cards"
             self.send({Tags.TYPE: ClientMsgTypes.DONATED_CARDS, Tags.CARDS: self.donating_cards})
@@ -82,10 +126,11 @@ class ActiveRound(PassingMessenger, Round):
             self.donating_cards = actual_donated
 
             self.donating_player = self.get_donating_player()
+            _set_log_ctx(player, self.round_idx, None, own_seat, "round")
             self.player.receive_passed_cards(self.received_cards, self.pass_direction, self.donating_player)
 
         for trick_idx in range(13):
-            trick = ActiveTrick(self.messenger, self.player)
+            trick = ActiveTrick(self.messenger, self.player, self.round_idx)
             self.tricks.append(trick)
             trick.run_trick(player)
 
@@ -96,9 +141,10 @@ class ActiveRound(PassingMessenger, Round):
 
 
 class ActiveTrick(PassingMessenger, Trick):
-    def __init__(self, messenger: Messenger, player: Player):
+    def __init__(self, messenger: Messenger, player: Player, round_idx: int = 0):
         PassingMessenger.__init__(self, messenger)
         self.player = player
+        self.round_idx = round_idx
 
         trick_msg = self.receive_type(ServerMsgTypes.START_TRICK)
         trick_idx = int(trick_msg[Tags.TRICK_INDEX])
@@ -106,6 +152,8 @@ class ActiveTrick(PassingMessenger, Trick):
         Trick.__init__(self, trick_idx, player_order)
 
     def run_trick(self, player: Player):
+        own_seat = str(self.player.player_tag_session)
+        _set_log_ctx(player, self.round_idx, self.trick_idx, own_seat, "observe")
         player.handle_new_trick(self)
 
         for current_player in self.player_order:
@@ -119,6 +167,7 @@ class ActiveTrick(PassingMessenger, Trick):
                 move_request_latency_ms = (received_at - sent_at) if sent_at is not None else None
 
                 legal_moves = StrListToCards(move_request_msg[Tags.LEGAL_MOVES])
+                _set_log_ctx(player, self.round_idx, self.trick_idx, own_seat, "move")
                 move = player.get_move(self, legal_moves, move_request_latency_ms=move_request_latency_ms)
 
                 assert move in legal_moves, \
@@ -149,10 +198,15 @@ class ActiveTrick(PassingMessenger, Trick):
                 player.handle_auto_move()
 
             self.moves.append(Move(reported_player, reported_card))
+            # A log the player emits while observing another seat's move is
+            # associated with *that* move (the played card), not its own.
+            _set_log_ctx(player, self.round_idx, self.trick_idx,
+                         str(reported_player), "observe")
             player.handle_move(self, reported_player, reported_card,
                                report_latency_ms=report_latency_ms,
                                decided_move_latency_ms=decided_move_c2s_ms)
 
+        _set_log_ctx(player, self.round_idx, self.trick_idx, own_seat, "observe")
         end_trick_msg = self.receive_type(ServerMsgTypes.END_TRICK)
         self.winner = MakePlayerTagSession(end_trick_msg[Tags.WINNING_PLAYER])
         player.handle_finished_trick(self, self.winner)

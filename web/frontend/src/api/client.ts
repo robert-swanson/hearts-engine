@@ -167,10 +167,24 @@ export interface RoundRecord {
   round_scores: Record<string, number>
 }
 
+// A single line a player printed while deciding (or observing) a move. `seat` is
+// the move the log is *about* (== author for the player's own move); `phase` is
+// "move" | "pass" | "observe" | "round". Present only for games whose AI ran on
+// the server machine with move logging enabled.
+export interface MoveLogEntry {
+  author: string
+  round_idx: number
+  trick_idx: number | null
+  seat: string
+  phase: string
+  text: string
+}
+
 export interface GameDetail {
   game_id: string
   player_order: string[]
   rounds: RoundRecord[]
+  move_logs?: MoveLogEntry[]
 }
 
 export interface LobbyGameListEntry {

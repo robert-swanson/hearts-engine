@@ -4,6 +4,8 @@
 #include <random>
 #include <utility>
 
+#include <nlohmann/json.hpp>
+
 #include "../game/objects/player.h"
 
 inline std::atomic<int> gAutoMoveLogCount{0};
@@ -20,12 +22,20 @@ public:
 
     ~RemotePlayer() override = default;
 
-    void notifyStartGame(std::vector<PlayerTagSession> playerOrder) override
+    void notifyStartGame(std::vector<PlayerTagSession> playerOrder,
+                         const std::string& gameId = "",
+                         const std::string& resultsRelDir = "") override
     {
-        mGameSession->send({{
+        nlohmann::json msg = {
             {Tags::TYPE, ServerMsgTypes::START_GAME},
             {Tags::PLAYER_ORDER, playerOrder}
-        }});
+        };
+        // Optional: tell the client where the recorded game lives so it can
+        // persist per-move logs alongside it. Omitted (empty) for game types
+        // that don't record locally.
+        if (!gameId.empty())        msg[Tags::GAME_ID]         = gameId;
+        if (!resultsRelDir.empty()) msg[Tags::RESULTS_REL_DIR] = resultsRelDir;
+        mGameSession->send(msg);
     }
 
     void notifyStartRound(int roundIndex, Game::PassDirection passDirection, Game::CardCollection hand) override

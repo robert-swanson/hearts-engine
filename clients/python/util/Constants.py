@@ -22,6 +22,12 @@ class Tags:
     LOBBY_CODE = "lobby_code"
     GAME_TYPE = "game_type"
     PLAYER_ORDER = "player_order"
+    # Optional start_game fields used to persist per-move logs next to the
+    # recorded game. GAME_ID is the recorded game's id; RESULTS_REL_DIR is the
+    # game's results directory relative to RESULTS_DIR ("lobby" for lobby games,
+    # "<competition>/<index>" for tournaments). Absent on older servers.
+    GAME_ID = "game_id"
+    RESULTS_REL_DIR = "results_rel_dir"
     PASS_DIRECTION = "pass_direction"
     CARDS = "cards"
     CARD = "card"

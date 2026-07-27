@@ -401,6 +401,33 @@ def get_rules(competition_id: str, index: str) -> Optional[dict]:
     return _read_json(tdir / "rules.json")
 
 
+# ─── Per-move player logs ──────────────────────────────────────────────────────
+#
+# SDK clients that run on the server machine capture each player's per-move
+# print() output and write a per-seat sidecar next to the recorded game:
+#   <game dir>/logs/<game_id>/<seat>.json  -> {game_id, author, entries:[...]}
+# where each entry is {round_idx, trick_idx, seat, phase, text}. We merge every
+# seat's file for a game into a flat ``move_logs`` list on the game detail, which
+# the web UI indexes to show the logs a player produced for a given move.
+
+def _read_move_logs(game_dir: Path, game_id: str) -> list[dict]:
+    """Merged, flat list of a game's per-seat move-log entries (empty if none)."""
+    base = game_dir.resolve()
+    logs_dir = (base / "logs" / game_id).resolve()
+    if base not in logs_dir.parents or not logs_dir.is_dir():
+        return []
+    out: list[dict] = []
+    for path in sorted(logs_dir.glob("*.json")):
+        doc = _read_json(path)
+        if not isinstance(doc, dict):
+            continue
+        author = doc.get("author")
+        for e in doc.get("entries", []) or []:
+            if isinstance(e, dict):
+                out.append({"author": author, **e})
+    return out
+
+
 def get_game(competition_id: str, index: str, game_id: str) -> Optional[dict]:
     tdir = _tournament_dir(competition_id, index)
     if tdir is None:
@@ -416,7 +443,11 @@ def get_game(competition_id: str, index: str, game_id: str) -> Optional[dict]:
     target = (base / detail_file).resolve()
     if base not in target.parents and target != base:
         return None
-    return _read_json(target)
+    detail = _read_json(target)
+    if isinstance(detail, dict):
+        # Logs live in a sibling logs/ dir next to the game detail file.
+        detail["move_logs"] = _read_move_logs(target.parent.parent, game_id)
+    return detail
 
 
 # ─── Lobby (practice) games ────────────────────────────────────────────────────
@@ -462,7 +493,11 @@ def get_lobby_game(game_id: str) -> Optional[dict]:
     target = (base / "games" / f"{game_id}.json").resolve()
     if base not in target.parents:
         return None
-    return _read_json(target)
+    detail = _read_json(target)
+    if isinstance(detail, dict):
+        # Lobby games are public, so per-move logs are returned to everyone.
+        detail["move_logs"] = _read_move_logs(_lobby_dir(), game_id)
+    return detail
 
 
 # ─── Env / live stats ──────────────────────────────────────────────────────────

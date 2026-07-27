@@ -14,9 +14,31 @@ export interface HandOverlayData {
   // cards get a green ring, the rest are faded. Omit for non-play overlays.
   legal?: string[]
   footer: string
+  // Log lines the player printed while deciding this move. When defined, a
+  // "Player logs" panel is shown (with an empty state if the array is empty), so
+  // you can see *why* the player played as it did. Omit to hide the panel.
+  logs?: string[]
   // When present, a copy-able `player_debugger.py` command that replays this
   // exact move with a live Player (see clients/python/player_debugger.py).
   debugCommand?: string
+}
+
+function PlayerLogs({ logs }: { logs: string[] }) {
+  return (
+    <div className="overlay-logs">
+      <div className="overlay-logs__head">Player logs for this move</div>
+      {logs.length > 0 ? (
+        <pre className="overlay-logs__body">{logs.join('\n')}</pre>
+      ) : (
+        <div className="overlay-logs__empty">
+          No logs recorded for this move. Enable move logging (set{' '}
+          <code>move_logging_enabled</code> on the player, or the{' '}
+          <code>HEARTS_MOVE_LOGS</code> env var) when the game runs — or use the
+          debug command below to replay it.
+        </div>
+      )}
+    </div>
+  )
 }
 
 function DebugCommand({ command }: { command: string }) {
@@ -80,6 +102,7 @@ export function HandOverlay({ data, name, onClose }: HandOverlayProps) {
           </div>
         )}
         <div className="overlay-footer">{data.footer}</div>
+        {data.logs !== undefined && <PlayerLogs logs={data.logs} />}
         {data.debugCommand && <DebugCommand command={data.debugCommand} />}
       </div>
     </div>
