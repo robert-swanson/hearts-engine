@@ -321,8 +321,16 @@ class TableRound(Round):
             if pts not in self.ai_players:
                 continue  # humans hold their own cards — nothing to enter
 
-            # 1. Deal this AI's hand (cross-validated against hands entered so far).
-            already = [c for hand in self.ai_hands.values() for c in hand]
+            # 1. Deal this AI's hand, cross-validated against every card already
+            #    *dealt* to another AI. This must use the dealt snapshot, not the
+            #    live ai_hands: by this point earlier AIs have had their donated
+            #    cards removed from their live hand, so a live-hand blacklist
+            #    would stop greying them and let the operator enter one here —
+            #    and since the donation is added to its receiver separately, that
+            #    card would then be counted in two hands ("X would hold [...]
+            #    more than once"). Dealt hands are disjoint by construction, so
+            #    they are the correct, stable thing to validate against.
+            already = [c for hand in self.ai_hands_dealt.values() for c in hand]
             validators = [UNIQUE_CARDS_VALIDATOR, BlacklistedCardsValidator(already)]
             hand = self.cli.ask_for_cards(f"Starting hand for {pts.player_tag}", validators, 13)
             self.ai_hands[pts] = hand
