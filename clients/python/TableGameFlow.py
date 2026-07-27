@@ -12,6 +12,56 @@ from clients.python.util.table_game.TableGameCLI import TableGameCLI, UndoMove, 
 from clients.python.util.table_game.CardValidation import BlacklistedCardsValidator, UNIQUE_CARDS_VALIDATOR
 
 
+class TableSetupError(RuntimeError):
+    """Raised when dealing/passing produced an inconsistent model of who holds
+    what — a card recorded twice (in one hand, or in two different hands) or a
+    hand that isn't exactly 13 cards. This is unrecoverable for the round: there
+    is no way to "undo" a dealing/passing entry, so the safest thing is to halt
+    loudly, with the exact conflict named, rather than let AI decisions run on
+    a corrupted hand — which is how a single bad entry turns into wrong scores
+    for the rest of the game (see the crash this guards against: an AI silently
+    holding a duplicate card played it a second time several tricks later)."""
+
+
+def verify_hands_sound(ai_hands: Dict[PlayerTagSession, List[Card]]) -> None:
+    """Check that ``ai_hands`` is a valid partition: each hand has exactly 13
+    cards with no internal duplicate, and no card is claimed by two hands.
+
+    Called right after dealing + passing finishes, before any trick is dealt,
+    so a bad entry is caught at the earliest possible point — immediately and
+    with a specific, actionable message — instead of silently corrupting play
+    until some AI's own bookkeeping (e.g. ``ProbabilityTable``) trips over the
+    duplicate mid-game with a confusing, unrelated-looking error.
+    """
+    owner_of: Dict[Card, PlayerTagSession] = {}
+    for pts, hand in ai_hands.items():
+        counts: Dict[Card, int] = {}
+        for c in hand:
+            counts[c] = counts.get(c, 0) + 1
+        dupes = sorted((str(c) for c, n in counts.items() if n > 1))
+        if dupes:
+            raise TableSetupError(
+                f"{pts.player_tag} would hold {dupes} more than once after dealing/passing. "
+                f"A dealt or passed card must have been entered incorrectly; this table cannot "
+                f"safely continue — please start a new one."
+            )
+        if len(hand) != 13:
+            raise TableSetupError(
+                f"{pts.player_tag} has {len(hand)} cards after dealing/passing (expected 13). "
+                f"A dealt or passed card must have been entered incorrectly; this table cannot "
+                f"safely continue — please start a new one."
+            )
+        for c in hand:
+            prior = owner_of.get(c)
+            if prior is not None and prior != pts:
+                raise TableSetupError(
+                    f"{c} is recorded as held by both {prior.player_tag} and {pts.player_tag}. "
+                    f"A dealt or passed card must have been entered incorrectly; this table cannot "
+                    f"safely continue — please start a new one."
+                )
+            owner_of[c] = pts
+
+
 def _rebuild_all_players(
         game: 'TableGame',
         current_round: 'TableRound',
@@ -316,6 +366,11 @@ class TableRound(Round):
             else:
                 received = self._ask_human_pass(donor, pts, allow_defer=False)
             self._apply_received(pts, received, donor)
+
+        # Dealing/passing is fully resolved now — verify the model is sound
+        # *before* any trick is dealt, rather than let a corrupted hand run
+        # through AI decisions and surface as a confusing crash mid-game.
+        verify_hands_sound(self.ai_hands)
 
         if self.ai_hands:
             self.cards_in_hand = next(iter(self.ai_hands.values()))
