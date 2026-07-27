@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "web" / "backend"))
 
-from clients.python.TableGameFlow import TableTrick, TableRound
+from clients.python.TableGameFlow import TableTrick, TableRound, TableSetupError, verify_hands_sound
 from clients.python.api.Trick import Move
 from clients.python.api.types.Card import Card
 from clients.python.api.types.PassDirection import PassDirection
@@ -200,6 +200,136 @@ def test_played_cards_not_double_counted():
             session.thread.join(timeout=10)
 
 
+def _valid_ai_hands():
+    """A genuine 4-way, 13-cards-each partition of the deck — what a correctly
+    dealt+passed round always looks like."""
+    deck = Card.make_deck()
+    return {SEATS[i]: deck[i * 13:(i + 1) * 13] for i in range(4)}
+
+
+def test_verify_hands_sound_accepts_valid_partition():
+    verify_hands_sound(_valid_ai_hands())  # must not raise
+    print("  PASS: verify_hands_sound accepts a genuine 4x13 partition")
+
+
+def test_verify_hands_sound_rejects_within_hand_duplicate():
+    """The exact shape of the reported live crash: one AI's own tracked hand
+    holds the same card twice (so after playing it once, the AI can 'legally'
+    offer it again next trick — the ContradictionError seen live)."""
+    hands = _valid_ai_hands()
+    dupe_card = hands[SEATS[0]][0]
+    hands[SEATS[0]][1] = dupe_card  # SEATS[0] now holds this card twice
+    try:
+        verify_hands_sound(hands)
+        assert False, "expected TableSetupError for a within-hand duplicate"
+    except TableSetupError as e:
+        assert str(dupe_card) in str(e), e
+    print("  PASS: verify_hands_sound rejects a card held twice by one player")
+
+
+def test_verify_hands_sound_rejects_cross_hand_duplicate():
+    """A card recorded as held by two different players — the general form of
+    the earlier human-pass double-count bug, and what a bad pass/deal entry
+    that slips past the normal blacklists would look like."""
+    hands = _valid_ai_hands()
+    stolen = hands[SEATS[1]][0]
+    hands[SEATS[0]][0] = stolen  # SEATS[0] now also "holds" SEATS[1]'s card
+    try:
+        verify_hands_sound(hands)
+        assert False, "expected TableSetupError for a cross-hand duplicate"
+    except TableSetupError as e:
+        assert str(stolen) in str(e), e
+    print("  PASS: verify_hands_sound rejects a card claimed by two players")
+
+
+def test_verify_hands_sound_rejects_wrong_count():
+    hands = _valid_ai_hands()
+    hands[SEATS[0]].pop()  # now only 12 cards
+    try:
+        verify_hands_sound(hands)
+        assert False, "expected TableSetupError for a short hand"
+    except TableSetupError as e:
+        assert "12" in str(e), e
+    print("  PASS: verify_hands_sound rejects a hand that isn't exactly 13 cards")
+
+
+def test_corrupted_donation_halts_cleanly_instead_of_crashing_midgame():
+    """End-to-end: if a donation somehow hands a receiver a card it already
+    holds (the exact class of bug behind the live crash — some entry point puts
+    the same card in two hands), the round must halt immediately with a clear
+    TableSetupError, not silently continue into trick play where an AI's own
+    bookkeeping (e.g. ProbabilityTable) would eventually trip over the duplicate
+    with a confusing, unrelated-looking crash several tricks later.
+
+    Reproduced by monkeypatching one AI's get_cards_to_pass to "donate" a card
+    that's actually part of the *receiver's own* dealt hand — simulating any bug
+    that could hand a receiver a duplicate — and confirming the web session
+    surfaces this as a clean, readable engine error instead of crashing deep
+    inside an AI several tricks later.
+    """
+    import table  # web/backend, on sys.path above
+    from clients.python.players.random_player import RandomPlayer
+
+    orig_get_cards_to_pass = RandomPlayer.get_cards_to_pass
+    deck = [str(c) for c in Card.make_deck()]
+    hands = {i: deck[i * 13:(i + 1) * 13] for i in range(4)}
+    CORRUPTOR_TAG = "Bot0"
+
+    def bad_get_cards_to_pass(self, pass_dir, receiving_player):
+        real = orig_get_cards_to_pass(self, pass_dir, receiving_player)
+        if self.player_tag_session.player_tag.tag != CORRUPTOR_TAG:
+            return real
+        # Swap the first donated card for one the RECEIVER already holds. The
+        # framework only removes a donated card from OUR hand if we actually
+        # have it, so this stays in our hand too — the receiver ends up with
+        # two copies of it once "received", exactly like the live crash.
+        receiver_seat = int(receiving_player.player_tag.tag.replace("Bot", ""))
+        stolen = Card(hands[receiver_seat][0])
+        return [stolen] + real[1:]
+
+    RandomPlayer.get_cards_to_pass = bad_get_cards_to_pass
+    session = None
+    try:
+        session = table.TableSession("BADPASS")
+        seats_cfg = [{"kind": "ai", "name": f"Bot{i}", "ai_type": "random_player"} for i in range(4)]
+        assert session.configure(seats_cfg) is None
+        assert session.start() is None
+
+        deadline = time.time() + 20.0
+        while time.time() < deadline:
+            p = session.pending
+            if session.status in ("finished", "error"):
+                break
+            if p is None:
+                time.sleep(0.005)
+                continue
+            kind = p["kind"]
+            if kind == "pass_direction":
+                session.submit({"direction": "LEFT"})
+            elif kind == "deal_hand":
+                seat = int(p["subject"].replace("Bot", ""))
+                session.submit({"cards": list(hands[seat])})
+            elif kind == "ai_batch":
+                session.submit({"ack": True})
+            else:
+                raise AssertionError(f"unexpected prompt {kind!r}")
+            for _ in range(400):
+                if session.pending is not p or session.status in ("finished", "error"):
+                    break
+                time.sleep(0.005)
+
+        assert session.status == "error", f"expected status='error', got {session.status!r}"
+        assert "TableSetupError" in (session.error or ""), session.error
+        print("  PASS: a corrupted donation halts cleanly with a clear TableSetupError, "
+              "not a mid-game crash")
+    finally:
+        RandomPlayer.get_cards_to_pass = orig_get_cards_to_pass
+        if session is not None:
+            session.abort()
+            if session.thread is not None:
+                session.thread.join(timeout=10)
+
+
 def run():
     print("Table Game Rules Tests")
     print("======================")
@@ -213,6 +343,11 @@ def run():
     test_shoot_the_moon()
     test_normal_scoring_not_moon()
     test_played_cards_not_double_counted()
+    test_verify_hands_sound_accepts_valid_partition()
+    test_verify_hands_sound_rejects_within_hand_duplicate()
+    test_verify_hands_sound_rejects_cross_hand_duplicate()
+    test_verify_hands_sound_rejects_wrong_count()
+    test_corrupted_donation_halts_cleanly_instead_of_crashing_midgame()
     print("\nAll table game rules tests PASSED")
 
 
