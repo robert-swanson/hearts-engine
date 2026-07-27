@@ -281,19 +281,41 @@ class TableRound(Round):
                 cur = receiver_of[cur]
         return order
 
+    def _cards_in_known_dealt_hands(self) -> List[Card]:
+        """Every card we can prove belongs to some *other* player's dealt hand.
+
+        Dealing and passing both ask for cards drawn from a player's **dealt**
+        hand — a full 13 for an AI, or the 3 a human passed — and the four dealt
+        hands are disjoint by construction. So a card is impossible for the
+        player being asked about exactly when we already know it was dealt to
+        someone else, which is knowable from two places:
+
+          * ``ai_hands_dealt`` — what each AI was dealt (a stable snapshot;
+            the *live* hands are wrong here, since donated cards have already
+            been removed from them and received cards added), and
+          * ``_human_passes_seen`` — cards a human reported passing, which by
+            definition came out of that human's own dealt hand.
+
+        Both prompts need both halves. Leaving out the AI half lets a card an
+        earlier AI passed away be re-entered; leaving out the human half lets a
+        card the human passed be entered as part of a later AI's dealt hand.
+        Either way the card lands in two hands and the round dies with
+        "X would hold [...] more than once".
+        """
+        forbidden = [c for hand in self.ai_hands_dealt.values() for c in hand]
+        forbidden += self._human_passes_seen
+        return forbidden
+
     def _ask_human_pass(self, donor: PlayerTagSession, receiver: PlayerTagSession, allow_defer: bool):
         """Ask what a *human* donor passed to ``receiver`` (or defer).
 
         A human passes from their own dealt hand, so a passed card can never be a
-        card any AI was dealt, nor one already reported as another human's pass.
-        Blacklisting the *dealt* AI hands (a stable snapshot) rather than the
-        live, mid-pass ai_hands is what keeps this sound regardless of the order
-        receivers are resolved in. Returns the 3 cards, or ``DEFER`` if the
-        operator chose to enter them later.
+        card any AI was dealt, nor one already reported as another human's pass
+        (see :meth:`_cards_in_known_dealt_hands`). Returns the 3 cards, or
+        ``DEFER`` if the operator chose to enter them later.
         """
-        forbidden = [c for hand in self.ai_hands_dealt.values() for c in hand]
-        forbidden += self._human_passes_seen
-        validators = [UNIQUE_CARDS_VALIDATOR, BlacklistedCardsValidator(forbidden)]
+        validators = [UNIQUE_CARDS_VALIDATOR,
+                      BlacklistedCardsValidator(self._cards_in_known_dealt_hands())]
         received = self.cli.ask_for_cards(
             f"What did {donor.player_tag} pass to {receiver.player_tag}?",
             validators, 3, allow_defer=allow_defer)
@@ -321,17 +343,11 @@ class TableRound(Round):
             if pts not in self.ai_players:
                 continue  # humans hold their own cards — nothing to enter
 
-            # 1. Deal this AI's hand, cross-validated against every card already
-            #    *dealt* to another AI. This must use the dealt snapshot, not the
-            #    live ai_hands: by this point earlier AIs have had their donated
-            #    cards removed from their live hand, so a live-hand blacklist
-            #    would stop greying them and let the operator enter one here —
-            #    and since the donation is added to its receiver separately, that
-            #    card would then be counted in two hands ("X would hold [...]
-            #    more than once"). Dealt hands are disjoint by construction, so
-            #    they are the correct, stable thing to validate against.
-            already = [c for hand in self.ai_hands_dealt.values() for c in hand]
-            validators = [UNIQUE_CARDS_VALIDATOR, BlacklistedCardsValidator(already)]
+            # 1. Deal this AI's hand, cross-validated against every card we can
+            #    prove is in another player's dealt hand — both what other AIs
+            #    were dealt and what a human has reported passing.
+            validators = [UNIQUE_CARDS_VALIDATOR,
+                          BlacklistedCardsValidator(self._cards_in_known_dealt_hands())]
             hand = self.cli.ask_for_cards(f"Starting hand for {pts.player_tag}", validators, 13)
             self.ai_hands[pts] = hand
             self.ai_hands_dealt[pts] = list(hand)

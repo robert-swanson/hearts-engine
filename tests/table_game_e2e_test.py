@@ -93,6 +93,9 @@ class Operator:
             self.human_pass[s] = h[:3]
         self.human_hand = {}   # seat -> live set, finalized after passing
         self.received = {}     # seat -> cards a human received
+        # Human seats whose pass we've actually reported to the app (a deferred
+        # pass isn't known to it yet, so it can't be expected to grey those).
+        self.human_pass_reported = set()
 
     def finalize_human(self, seat, received):
         """Once we know what a human received, their live hand is fixed."""
@@ -108,12 +111,15 @@ class Operator:
 
 
 def assert_deal_greying(pending, op, subject_seat):
-    """At a deal prompt, every card already dealt to *another* AI must be greyed.
+    """At a deal prompt, every card we can prove is in someone *else's* dealt
+    hand must be greyed — both cards dealt to another AI and cards a human has
+    already been reported passing (a human passes out of their own dealt hand).
 
-    This is the invariant the reported bug broke: the blacklist was built from
-    the live hands, so once an earlier AI had passed cards away those cards
-    stopped being greyed and could be entered as part of this hand — landing the
-    same card in two hands and killing the game a few prompts later.
+    Both halves have been live bugs. Building the blacklist from the *live*
+    hands stopped greying cards an earlier AI had passed away; building it from
+    the dealt AI hands alone stopped greying the human's reported pass. Either
+    way the operator could enter a card that was already spoken for, landing it
+    in two hands and killing the round with "would hold [...] more than once".
     """
     states = {c["code"]: c for c in pending["cards"]}
     for seat, hand in op.dealt.items():
@@ -126,6 +132,13 @@ def assert_deal_greying(pending, op, subject_seat):
                 f"card {code} was dealt to seat {seat} and already entered, but is "
                 f"offered while entering seat {subject_seat}'s hand — it could be "
                 f"double-counted"
+            )
+    for seat in op.human_pass_reported:
+        for code in op.human_pass[seat]:
+            assert states[code]["disabled"], (
+                f"card {code} was reported as human seat {seat}'s pass, but is "
+                f"offered while entering seat {subject_seat}'s dealt hand — it "
+                f"could be double-counted"
             )
     # The cards we are about to enter must themselves be selectable.
     for code in op.dealt[subject_seat]:
@@ -282,6 +295,7 @@ def play_full_game(seed, human_seats, direction, ai_type="random_player",
                     continue
                 assert_human_pass_greying(pending, op, donor_seat)
                 session.submit({"cards": list(op.human_pass[donor_seat])})
+                op.human_pass_reported.add(donor_seat)
 
             elif kind == "pick_player":
                 # Only possible holders of the 2C may be offered.
@@ -407,6 +421,107 @@ def test_full_game_stateful_ai():
     print("  PASS: full game with a stateful (ProbabilityTable) AI")
 
 
+def play_arbitrary_offered_input(seed, human_seats, direction, defer_prob=0.0,
+                                 ai_type="random_player"):
+    """Drive setup picking *arbitrary* cards the app offers, rather than a real
+    deal, and require that it still completes consistently.
+
+    This is the strongest statement of what greying is *for*. Greyed means
+    "provably in another player's dealt hand"; dealing and passing both draw
+    from dealt hands, and the four dealt hands are disjoint. So if the greying
+    is complete, any selection restricted to offered cards must partition the
+    deck correctly — and setup can never end in ``TableSetupError``.
+
+    Equivalently: if the app ever offers a card it should have known was
+    someone else's, an operator tapping offered cards can corrupt the game. That
+    is exactly how both greying bugs were hit in real play, so we test the
+    property rather than any one instance of it.
+    """
+    rng = random.Random(seed)
+    session = table.TableSession(f"ARB{seed}")
+    seats_cfg = [
+        {
+            "kind": "human" if i in human_seats else "ai",
+            "name": f"P{i}",
+            "ai_type": None if i in human_seats else ai_type,
+        }
+        for i in range(4)
+    ]
+    assert session.configure(seats_cfg) is None
+    assert session.start() is None
+
+    def offered(pending):
+        return sorted(c["code"] for c in pending["cards"] if not c["disabled"])
+
+    prev = None
+    guard = 0
+    reached_play = False
+    try:
+        while True:
+            guard += 1
+            assert guard < 4000, "engine not progressing"
+            pending = wait_for_pending(session, prev)
+            if pending is None:
+                break
+            prev = pending
+            kind = pending["kind"]
+
+            assert session.status != "error", (
+                f"engine error after only offered cards were entered: {session.error}"
+            )
+
+            if kind == "pass_direction":
+                session.submit({"direction": direction})
+            elif kind in ("deal_hand", "pass_received", "cards"):
+                if (kind == "pass_received" and pending.get("allow_defer")
+                        and rng.random() < defer_prob):
+                    session.submit({"defer": True})
+                    continue
+                n = pending["num_cards"]
+                pool = offered(pending)
+                assert len(pool) >= n, (
+                    f"{kind} prompt offers only {len(pool)} cards but needs {n}"
+                )
+                session.submit({"cards": rng.sample(pool, n)})
+            elif kind == "pick_player":
+                session.submit({"pid": rng.choice(pending["players"])["pid"]})
+            elif kind == "human_play":
+                pool = offered(pending)
+                assert pool, "no legal card offered for the human to play"
+                # Setup is done and consistent by this point — that's the claim.
+                reached_play = True
+                break
+            elif kind == "ai_batch":
+                session.submit({"ack": True})
+            else:
+                raise AssertionError(f"unexpected prompt kind {kind!r}")
+
+        assert session.status != "error", f"engine error: {session.error}"
+        assert reached_play, (
+            f"setup never reached trick play (status={session.status}, "
+            f"error={session.error})"
+        )
+    finally:
+        session.abort()
+        if session.thread is not None:
+            session.thread.join(timeout=10)
+
+
+def test_arbitrary_offered_input_never_corrupts():
+    """Entering any cards the app offers must never corrupt setup — across every
+    pass direction, seat mix, and the deferred-pass path."""
+    n = 0
+    for seed, direction in enumerate(("LEFT", "RIGHT", "ACROSS", "KEEPER")):
+        for human_seats in ({0}, {2}, {0, 2}, {1, 3}):
+            for defer_prob in (0.0, 1.0):
+                play_arbitrary_offered_input(
+                    seed=1000 + n, human_seats=human_seats,
+                    direction=direction, defer_prob=defer_prob,
+                )
+                n += 1
+    print(f"  PASS: arbitrary offered-card input never corrupts setup ({n} configurations)")
+
+
 def run():
     print("Table Game Full-Game E2E Tests")
     print("==============================")
@@ -415,6 +530,7 @@ def run():
     test_full_game_with_deferred_human_passes()
     test_full_game_seat_mixes()
     test_full_game_stateful_ai()
+    test_arbitrary_offered_input_never_corrupts()
     print("\nAll table game E2E tests PASSED")
 
 
