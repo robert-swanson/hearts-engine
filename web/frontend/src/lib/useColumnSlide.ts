@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react'
-import { CENTER, columnSeats } from './seating'
+import { CENTER, NUM_COLS, NUM_COLS_COMPACT, columnSeats, columnSeats4 } from './seating'
 
 /**
  * Click-a-column player selection for the 7-column trick view, with a brief
@@ -29,34 +29,38 @@ export function useColumnSlide(
   playerOrder: string[],
   selected: string,
   setSelected: (p: string) => void,
+  fourColumn = false,
 ) {
   const containerRef = useRef<HTMLDivElement | null>(null)
-  // Columns the view moved on the latest selection (+ = clicked right of
-  // center). Consumed once by the post-commit effect, then cleared.
-  const pendingOffset = useRef(0)
+  // How the view moved on the latest selection: `offset` columns (+ = clicked
+  // right of the anchor) over a grid of `cols` columns. Consumed once by the
+  // post-commit effect, then cleared.
+  const pendingSlide = useRef<{ offset: number; cols: number } | null>(null)
 
   const selectColumn = useCallback(
     (col: number) => {
-      const seats = columnSeats(playerOrder, selected)
+      const seats = fourColumn ? columnSeats4(playerOrder, selected) : columnSeats(playerOrder, selected)
       const target = seats[col]
       if (!target || target === selected) return
-      pendingOffset.current = col - CENTER
+      // 7-col anchors on the center column; 4-col anchors on the left (column 0).
+      const anchor = fourColumn ? 0 : CENTER
+      pendingSlide.current = { offset: col - anchor, cols: fourColumn ? NUM_COLS_COMPACT : NUM_COLS }
       setSelected(target)
     },
-    [playerOrder, selected, setSelected],
+    [playerOrder, selected, setSelected, fourColumn],
   )
 
   // Runs after the recentered layout is committed/painted. Slide each grid in
-  // from where it used to sit (offset columns away) back to its resting center.
+  // from where it used to sit (offset columns away) back to its resting anchor.
   useEffect(() => {
-    const offset = pendingOffset.current
-    if (!offset) return
-    pendingOffset.current = 0
+    const slide = pendingSlide.current
+    if (!slide || !slide.offset) return
+    pendingSlide.current = null
     const grids = containerRef.current?.querySelectorAll<HTMLElement>('.trick-row__grid')
     grids?.forEach((grid) => {
       grid.animate(
         [
-          { transform: `translateX(calc(${offset} * (100% / 7)))` },
+          { transform: `translateX(calc(${slide.offset} * (100% / ${slide.cols})))` },
           { transform: 'translateX(0)' },
         ],
         { duration: SLIDE_MS, easing: SLIDE_EASING },

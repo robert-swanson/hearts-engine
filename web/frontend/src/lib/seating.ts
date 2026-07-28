@@ -28,12 +28,21 @@ export function passSource(player: string, playerOrder: string[], passDir: strin
 
 export const NUM_COLS = 7
 export const CENTER = 3
+export const NUM_COLS_COMPACT = 4
 
 /** Seat id shown in each of the 7 columns, centered on `selected`. */
 export function columnSeats(playerOrder: string[], selected: string): string[] {
   const n = playerOrder.length
   const si = playerOrder.indexOf(selected)
   return Array.from({ length: NUM_COLS }, (_, col) => playerOrder[(((si + col - CENTER) % n) + n) % n])
+}
+
+/** Seat id shown in each of the 4 compact columns, with `selected` on the left
+ *  (column 0) and the rest following in seating order. */
+export function columnSeats4(playerOrder: string[], selected: string): string[] {
+  const n = playerOrder.length
+  const si = playerOrder.indexOf(selected)
+  return Array.from({ length: NUM_COLS_COMPACT }, (_, col) => playerOrder[(si + col) % n])
 }
 
 export interface PlacedCard {
@@ -45,27 +54,39 @@ export interface PlacedCard {
   source?: string
 }
 
+export interface PlacedCard4 extends PlacedCard {
+  isLeader: boolean // this player led the trick (played first)
+}
+
 /**
- * Place a trick's cards in play order (leader first), with no per-player column
- * alignment — used by the compact 4-column view, where an explicit lead arrow
- * (rather than a fixed column position) conveys who led. Returns one PlacedCard
- * per move played, in the order they were played.
+ * Place a trick's 4 cards into the compact 4-column layout: each card lands in
+ * its player's fixed column (seating order with `selected` on the left), and the
+ * leader is flagged so the row can draw a lead arrow beside their card — position
+ * no longer identifies who led. Returns an array of length 4 (nulls if a trick
+ * is somehow short of a full four moves).
  */
-export function placeTrickCardsCompact(
+export function placeTrickCards4(
   trick: TrickRecord,
   playerOrder: string[],
-): PlacedCard[] {
+  selected: string,
+): (PlacedCard4 | null)[] {
   const n = playerOrder.length
+  const si = playerOrder.indexOf(selected)
   const firstSeat = playerOrder.indexOf(trick.first_player)
-  return trick.moves.map((card, i) => {
-    const player = playerOrder[(firstSeat + i) % n]
-    return {
+  const cells: (PlacedCard4 | null)[] = Array(NUM_COLS_COMPACT).fill(null)
+  trick.moves.forEach((card, i) => {
+    const seat = (firstSeat + i) % n
+    const col = (((seat - si) % n) + n) % n
+    const player = playerOrder[seat]
+    cells[col] = {
       card,
       player,
       isWinner: player === trick.winner,
       source: trick.move_sources?.[i],
+      isLeader: i === 0,
     }
   })
+  return cells
 }
 
 /**

@@ -272,11 +272,6 @@ table.data tbody tr.row-link a {
   margin-bottom: 14px;
 }
 
-/* Push the round-level "copy debug command" button to the right of the hint. */
-.debug-round-btn {
-  margin-left: auto;
-}
-
 button.btn,
 select.btn {
   font-size: 13px;
@@ -299,6 +294,15 @@ button.btn.btn--active {
 }
 button.btn.btn--active:hover {
   background: #2a5bd7;
+}
+
+/* Compact icon-only button (view toggle, copy-debug): squarish, centered glyph. */
+button.btn.btn--icon {
+  padding: 6px 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
 }
 
 .crumbs {
