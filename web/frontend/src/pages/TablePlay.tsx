@@ -14,10 +14,11 @@ import { useTableSocket, type TableSendAction, type TableSeatDraft } from '../li
 import type { LiveRound } from '../api/client'
 import { Card } from '../components/Card'
 import { TrickRow } from '../components/TrickRow'
+import { TrickColumnHeader } from '../components/TrickColumnHeader'
+import { ViewToggleButton } from '../components/ViewToggleButton'
 import { HandOverlay, type HandOverlayData } from '../components/HandOverlay'
 import type { RoundRecord } from '../api/client'
 import { RANK_ORDER, SUIT_ORDER, SUIT_SYMBOL, isRedSuit, sortBySuitThenRank, type Suit } from '../lib/cards'
-import { columnSeats, CENTER } from '../lib/seating'
 import { handBeforePlay, legalMovesBeforePlay } from '../lib/reconstruct'
 import { teamColor, type PlayerDisplay } from '../lib/playerId'
 import { useColumnSlide } from '../lib/useColumnSlide'
@@ -656,7 +657,7 @@ function TableRoundHistory({ pub }: { pub: TablePublic }) {
   const [fourCol, setFourCol] = useState(false)
   // Click-a-card "hand before this play" overlay (completed rounds only).
   const [overlay, setOverlay] = useState<{ data: HandOverlayData; name: PlayerDisplay } | null>(null)
-  const { selectColumn, containerRef } = useColumnSlide(pub.player_order, selected, setSelOverride)
+  const { selectColumn, containerRef } = useColumnSlide(pub.player_order, selected, setSelOverride, fourCol)
 
   if (!selected || rounds.length === 0) return null
 
@@ -693,10 +694,12 @@ function TableRoundHistory({ pub }: { pub: TablePublic }) {
   return (
     <>
       <div className="row-actions" style={{ margin: '0 0 8px' }}>
-        <label className="trick-view-toggle">
-          <input type="checkbox" checked={fourCol} onChange={(e) => setFourCol(e.target.checked)} />
-          4-column trick view (cards in play order, → marks the leader)
-        </label>
+        <span className="muted" style={{ fontSize: 12 }}>
+          Expand a completed round, then click a card to see that player's hand before the play.
+        </span>
+        <div className="trick-view-actions">
+          <ViewToggleButton fourColumn={fourCol} onToggle={setFourCol} />
+        </div>
       </div>
 
       <div className="card-surface live-scores" ref={containerRef}>
@@ -768,7 +771,6 @@ function TableRoundRow({
   onCardClick?: (player: string, card: string, trickIndex: number) => void
 }) {
   const dir = round.pass_direction
-  const seats = columnSeats(pub.player_order, selected)
   const tricks = round.tricks ?? []
   const isLive = pub.round_idx === round.round_idx && !round.complete
 
@@ -803,29 +805,16 @@ function TableRoundRow({
         (tricks.length > 0 ? (
           <div className="live-scores__detail">
             <div className="live-tricks">
-              {/* Column header aligned with the trick rows; click to recenter.
-                  Hidden in 4-column mode, where columns don't map to players. */}
-              {!fourCol && (
-                <div className="trick-row">
-                  <div className="trick-row__label" />
-                  <div className="trick-row__grid">
-                    {seats.map((pid, col) => {
-                      const isCenter = col === CENTER
-                      return (
-                        <div
-                          key={col}
-                          className={`trick-col ${isCenter ? 'trick-col--center' : 'trick-col--clickable'}`}
-                          onClick={isCenter ? undefined : () => selectColumn(col)}
-                          title={isCenter ? undefined : `Center on ${nameOf(pid)}`}
-                        >
-                          <div className="trick-col__seat">{nameOf(pid)}</div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                  <div className="trick-row__pts" />
-                </div>
-              )}
+              {/* Clickable player-name header aligned with the trick rows. In
+                  4-column mode the selected player sits on the left. */}
+              <TrickColumnHeader
+                playerOrder={pub.player_order}
+                selected={selected}
+                fourColumn={fourCol}
+                onSelect={selectColumn}
+                renderName={(pid) => nameOf(pid)}
+                nameText={(pid) => nameOf(pid)}
+              />
               {tricks.map((t) => (
                 <TrickRow
                   key={t.trick_idx}

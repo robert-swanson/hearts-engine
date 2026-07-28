@@ -4,13 +4,16 @@ import { api } from '../api/client'
 import { useFetch } from '../lib/useFetch'
 import { nameResolver, displayString } from '../lib/playerId'
 import { PlayerName } from '../components/PlayerName'
-import { columnSeats, NUM_COLS, CENTER, passRecipient, passSource } from '../lib/seating'
+import { passRecipient, passSource } from '../lib/seating'
 import { useColumnSlide } from '../lib/useColumnSlide'
 import { handBeforePlay, handBeforePassing, legalMovesBeforePlay } from '../lib/reconstruct'
 import { TrickRow } from '../components/TrickRow'
+import { TrickColumnHeader } from '../components/TrickColumnHeader'
+import { ViewToggleButton } from '../components/ViewToggleButton'
 import { HandOverlay, type HandOverlayData } from '../components/HandOverlay'
 import { Card } from '../components/Card'
 import { CopyButton } from '../components/CopyButton'
+import { DebugIcon, CheckIcon } from '../components/icons'
 import { buildDebugCommand, type DebugCommandContext } from '../lib/debugCommand'
 import { useAuth } from '../lib/auth'
 
@@ -25,8 +28,9 @@ export function RoundDetail({ lobby = false }: { lobby?: boolean }) {
   const [selected, setSelected] = useState<string>('')
   const [fourCol, setFourCol] = useState(false)
   const [overlay, setOverlay] = useState<HandOverlayData | null>(null)
-  // Click a column header to center on that player, with a scroll animation.
-  const { selectColumn, containerRef } = useColumnSlide(data?.player_order ?? [], selected, setSelected)
+  // Click a column header to center on that player (or move them left in
+  // 4-column mode), with a scroll animation.
+  const { selectColumn, containerRef } = useColumnSlide(data?.player_order ?? [], selected, setSelected, fourCol)
 
   // Default the selected player to the first seat once data loads.
   useEffect(() => {
@@ -38,7 +42,6 @@ export function RoundDetail({ lobby = false }: { lobby?: boolean }) {
   if (!data || !round) return <p className="muted">Round not found.</p>
   if (!selected) return null
 
-  const seats = columnSeats(data.player_order, selected)
   const nameOf = nameResolver(data.player_order)
 
   // Context for building `player_debugger.py` commands that replay a move.
@@ -187,15 +190,19 @@ export function RoundDetail({ lobby = false }: { lobby?: boolean }) {
             · Click a player's column header to center the view on them.
           </span>
         </span>
-        <CopyButton
-          className="btn debug-round-btn"
-          label={`Copy debug command · ${displayString(nameOf(selected))}`}
-          copiedLabel="Copied debug command!"
-          text={buildDebugCommand(debugCtx, {
-            seatIndex: data.player_order.indexOf(selected),
-            playerFullId: selected,
-          })}
-        />
+        <div className="trick-view-actions">
+          <ViewToggleButton fourColumn={fourCol} onToggle={setFourCol} />
+          <CopyButton
+            className="btn btn--icon"
+            title={`Copy debug command for ${displayString(nameOf(selected))}`}
+            label={<DebugIcon />}
+            copiedLabel={<CheckIcon />}
+            text={buildDebugCommand(debugCtx, {
+              seatIndex: data.player_order.indexOf(selected),
+              playerFullId: selected,
+            })}
+          />
+        </div>
       </div>
 
       <div className="card-surface passing-section">
@@ -241,42 +248,20 @@ export function RoundDetail({ lobby = false }: { lobby?: boolean }) {
         )}
       </div>
 
-      <div className="row-actions" style={{ margin: '0 0 8px' }}>
-        <label className="trick-view-toggle">
-          <input type="checkbox" checked={fourCol} onChange={(e) => setFourCol(e.target.checked)} />
-          4-column view (cards in play order, → marks the leader)
-        </label>
-      </div>
-
       <div
         className="card-surface"
         ref={containerRef as React.RefObject<HTMLDivElement>}
       >
-        {/* Column header aligned with the trick rows below; click to recenter.
-            Hidden in 4-column mode, where columns no longer map to players. */}
-        {!fourCol && (
-          <div className="trick-row" style={{ borderBottom: '2px solid #ddd' }}>
-            <div className="trick-row__label" />
-            <div className="trick-row__grid">
-              {Array.from({ length: NUM_COLS }, (_, col) => {
-                const isCenter = col === CENTER
-                return (
-                  <div
-                    key={col}
-                    className={`trick-col ${isCenter ? 'trick-col--center' : 'trick-col--clickable'}`}
-                    onClick={isCenter ? undefined : () => selectColumn(col)}
-                    title={isCenter ? undefined : `Center on ${displayString(nameOf(seats[col]))}`}
-                  >
-                    <div className="trick-col__seat">
-                      <PlayerName d={nameOf(seats[col])} />
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-            <div className="trick-row__pts" />
-          </div>
-        )}
+        {/* Clickable player-name header aligned with the trick rows below. In
+            4-column mode the selected player sits on the left; otherwise centered. */}
+        <TrickColumnHeader
+          playerOrder={data.player_order}
+          selected={selected}
+          fourColumn={fourCol}
+          onSelect={selectColumn}
+          renderName={(pid) => <PlayerName d={nameOf(pid)} />}
+          nameText={(pid) => displayString(nameOf(pid))}
+        />
 
         {round.tricks.map((trick, i) => (
           <TrickRow

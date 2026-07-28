@@ -1,16 +1,20 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 
-/** A button that copies `text` to the clipboard and briefly shows a "copied" label. */
+/** A button that copies `text` to the clipboard and briefly shows a "copied"
+ *  state. `label`/`copiedLabel` may be text or an icon; `title` sets the tooltip
+ *  (useful for icon-only buttons). */
 export function CopyButton({
   text,
   label = 'Copy',
   copiedLabel = 'Copied!',
   className,
+  title,
 }: {
   text: string
-  label?: string
-  copiedLabel?: string
+  label?: ReactNode
+  copiedLabel?: ReactNode
   className?: string
+  title?: string
 }) {
   const [copied, setCopied] = useState(false)
   const onClick = async () => {
@@ -25,7 +29,7 @@ export function CopyButton({
     }
   }
   return (
-    <button type="button" className={className} onClick={onClick}>
+    <button type="button" className={className} onClick={onClick} title={copied ? undefined : title}>
       {copied ? copiedLabel : label}
     </button>
   )
