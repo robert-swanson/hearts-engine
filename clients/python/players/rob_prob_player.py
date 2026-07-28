@@ -55,6 +55,7 @@ if os.environ.get(ACCEPTABLE_FAILURES_ENV):
 class RobProbPlayer(Player):
     player_tag = "rob_prob_player"
     message_print_logging_enabled = False
+    move_logging_enabled = True
 
     def __init__(self, player_tag_session: PlayerTagSession):
         super().__init__(player_tag_session)
@@ -140,6 +141,7 @@ class RobProbPlayer(Player):
         if len(legal_moves) == 1:
             return legal_moves[0]
         if self.is_worried_about_shooting_the_moon():
+            print("Is worried about moon shot")
             return self.get_move_likely_to_win_trick(trick, legal_moves)
         else:
             risk_tolerance = ACCEPTABLE_FAILURES[trick.trick_idx]
@@ -188,10 +190,6 @@ class RobProbPlayer(Player):
             num_cards_of_suit = len([c for c in self.hand if c.suit == move.suit])
             moves_left = 12 - trick.trick_idx
             a.dump_value += max(0, moves_left - num_cards_of_suit)
-            if move_under_risk_found and best_move_under_risk_dump_value > a.dump_value:
-                # Early continue since we know we dont want this move even if it were safe.
-                a.win_probability = -1.0
-                continue 
 
             current_winning_rank = max([0] + [m.card.rank.to_int() for m in trick.moves if m.card.suit == trick_suit])
             if move.suit != trick_suit or move.rank.to_int() < current_winning_rank:
@@ -233,12 +231,15 @@ class RobProbPlayer(Player):
 
         # Choose Move
         moves_under_risk = [a for a in moves_analysis if a.win_probability <= max_acceptable_win_probability]
+        rv = None
         if moves_under_risk:
             # From moves under risk: Choose highest dump value, then lowest win probability.
-            return sorted(moves_under_risk, key=lambda a: (100-a.dump_value, a.win_probability))[0].move
+            rv = sorted(moves_under_risk, key=lambda a: (100-a.dump_value, a.win_probability))[0]
         else:
             # Choose move with lowest score, then lowest win probability, then highest dump value
-            return sorted(moves_analysis, key=lambda a: (a.min_score, a.win_probability, 100-a.dump_value))[0].move
+            rv = sorted(moves_analysis, key=lambda a: (a.min_score, a.win_probability, 100-a.dump_value))[0]
+        print(f"Under risk={len(moves_under_risk) > 0}, move={rv.move}, dump_value={rv.dump_value}, win_probability={rv.win_probability*100.0}%, risk_tolerance={max_acceptable_win_probability*100.0}%")
+        return rv.move
 
 
     @staticmethod
