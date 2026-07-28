@@ -14,8 +14,12 @@ import { useTableSocket, type TableSendAction, type TableSeatDraft } from '../li
 import type { LiveRound } from '../api/client'
 import { Card } from '../components/Card'
 import { TrickRow } from '../components/TrickRow'
+import { HandOverlay, type HandOverlayData } from '../components/HandOverlay'
+import type { RoundRecord } from '../api/client'
 import { RANK_ORDER, SUIT_ORDER, SUIT_SYMBOL, isRedSuit, sortBySuitThenRank, type Suit } from '../lib/cards'
 import { columnSeats, CENTER } from '../lib/seating'
+import { handBeforePlay, legalMovesBeforePlay } from '../lib/reconstruct'
+import { teamColor, type PlayerDisplay } from '../lib/playerId'
 import { useColumnSlide } from '../lib/useColumnSlide'
 import './LivePlay.css'
 import './TablePlay.css'
@@ -648,6 +652,10 @@ function TableRoundHistory({ pub }: { pub: TablePublic }) {
   const selected = selOverride ?? defaultSel
   // Per-round manual expand override (round_idx -> expanded?), else the live rule.
   const [overrides, setOverrides] = useState<Record<number, boolean>>({})
+  // Compact 4-column trick layout toggle (applies to every expanded round).
+  const [fourCol, setFourCol] = useState(false)
+  // Click-a-card "hand before this play" overlay (completed rounds only).
+  const [overlay, setOverlay] = useState<{ data: HandOverlayData; name: PlayerDisplay } | null>(null)
   const { selectColumn, containerRef } = useColumnSlide(pub.player_order, selected, setSelOverride)
 
   if (!selected || rounds.length === 0) return null
@@ -656,44 +664,83 @@ function TableRoundHistory({ pub }: { pub: TablePublic }) {
   const isLiveRound = (r: LiveRound) => pub.round_idx === r.round_idx && !r.complete
   const gridStyle = { ['--player-cols' as string]: String(pub.player_order.length) } as React.CSSProperties
 
+  // Reconstruct a player's hand right before a completed-round play. Not offered
+  // for the live (in-progress) round, whose players' remaining cards aren't yet
+  // public knowledge (and can't be reconstructed from unplayed tricks).
+  const openHandOverlay = (round: LiveRound, player: string, trickIndex: number) => {
+    const rr: RoundRecord = {
+      round_idx: round.round_idx,
+      pass_direction: round.pass_direction ?? '',
+      hands_after_passing: {},
+      tricks: round.tricks,
+      round_scores: round.scores,
+    }
+    const { hand, playedCard } = handBeforePlay(rr, pub.player_order, player, trickIndex)
+    const legal = legalMovesBeforePlay(rr, pub.player_order, player, trickIndex)
+    setOverlay({
+      data: {
+        player,
+        subtitle: `hand before trick #${trickIndex + 1}`,
+        hand,
+        highlight: playedCard ? [playedCard] : [],
+        legal,
+        footer: `Gold ring = card played. Greyed-out cards weren't legal to play here. (${hand.length} card${hand.length === 1 ? '' : 's'} in hand)`,
+      },
+      name: { full: player, tag: nameOf(player), showSlot: false, color: teamColor(player) },
+    })
+  }
+
   return (
-    <div className="card-surface live-scores" ref={containerRef}>
-      <div className="live-scores__row live-scores__row--head" style={gridStyle}>
-        <div className="live-scores__round muted">Round</div>
-        <div className="live-scores__pass muted">Pass</div>
-        {pub.player_order.map((pid) => (
-          <div key={pid} className="live-scores__pts live-scores__name" title={nameOf(pid)}>
-            {nameOf(pid)}
-          </div>
-        ))}
+    <>
+      <div className="row-actions" style={{ margin: '0 0 8px' }}>
+        <label className="trick-view-toggle">
+          <input type="checkbox" checked={fourCol} onChange={(e) => setFourCol(e.target.checked)} />
+          4-column trick view (cards in play order, → marks the leader)
+        </label>
       </div>
 
-      {rounds.map((r) => {
-        const expanded = overrides[r.round_idx] ?? isLiveRound(r)
-        const toggle = () => setOverrides((prev) => ({ ...prev, [r.round_idx]: !expanded }))
-        return (
-          <TableRoundRow
-            key={r.round_idx}
-            round={r}
-            expanded={expanded}
-            onToggle={toggle}
-            pub={pub}
-            selected={selected}
-            nameOf={nameOf}
-            selectColumn={selectColumn}
-            gridStyle={gridStyle}
-          />
-        )
-      })}
+      <div className="card-surface live-scores" ref={containerRef}>
+        <div className="live-scores__row live-scores__row--head" style={gridStyle}>
+          <div className="live-scores__round muted">Round</div>
+          <div className="live-scores__pass muted">Pass</div>
+          {pub.player_order.map((pid) => (
+            <div key={pid} className="live-scores__pts live-scores__name" title={nameOf(pid)}>
+              {nameOf(pid)}
+            </div>
+          ))}
+        </div>
 
-      <div className="live-scores__row live-scores__row--total" style={gridStyle}>
-        <div className="live-scores__round">Total</div>
-        <div className="live-scores__pass" />
-        {pub.player_order.map((pid) => (
-          <div key={pid} className="live-scores__pts">{pub.scores[pid] ?? 0}</div>
-        ))}
+        {rounds.map((r) => {
+          const expanded = overrides[r.round_idx] ?? isLiveRound(r)
+          const toggle = () => setOverrides((prev) => ({ ...prev, [r.round_idx]: !expanded }))
+          return (
+            <TableRoundRow
+              key={r.round_idx}
+              round={r}
+              expanded={expanded}
+              onToggle={toggle}
+              pub={pub}
+              selected={selected}
+              nameOf={nameOf}
+              selectColumn={selectColumn}
+              gridStyle={gridStyle}
+              fourCol={fourCol}
+              onCardClick={r.complete ? (p, _c, ti) => openHandOverlay(r, p, ti) : undefined}
+            />
+          )
+        })}
+
+        <div className="live-scores__row live-scores__row--total" style={gridStyle}>
+          <div className="live-scores__round">Total</div>
+          <div className="live-scores__pass" />
+          {pub.player_order.map((pid) => (
+            <div key={pid} className="live-scores__pts">{pub.scores[pid] ?? 0}</div>
+          ))}
+        </div>
       </div>
-    </div>
+
+      {overlay && <HandOverlay data={overlay.data} name={overlay.name} onClose={() => setOverlay(null)} />}
+    </>
   )
 }
 
@@ -706,6 +753,8 @@ function TableRoundRow({
   nameOf,
   selectColumn,
   gridStyle,
+  fourCol,
+  onCardClick,
 }: {
   round: LiveRound
   expanded: boolean
@@ -715,6 +764,8 @@ function TableRoundRow({
   nameOf: (pid: string) => string
   selectColumn: (col: number) => void
   gridStyle: React.CSSProperties
+  fourCol: boolean
+  onCardClick?: (player: string, card: string, trickIndex: number) => void
 }) {
   const dir = round.pass_direction
   const seats = columnSeats(pub.player_order, selected)
@@ -752,26 +803,29 @@ function TableRoundRow({
         (tricks.length > 0 ? (
           <div className="live-scores__detail">
             <div className="live-tricks">
-              {/* Column header aligned with the trick rows; click to recenter. */}
-              <div className="trick-row">
-                <div className="trick-row__label" />
-                <div className="trick-row__grid">
-                  {seats.map((pid, col) => {
-                    const isCenter = col === CENTER
-                    return (
-                      <div
-                        key={col}
-                        className={`trick-col ${isCenter ? 'trick-col--center' : 'trick-col--clickable'}`}
-                        onClick={isCenter ? undefined : () => selectColumn(col)}
-                        title={isCenter ? undefined : `Center on ${nameOf(pid)}`}
-                      >
-                        <div className="trick-col__seat">{nameOf(pid)}</div>
-                      </div>
-                    )
-                  })}
+              {/* Column header aligned with the trick rows; click to recenter.
+                  Hidden in 4-column mode, where columns don't map to players. */}
+              {!fourCol && (
+                <div className="trick-row">
+                  <div className="trick-row__label" />
+                  <div className="trick-row__grid">
+                    {seats.map((pid, col) => {
+                      const isCenter = col === CENTER
+                      return (
+                        <div
+                          key={col}
+                          className={`trick-col ${isCenter ? 'trick-col--center' : 'trick-col--clickable'}`}
+                          onClick={isCenter ? undefined : () => selectColumn(col)}
+                          title={isCenter ? undefined : `Center on ${nameOf(pid)}`}
+                        >
+                          <div className="trick-col__seat">{nameOf(pid)}</div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  <div className="trick-row__pts" />
                 </div>
-                <div className="trick-row__pts" />
-              </div>
+              )}
               {tricks.map((t) => (
                 <TrickRow
                   key={t.trick_idx}
@@ -779,6 +833,8 @@ function TableRoundRow({
                   trickIndex={t.trick_idx}
                   playerOrder={pub.player_order}
                   selected={selected}
+                  fourColumn={fourCol}
+                  onCardClick={onCardClick}
                 />
               ))}
             </div>

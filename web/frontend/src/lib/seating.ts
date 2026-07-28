@@ -46,6 +46,29 @@ export interface PlacedCard {
 }
 
 /**
+ * Place a trick's cards in play order (leader first), with no per-player column
+ * alignment — used by the compact 4-column view, where an explicit lead arrow
+ * (rather than a fixed column position) conveys who led. Returns one PlacedCard
+ * per move played, in the order they were played.
+ */
+export function placeTrickCardsCompact(
+  trick: TrickRecord,
+  playerOrder: string[],
+): PlacedCard[] {
+  const n = playerOrder.length
+  const firstSeat = playerOrder.indexOf(trick.first_player)
+  return trick.moves.map((card, i) => {
+    const player = playerOrder[(firstSeat + i) % n]
+    return {
+      card,
+      player,
+      isWinner: player === trick.winner,
+      source: trick.move_sources?.[i],
+    }
+  })
+}
+
+/**
  * Place a trick's 4 cards into the 7 columns. The selected player's card lands
  * on the center column; the leftmost card belongs to the leader. Returns an
  * array of length NUM_COLS with nulls in empty columns.
