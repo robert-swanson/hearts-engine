@@ -29,7 +29,7 @@ public:
             PassDirection passDirection = Left;
             updateRankings();
             notifyStartGame();
-            while (mMaxScore <= Constants::GAME_END_SCORE)
+            while (mMaxScore < Constants::GAME_END_SCORE)
             {
                 Round round(mCurrentRoundIdx, mPlayers, passDirection, mGameLogger, mObserver);
                 round.runDeal();

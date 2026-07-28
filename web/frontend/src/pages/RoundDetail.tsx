@@ -23,6 +23,7 @@ export function RoundDetail({ lobby = false }: { lobby?: boolean }) {
   )
   const round = data?.rounds[Number(roundIdx)]
   const [selected, setSelected] = useState<string>('')
+  const [fourCol, setFourCol] = useState(false)
   const [overlay, setOverlay] = useState<HandOverlayData | null>(null)
   // Click a column header to center on that player, with a scroll animation.
   const { selectColumn, containerRef } = useColumnSlide(data?.player_order ?? [], selected, setSelected)
@@ -240,32 +241,42 @@ export function RoundDetail({ lobby = false }: { lobby?: boolean }) {
         )}
       </div>
 
+      <div className="row-actions" style={{ margin: '0 0 8px' }}>
+        <label className="trick-view-toggle">
+          <input type="checkbox" checked={fourCol} onChange={(e) => setFourCol(e.target.checked)} />
+          4-column view (cards in play order, → marks the leader)
+        </label>
+      </div>
+
       <div
         className="card-surface"
         ref={containerRef as React.RefObject<HTMLDivElement>}
       >
-        {/* Column header aligned with the trick rows below; click to recenter. */}
-        <div className="trick-row" style={{ borderBottom: '2px solid #ddd' }}>
-          <div className="trick-row__label" />
-          <div className="trick-row__grid">
-            {Array.from({ length: NUM_COLS }, (_, col) => {
-              const isCenter = col === CENTER
-              return (
-                <div
-                  key={col}
-                  className={`trick-col ${isCenter ? 'trick-col--center' : 'trick-col--clickable'}`}
-                  onClick={isCenter ? undefined : () => selectColumn(col)}
-                  title={isCenter ? undefined : `Center on ${displayString(nameOf(seats[col]))}`}
-                >
-                  <div className="trick-col__seat">
-                    <PlayerName d={nameOf(seats[col])} />
+        {/* Column header aligned with the trick rows below; click to recenter.
+            Hidden in 4-column mode, where columns no longer map to players. */}
+        {!fourCol && (
+          <div className="trick-row" style={{ borderBottom: '2px solid #ddd' }}>
+            <div className="trick-row__label" />
+            <div className="trick-row__grid">
+              {Array.from({ length: NUM_COLS }, (_, col) => {
+                const isCenter = col === CENTER
+                return (
+                  <div
+                    key={col}
+                    className={`trick-col ${isCenter ? 'trick-col--center' : 'trick-col--clickable'}`}
+                    onClick={isCenter ? undefined : () => selectColumn(col)}
+                    title={isCenter ? undefined : `Center on ${displayString(nameOf(seats[col]))}`}
+                  >
+                    <div className="trick-col__seat">
+                      <PlayerName d={nameOf(seats[col])} />
+                    </div>
                   </div>
-                </div>
-              )
-            })}
+                )
+              })}
+            </div>
+            <div className="trick-row__pts" />
           </div>
-          <div className="trick-row__pts" />
-        </div>
+        )}
 
         {round.tricks.map((trick, i) => (
           <TrickRow
@@ -275,6 +286,7 @@ export function RoundDetail({ lobby = false }: { lobby?: boolean }) {
             playerOrder={data.player_order}
             selected={selected}
             onCardClick={handleCardClick}
+            fourColumn={fourCol}
           />
         ))}
       </div>

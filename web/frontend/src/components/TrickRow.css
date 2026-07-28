@@ -80,6 +80,37 @@
   text-align: left;
 }
 
+/* Compact 4-column layout: a slim lead-arrow column followed by the four cards
+   in play order. Cards spread across the same row width as the 7-col view. */
+.trick-row__grid--compact {
+  grid-template-columns: 22px repeat(4, 1fr);
+}
+
+.trick-row__lead-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #2a5bd7;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+  user-select: none;
+}
+
+/* A checkbox toggle sitting above a trick view (compact vs. full column view). */
+.trick-view-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #555;
+  cursor: pointer;
+  user-select: none;
+}
+.trick-view-toggle input {
+  cursor: pointer;
+}
+
 /* Header row above the tricks, reusing the same 7-col grid. */
 .trick-header {
   display: flex;
