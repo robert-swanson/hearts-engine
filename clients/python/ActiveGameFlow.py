@@ -1,3 +1,4 @@
+import sys
 import time
 from typing import List, Optional
 
@@ -16,6 +17,23 @@ from clients.python.util.MoveLogging import PlayerMoveLogger, move_logging_enabl
 
 def _now_ms() -> int:
     return int(time.time() * 1000)
+
+
+_warned_move_logging = set()
+
+
+def _warn_move_logging_off(reason: str) -> None:
+    """Say once (per reason) why an opted-in player's move logs won't be written.
+
+    Silence here is indistinguishable from "the feature doesn't work" — it hid a
+    whole missing server-side wiring once — so surface it, on stderr so it can
+    never be mistaken for captured player output.
+    """
+    if reason in _warned_move_logging:
+        return
+    _warned_move_logging.add(reason)
+    print(f"move logging is enabled for this player but disabled at runtime: {reason}",
+          file=sys.stderr)
 
 
 def _set_log_ctx(player: Player, round_idx: int, trick_idx: Optional[int],
@@ -44,14 +62,34 @@ class ActiveGame(PassingMessenger, Game):
         self._log_sink = None
         game_id = start_game_msg.get(Tags.GAME_ID)
         results_rel_dir = start_game_msg.get(Tags.RESULTS_REL_DIR)
-        if game_id and results_rel_dir and move_logging_enabled(type(self.player)):
-            logger = PlayerMoveLogger(game_id, results_rel_dir, str(self.player.player_tag_session))
-            if logger.results_dir is not None:
-                self._move_logger = logger
-                self.player._move_logger = logger
-                # Registered on this (the session's) thread; other seats' sessions
-                # run on their own threads and stay isolated.
-                self._log_sink = StdoutRouter.add_sink(logger.sink)
+        # Tournaments record seats under team-qualified ids; map protocol ids to
+        # those so the logs match the recorded game (and its per-team redaction).
+        full_ids = start_game_msg.get(Tags.PLAYER_FULL_IDS) or []
+        seat_ids = {str(pts): full
+                    for pts, full in zip(player_order, full_ids)}
+        if move_logging_enabled(type(self.player)):
+            if not (game_id and results_rel_dir):
+                # An unrecorded game, or a server too old to send the fields.
+                _warn_move_logging_off(
+                    "the server did not say where this game is recorded "
+                    "(no game_id/results_rel_dir in start_game)")
+            else:
+                logger = PlayerMoveLogger(game_id, results_rel_dir,
+                                          str(self.player.player_tag_session),
+                                          seat_ids=seat_ids)
+                if logger.results_dir is None:
+                    # Remote clients legitimately have no local results dir, but
+                    # a co-located run that forgot RESULTS_DIR looks identical —
+                    # and silently produces nothing — so say so once.
+                    _warn_move_logging_off(
+                        "RESULTS_DIR is not set (in the environment or the SDK's "
+                        "config env file), so there is nowhere to write the logs")
+                else:
+                    self._move_logger = logger
+                    self.player._move_logger = logger
+                    # Registered on this (the session's) thread; other seats' sessions
+                    # run on their own threads and stay isolated.
+                    self._log_sink = StdoutRouter.add_sink(logger.sink)
 
     def run_game(self, player: Player):
         _set_log_ctx(player, 0, None, str(player.player_tag_session), "round")

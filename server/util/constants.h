@@ -29,11 +29,19 @@ namespace Common::Server::Tags
     constexpr auto GAME_TYPE = "game_type";
     constexpr auto PLAYER_ORDER = "player_order";
     // Optional start_game fields: the recorded game's id and its results
-    // directory relative to RESULTS_DIR ("lobby" for lobby games), so SDK clients
-    // can persist per-move logs next to the recorded game. See
+    // directory relative to RESULTS_DIR ("lobby" for lobby games,
+    // "<competition>/<index>" for tournaments), so SDK clients can persist
+    // per-move logs next to the recorded game. See
     // clients/python/util/MoveLogging.py.
     constexpr auto GAME_ID = "game_id";
     constexpr auto RESULTS_REL_DIR = "results_rel_dir";
+    // Parallel to PLAYER_ORDER: the id each seat is recorded under in the game
+    // detail JSON. Tournaments record team-qualified ids
+    // ("team/player_tag/slot/session_id") while the protocol addresses seats by
+    // "player_tag(session_id)", so clients need this mapping to write move logs
+    // the web UI (and its per-team redaction) can match. Omitted for lobby games,
+    // where the recorded id is already the protocol id.
+    constexpr auto PLAYER_FULL_IDS = "player_full_ids";
     constexpr auto PASS_DIRECTION = "pass_direction";
     constexpr auto CARDS = "cards";
     constexpr auto CARD = "card";

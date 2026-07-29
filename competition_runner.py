@@ -251,7 +251,8 @@ def run_registration_listener(host: str, port: int,
 def start_filler_clients(filler_teams: Dict[str, str], max_players: int,
                           available_modules: List[str], config_path: str,
                           host: str, port: int, filler_ais: List[str],
-                          log_dir: str = './log') -> List[subprocess.Popen]:
+                          log_dir: str = './log',
+                          results_dir: str = './results') -> List[subprocess.Popen]:
     """Start one client per filler team using the specified AI modules."""
     procs = []
     log_path_base = Path(log_dir)
@@ -274,7 +275,10 @@ def start_filler_clients(filler_teams: Dict[str, str], max_players: int,
             f'--port={port}',
             config_path
         ]
-        env = {**os.environ, 'PYTHONPATH': os.getcwd()}
+        # RESULTS_DIR lets a player with move logging enabled write its per-move
+        # log sidecar next to the recorded game (clients/python/util/MoveLogging.py).
+        # Fillers are co-located with the server, so they share its results dir.
+        env = {**os.environ, 'PYTHONPATH': os.getcwd(), 'RESULTS_DIR': results_dir}
         log_file_path = log_path_base / f'{team_name}_{module}.log'
         # Truncate on each new competition rather than appending to stale logs.
         with open(log_file_path, 'w') as lf:
@@ -493,7 +497,8 @@ def run_competition(cfg: dict, real_teams: Dict[str, str],
     filler_procs = start_filler_clients(
         filler_teams, max_players, available_modules, config_path, host, port,
         filler_ais=cfg.get('filler_team_ais', ['random_player'] * filler_count),
-        log_dir=cfg.get('log_dir', './log'))
+        log_dir=cfg.get('log_dir', './log'),
+        results_dir=cfg.get('results_dir', './results'))
 
     # Registration window: opens the moment the previous tournament completes, so
     # a repeat tournament whose start is further out than `min_client_window`
