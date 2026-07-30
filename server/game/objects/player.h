@@ -16,9 +16,12 @@ public:
 
 
     // Notifying virtual functions
+    // playerFullIds, when non-empty, is parallel to playerOrder and gives the id
+    // each seat is recorded under in the game detail JSON (see Tags::PLAYER_FULL_IDS).
     virtual void notifyStartGame(std::vector<PlayerID> playerOrder,
                                  const std::string& gameId = "",
-                                 const std::string& resultsRelDir = "") = 0;
+                                 const std::string& resultsRelDir = "",
+                                 const std::vector<std::string>& playerFullIds = {}) = 0;
     virtual void notifyStartRound(int roundIndex, PassDirection passDirection, CardCollection hand) = 0;
     virtual CardCollection getCardsToPass(PassDirection direction) = 0;
     virtual void notifyReceivedCards(const CardCollection& receivedCards, const CardCollection& donatedCards) = 0;

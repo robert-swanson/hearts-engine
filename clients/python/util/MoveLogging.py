@@ -17,6 +17,13 @@ Layout (mirrors where the C++ server writes the game detail):
 so the client needs no knowledge of the results-directory layout. When either is
 absent (older server) or ``RESULTS_DIR`` is unset (remote client with no local
 results dir), logging simply no-ops.
+
+Seat ids: the protocol addresses seats as ``player_tag(session_id)``, but a
+tournament's recorded game detail uses team-qualified ids
+(``team/player_tag/slot/session_id``) — and the web backend redacts logs by
+matching the author against that form. ``start_game`` therefore also carries
+``player_full_ids`` (parallel to ``player_order``) for tournaments; the flow
+passes it here as ``seat_ids`` so every id written out is the recorded one.
 """
 from __future__ import annotations
 
@@ -56,28 +63,48 @@ def move_logging_enabled(player_cls) -> bool:
 
 
 def resolve_results_dir() -> Optional[Path]:
+    """Where this machine's recorded results live, or None if not co-located.
+
+    The RESULTS_DIR env var wins; otherwise fall back to the SDK's config env
+    file, which is how server-side runs (tournament clients, filler clients)
+    learn the results dir without every launcher having to export it.
+    """
     env = os.environ.get("RESULTS_DIR")
+    if not env:
+        try:
+            from clients.python.util.Env import ENV
+            env = ENV.env_dict.get("RESULTS_DIR")
+        except Exception:
+            env = None  # no readable config env file — treat as "not co-located"
     return Path(env) if env else None
 
 
 class PlayerMoveLogger:
     def __init__(self, game_id: str, results_rel_dir: str, own_seat: str,
-                 results_dir: Optional[Path] = None):
+                 results_dir: Optional[Path] = None,
+                 seat_ids: Optional[dict] = None):
+        # Protocol seat id -> recorded seat id; identity when the server sent no
+        # mapping (lobby games record the protocol id verbatim).
+        self.seat_ids = dict(seat_ids or {})
         self.game_id = game_id
         self.results_rel_dir = results_rel_dir
-        self.own_seat = own_seat
+        self.own_seat = self._recorded(own_seat)
         self.results_dir = results_dir if results_dir is not None else resolve_results_dir()
         self._entries: List[_Entry] = []
-        self._ctx: Tuple[int, Optional[int], str, str] = (0, None, own_seat, "round")
+        self._ctx: Tuple[int, Optional[int], str, str] = (0, None, self.own_seat, "round")
         self._buf = ""
         self._per_move_counts: dict = {}
         self._lock = threading.Lock()
+
+    def _recorded(self, seat: str) -> str:
+        """The id `seat` appears under in the recorded game (identity by default)."""
+        return self.seat_ids.get(seat, seat)
 
     # -- context (set by the SDK game flow before each hook) -------------------
     def set_context(self, round_idx: int, trick_idx: Optional[int], seat: str, phase: str) -> None:
         with self._lock:
             self._flush_partial_locked()
-            self._ctx = (round_idx, trick_idx, seat, phase)
+            self._ctx = (round_idx, trick_idx, self._recorded(seat), phase)
 
     # -- stdout sink (registered with StdoutRouter on the session thread) ------
     def sink(self, text: str) -> None:

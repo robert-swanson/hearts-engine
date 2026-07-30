@@ -1,7 +1,9 @@
 #pragma once
 
+#include <map>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "objects/player.h"
 #include "round.h"
@@ -15,10 +17,12 @@ class Game
 public:
     explicit Game(PlayerArray players, std::shared_ptr<GameLogger> gameLogger,
                   GameObserver* observer = nullptr,
-                  std::string gameId = "", std::string resultsRelDir = ""):
+                  std::string gameId = "", std::string resultsRelDir = "",
+                  std::map<std::string, std::string> playerFullIds = {}):
     mPlayers(players), mRankings(players), mMaxScore(0),
     mGameLogger(std::move(gameLogger)), mObserver(observer),
-    mGameId(std::move(gameId)), mResultsRelDir(std::move(resultsRelDir))
+    mGameId(std::move(gameId)), mResultsRelDir(std::move(resultsRelDir)),
+    mPlayerFullIds(std::move(playerFullIds))
     {
     }
 
@@ -57,8 +61,20 @@ public:
 private:
     void notifyStartGame()
     {
+        std::vector<PlayerID> order = PlayerArrayToIds(mPlayers);
+        // Seat ids as recorded in the game detail JSON, parallel to `order`.
+        // Left empty when no mapping was supplied (lobby games record the
+        // protocol id verbatim), so the field is simply omitted on the wire.
+        std::vector<std::string> fullIds;
+        if (!mPlayerFullIds.empty())
+            for (const PlayerID& id : order)
+            {
+                auto it = mPlayerFullIds.find(id);
+                fullIds.push_back(it == mPlayerFullIds.end() ? id : it->second);
+            }
+
         for (PlayerRef & player : mPlayers)
-            player->notifyStartGame(PlayerArrayToIds(mPlayers), mGameId, mResultsRelDir);
+            player->notifyStartGame(order, mGameId, mResultsRelDir, fullIds);
     }
 
     void notifyEndGame()
@@ -102,5 +118,9 @@ private:
     GameObserver* mObserver;
     std::string mGameId;         // recorded game id, forwarded to clients in start_game
     std::string mResultsRelDir;  // game's results dir relative to RESULTS_DIR (e.g. "lobby")
+    // Protocol id ("player_tag(session_id)") → recorded id. Empty when the two
+    // are the same (lobby); populated for tournaments, which record
+    // team-qualified ids. See Tags::PLAYER_FULL_IDS.
+    std::map<std::string, std::string> mPlayerFullIds;
 };
 }

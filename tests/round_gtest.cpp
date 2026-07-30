@@ -23,7 +23,8 @@ public:
     explicit TestPlayer(const std::string& tag) : Player(tag) {}
 
     void notifyStartGame(std::vector<PlayerID>, const std::string& = "",
-                         const std::string& = "") override {}
+                         const std::string& = "",
+                         const std::vector<std::string>& = {}) override {}
     void notifyStartRound(int, PassDirection, CardCollection) override {}
     CardCollection getCardsToPass(PassDirection) override {
         auto h = getHand();

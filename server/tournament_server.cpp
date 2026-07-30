@@ -739,11 +739,21 @@ static GameResult runOneGame(const GameAssignment&, const std::string&,
     std::atomic<PlayerGameSessionID>&, const std::shared_ptr<Common::GameLogger>&,
     int, std::chrono::milliseconds);
 
+// This tournament's results directory relative to RESULTS_DIR — the same path
+// writeResults() writes summary.json/games/ into, and where co-located SDK
+// clients drop their per-move log sidecars (logs/<game_id>/<seat>.json).
+static std::string tournamentResultsRelDir(const std::string& competitionId,
+                                           const std::string& tournamentDirName)
+{
+    return competitionId.empty() ? tournamentDirName
+                                 : competitionId + "/" + tournamentDirName;
+}
+
 // Runs all assignments concurrently, but limits how many games each team plays
 // simultaneously (0 = no limit, original behaviour).
 static std::vector<GameResult> runGames(
     const std::vector<GameAssignment>& assignments,
-    const std::string& resultsDir,
+    const std::string& resultsRelDir,
     std::atomic<PlayerGameSessionID>& sessionCounter,
     const std::shared_ptr<Common::GameLogger>& nullLogger,
     int autoMoveAfterTimeouts,
@@ -815,7 +825,7 @@ static std::vector<GameResult> runGames(
             {
                 size_t i = nextIdx.fetch_add(1);
                 if (i >= assignments.size()) break;
-                auto r = runOneGame(assignments[i], resultsDir, sessionCounter,
+                auto r = runOneGame(assignments[i], resultsRelDir, sessionCounter,
                                     nullLogger, autoMoveAfterTimeouts, moveTimeout);
                 results[i] = r;             // unique index — no lock needed
                 completedCount++;
@@ -861,7 +871,7 @@ static std::vector<GameResult> runGames(
             lock.unlock();
 
             threads.emplace_back([&, i]() {
-                auto r = runOneGame(assignments[i], resultsDir, sessionCounter,
+                auto r = runOneGame(assignments[i], resultsRelDir, sessionCounter,
                                     nullLogger, autoMoveAfterTimeouts, moveTimeout);
                 {
                     std::lock_guard<std::mutex> g(mtx);
@@ -1084,7 +1094,7 @@ static void trySendControl(const std::shared_ptr<PlayerGameSession>& session,
 
 static GameResult runOneGame(
     const GameAssignment& assignment,
-    const std::string& resultsDir,
+    const std::string& resultsRelDir,
     std::atomic<PlayerGameSessionID>& sessionCounter,
     const std::shared_ptr<Common::GameLogger>& nullLogger,
     int autoMoveAfterTimeouts,
@@ -1138,7 +1148,17 @@ static GameResult runOneGame(
     ASRT_EQ((int)players.size(), 4);
 
     Game::PlayerArray arr = {players[0], players[1], players[2], players[3]};
-    Game::Game game(arr, nullLogger, observer.get());
+
+    // Tell the clients where this game is recorded, and under which id each seat
+    // appears there, so co-located SDK players can write per-move log sidecars
+    // the web UI can match (see clients/python/util/MoveLogging.py). Tournament
+    // details record team-qualified ids, so the mapping is not the identity.
+    std::map<std::string, std::string> fullIds;
+    for (const auto& [tagSession, _slotId] : observer->result.playerTagToSlotId)
+        fullIds[tagSession] = toFullId(tagSession, observer->result.playerTagToSlotId);
+
+    Game::Game game(arr, nullLogger, observer.get(),
+                    assignment.gameId, resultsRelDir, fullIds);
     try {
         game.runGame();
     } catch (boost::system::system_error& e) {
@@ -1252,6 +1272,9 @@ int main(int argc, char** argv)
     std::string tournamentDirName = competitionId.empty()
         ? timestampId
         : (tournamentIndex.empty() ? std::string("1") : tournamentIndex);
+    // Where this tournament's games are recorded, relative to RESULTS_DIR —
+    // forwarded to clients in start_game so they can write per-move logs there.
+    std::string resultsRelDir = tournamentResultsRelDir(competitionId, tournamentDirName);
     // Recorded inside summary.json / rules.json regardless of layout.
     std::string beganAt = timestampId;
 
@@ -1475,7 +1498,7 @@ int main(int argc, char** argv)
     // ── Stage 1: Qualifying ─────────────────────────────────────────────────
 
     auto qAssignments = scheduleGames(teamRosters, cfg.qualifyingGames, "qualifying");
-    auto qualifyingResults = runGames(qAssignments, cfg.resultsDir, gameSessionCounter,
+    auto qualifyingResults = runGames(qAssignments, resultsRelDir, gameSessionCounter,
         nullLogger, cfg.autoMoveAfterTimeouts,
         std::chrono::milliseconds(cfg.moveTimeoutMs),
         cfg.maxConcurrentGamesPerTeam, cfg.gameParallelism,
@@ -1605,7 +1628,7 @@ int main(int argc, char** argv)
     }
 
     auto fAssignments = scheduleGames(finalsRosters, cfg.finalsGames, "finals");
-    auto finalsResults = runGames(fAssignments, cfg.resultsDir, gameSessionCounter,
+    auto finalsResults = runGames(fAssignments, resultsRelDir, gameSessionCounter,
         nullLogger, cfg.autoMoveAfterTimeouts,
         std::chrono::milliseconds(cfg.moveTimeoutMs),
         cfg.maxConcurrentGamesPerTeam, cfg.gameParallelism,

@@ -65,6 +65,31 @@ def test_lobby_game_no_logs_is_empty_list():
             os.environ.pop("RESULTS_DIR", None)
 
 
+def test_tournament_game_merges_move_logs():
+    """The tournament sidecar path the server tells clients to use
+    (<competition>/<index>/logs/<game_id>/<seat>.json) is the one get_game reads."""
+    with tempfile.TemporaryDirectory() as d:
+        os.environ["RESULTS_DIR"] = d
+        try:
+            import results
+            importlib.reload(results)
+            tdir = Path(d) / "comp_a" / "1"
+            _write(tdir / "games" / "g3.json",
+                   {"game_id": "g3", "player_order": ["red/p/0/1"], "rounds": []})
+            _write(tdir / "logs" / "g3" / "red_p_0_1.json",
+                   {"game_id": "g3", "author": "red/p/0/1",
+                    "entries": [{"round_idx": 5, "trick_idx": 0, "seat": "red/p/0/1",
+                                 "phase": "move", "text": "tournament reasoning"}]})
+
+            detail = results.get_game("comp_a", "1", "g3")
+            assert detail is not None
+            assert [e["text"] for e in detail["move_logs"]] == ["tournament reasoning"]
+            # Authored under the recorded id, so per-team redaction can match it.
+            assert detail["move_logs"][0]["author"] == detail["player_order"][0]
+        finally:
+            os.environ.pop("RESULTS_DIR", None)
+
+
 def test_redact_move_logs_by_team():
     import auth
     detail = {

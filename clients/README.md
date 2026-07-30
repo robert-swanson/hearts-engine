@@ -57,7 +57,16 @@ The session_id returned by this message should be kept by the client as all futu
 ## Game Play
 The following describes each individual client session's side of the protocol during a single game. In many cases the server will send the exact same message (with differing session ids) to each of the clients. Note that this would happen even if any/all of the players in the game were on the same connection (_its all per session_).
 ### Game
-- `start_game`: Sent at the beginning of the game including the player_tags in their order of play
+- `start_game`: Sent at the beginning of the game including the player_tags in their order of play.
+  Recorded games (lobby and tournament) also carry three optional fields the SDK uses to persist
+  per-move logs next to the recording (see `clients/python/util/MoveLogging.py`); older servers and
+  unrecorded games omit them:
+  - `game_id` — the id the game is recorded under
+  - `results_rel_dir` — the game's directory relative to `RESULTS_DIR` (`"lobby"`, or
+    `"<competition>/<index>"` for tournaments)
+  - `player_full_ids` — parallel to `player_order`: the id each seat is recorded under. Tournaments
+    record team-qualified ids (`team/player_tag/slot/session_id`) rather than the protocol's
+    `player_tag(session_id)`; omitted when the two are the same.
 - *rounds happen here...*
 - `end_game`: Sent at the end of the game including info about the end scores (this is also the last message in the session)
 

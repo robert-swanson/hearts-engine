@@ -28,6 +28,11 @@ class Tags:
     # "<competition>/<index>" for tournaments). Absent on older servers.
     GAME_ID = "game_id"
     RESULTS_REL_DIR = "results_rel_dir"
+    # Parallel to PLAYER_ORDER: the id each seat is recorded under in the game
+    # detail JSON. Tournaments record team-qualified ids, so move logs must be
+    # authored under these rather than the protocol "player_tag(session_id)".
+    # Absent for lobby games (where the two are the same) and older servers.
+    PLAYER_FULL_IDS = "player_full_ids"
     PASS_DIRECTION = "pass_direction"
     CARDS = "cards"
     CARD = "card"

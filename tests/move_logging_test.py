@@ -120,6 +120,29 @@ def test_logger_noop_without_results_dir():
     assert lg.write_sidecar() is None
 
 
+def test_logger_maps_seats_to_recorded_ids():
+    """Tournaments record team-qualified ids; author + seat must use those."""
+    seat_ids = {"A(1)": "red/A/0/1", "B(2)": "blue/B/0/2"}
+    lg = PlayerMoveLogger("g1", "comp/1", "A(1)", results_dir=Path("/tmp"),
+                          seat_ids=seat_ids)
+    lg.set_context(0, 0, "A(1)", "move")
+    lg.sink("mine\n")
+    lg.set_context(0, 0, "B(2)", "observe")
+    lg.sink("theirs\n")
+    doc = lg.to_json()
+    assert doc["author"] == "red/A/0/1"
+    assert doc["entries"][0]["seat"] == "red/A/0/1"
+    assert doc["entries"][1]["seat"] == "blue/B/0/2"
+
+
+def test_logger_seat_mapping_is_identity_when_unmapped():
+    lg = PlayerMoveLogger("g1", "lobby", "A(1)", results_dir=Path("/tmp"))
+    lg.set_context(0, 0, "C(9)", "observe")
+    lg.sink("x\n")
+    assert lg.to_json()["author"] == "A(1)"
+    assert lg.to_json()["entries"][0]["seat"] == "C(9)"
+
+
 # ─── Test player ──────────────────────────────────────────────────────────────
 
 class _LoggingPlayer(Player):
@@ -180,6 +203,48 @@ def test_activegame_gating():
     assert g2._move_logger is None
 
 
+def test_opted_in_player_warns_when_logging_cannot_run():
+    """Silent no-ops hid a whole missing server-side wiring; an opted-in player
+    must be told (on stderr) why nothing will be written."""
+    import io
+    import contextlib
+    from clients.python import ActiveGameFlow
+
+    ActiveGameFlow._warned_move_logging.clear()
+    err = io.StringIO()
+    with contextlib.redirect_stderr(err):
+        # Server sent no game_id/results_rel_dir.
+        ActiveGame(MockMessenger([_start_game_msg()]), _mk_player())
+    assert "move logging is enabled" in err.getvalue()
+    assert "start_game" in err.getvalue()
+
+    ActiveGameFlow._warned_move_logging.clear()
+    err = io.StringIO()
+    # Force "not co-located" regardless of the repo's own config env file.
+    from clients.python.util import MoveLogging
+    original = MoveLogging.resolve_results_dir
+    MoveLogging.resolve_results_dir = lambda: None
+    try:
+        with contextlib.redirect_stderr(err):
+            # Fields present, but nowhere local to write.
+            ActiveGame(MockMessenger([_start_game_msg(game_id="g1", results_rel_dir="lobby")]),
+                       _mk_player())
+    finally:
+        MoveLogging.resolve_results_dir = original
+    assert "RESULTS_DIR" in err.getvalue()
+
+    # A player that never opted in stays quiet.
+    class Off(Player):
+        player_tag = PlayerTag("off")
+        def get_cards_to_pass(self, *a): return []
+        def get_move(self, *a, **k): return None
+    ActiveGameFlow._warned_move_logging.clear()
+    err = io.StringIO()
+    with contextlib.redirect_stderr(err):
+        ActiveGame(MockMessenger([_start_game_msg()]), Off(PlayerTagSession(PlayerTag("off"), 1)))
+    assert err.getvalue() == ""
+
+
 def test_move_and_observe_context_via_flow():
     with tempfile.TemporaryDirectory() as d:
         os.environ["RESULTS_DIR"] = d
@@ -212,6 +277,39 @@ def test_move_and_observe_context_via_flow():
             doc = json.loads(side.read_text())
             assert doc["author"] == "logtest(1)"
             assert any(e["text"] == "deciding my move" for e in doc["entries"])
+        finally:
+            os.environ.pop("RESULTS_DIR", None)
+
+
+def test_tournament_full_ids_via_flow():
+    """A tournament game's start_game carries player_full_ids; the sidecar must be
+    authored under the team-qualified id (what the recorded game_order uses, and
+    what the backend's per-team redaction matches on) and land in the
+    tournament's own results dir."""
+    full_ids = ["red/logtest/0/1", "blue/P1/0/2", "green/P2/0/3", "gold/P3/0/4"]
+    with tempfile.TemporaryDirectory() as d:
+        os.environ["RESULTS_DIR"] = d
+        try:
+            player = _mk_player()
+            game = ActiveGame(
+                MockMessenger([_start_game_msg(
+                    game_id="g7", results_rel_dir="comp_a/1", player_full_ids=full_ids)]),
+                player)
+            assert game._move_logger is not None
+
+            trick = ActiveTrick(MockMessenger(_one_trick_msgs()), player, round_idx=0)
+            trick.run_trick(player)
+            game._finalize_move_logging()
+
+            side = (Path(d) / "comp_a" / "1" / "logs" / "g7" /
+                    f"{sanitize_seat('red/logtest/0/1')}.json")
+            assert side.is_file(), f"sidecar not at {side}"
+            doc = json.loads(side.read_text())
+            assert doc["author"] == "red/logtest/0/1"
+            by_text = {e["text"]: e for e in doc["entries"]}
+            assert by_text["deciding my move"]["seat"] == "red/logtest/0/1"
+            # Observing another seat is tagged with that seat's recorded id too.
+            assert by_text["saw P1(2) play 5C"]["seat"] == "blue/P1/0/2"
         finally:
             os.environ.pop("RESULTS_DIR", None)
 

@@ -24,7 +24,8 @@ public:
 
     void notifyStartGame(std::vector<PlayerTagSession> playerOrder,
                          const std::string& gameId = "",
-                         const std::string& resultsRelDir = "") override
+                         const std::string& resultsRelDir = "",
+                         const std::vector<std::string>& playerFullIds = {}) override
     {
         nlohmann::json msg = {
             {Tags::TYPE, ServerMsgTypes::START_GAME},
@@ -35,6 +36,8 @@ public:
         // that don't record locally.
         if (!gameId.empty())        msg[Tags::GAME_ID]         = gameId;
         if (!resultsRelDir.empty()) msg[Tags::RESULTS_REL_DIR] = resultsRelDir;
+        // Only sent when the recorded ids differ from the protocol ids (tournaments).
+        if (!playerFullIds.empty()) msg[Tags::PLAYER_FULL_IDS] = playerFullIds;
         mGameSession->send(msg);
     }
 
