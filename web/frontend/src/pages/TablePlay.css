@@ -191,7 +191,37 @@
 .card-picker__defer-hint {
   font-size: 12px;
 }
-.card-picker__undo { margin-top: 4px; }
+
+/* --- Undo bar -------------------------------------------------------------- */
+/* Always present, above the prompt: a wrong tap at a physical table has to be
+   fixable at any moment, so the control never disappears — it only greys out
+   when there is genuinely nothing entered yet. */
+
+.table-undo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 12px 0 0;
+}
+.table-undo__btn {
+  white-space: nowrap;
+}
+.table-undo__btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.table-undo__what {
+  font-size: 12px;
+}
+.table-undo__note {
+  font-size: 12px;
+  color: var(--accent, #6cf);
+  border: 1px solid rgba(108, 204, 255, 0.4);
+  background: rgba(108, 204, 255, 0.08);
+  border-radius: 999px;
+  padding: 2px 10px;
+}
 
 /* --- Inference panel ------------------------------------------------------- */
 

@@ -375,9 +375,9 @@ export type TablePending =
       prompt: string
       subject: string | null
       player: string
+      player_name: string
       trick_idx: number
       lead_suit: string | null
-      allow_undo: boolean
       cards: TableCardState[]
       error: string | null
     }
@@ -431,9 +431,19 @@ export interface TableSnapshot {
   // Non-fatal consistency warning (e.g. a card recorded in two hands). Surfaced
   // as a banner so the operator can catch a bad state instead of scoring wrong.
   warning?: string | null
+  // One-shot status line ("Undid Alice's play of QS."), cleared by the next entry.
+  note?: string | null
   seats: TableSeat[]
   ai_type_options: AiTypeOption[]
   pending: TablePending | null
+  // Undo state. Any entry can be taken back at any point — the server rebuilds
+  // the game from its input journal — so the button is always on screen, and
+  // `undo_label` names what the next press would take back.
+  can_undo: boolean
+  undo_label: string | null
+  // True while the server replays the journal into a fresh engine after an undo.
+  // `pending` is null throughout, so the UI shows the rebuild instead of a prompt.
+  rebuilding?: boolean
   // AI plays/passes queued for the operator to perform, shown together so a run
   // of consecutive AI moves needs no per-move tap. Empty when nothing is pending.
   ai_actions: TableAiAction[]

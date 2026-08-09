@@ -319,6 +319,10 @@ async def table_ws(websocket: WebSocket, code: str):
                     e = await asyncio.get_running_loop().run_in_executor(None, session.start)
                 elif action == "respond":
                     e = session.submit(msg.get("value"))
+                elif action == "undo":
+                    # Retires the running engine and starts the rebuild; the
+                    # replay itself runs on the new engine thread.
+                    e = await asyncio.get_running_loop().run_in_executor(None, session.undo)
                 else:
                     e = f"Unknown action '{action}'"
             except WebSocketDisconnect:

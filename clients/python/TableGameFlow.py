@@ -12,6 +12,39 @@ from clients.python.util.table_game.TableGameCLI import TableGameCLI, UndoMove, 
 from clients.python.util.table_game.CardValidation import BlacklistedCardsValidator, UNIQUE_CARDS_VALIDATOR
 
 
+class LiveDecisions:
+    """Where an AI seat's choices come from.
+
+    The default simply asks the player, which is what a live game does. A caller
+    that needs to *replay* a game it has already seen substitutes its own source:
+    the web table's undo throws the whole game away and rebuilds it from a
+    journal of operator inputs, and the rebuilt game has to follow exactly the
+    history the operator already saw — including for AIs that choose randomly,
+    which would otherwise pick differently the second time and desync the
+    recorded human plays.
+
+    A substitute source decides what the *game* does with a seat's turn; the
+    player is still driven normally either way, seeing every observation hook —
+    ``handle_new_round``, ``receive_passed_cards``, ``handle_move``,
+    ``handle_finished_trick``, … — in order, so a rebuilt player watches the same
+    game unfold and is fully caught up by the time it decides for real. Note that
+    some players do bookkeeping inside a decision (``rob_player_dev`` reassigns
+    the cards it passes in its ProbabilityTable), so a replaying source should
+    still *ask* and merely override the answer, rather than skip the call.
+    """
+
+    def cards_to_pass(self, pts: PlayerTagSession, player: Player, hand: List[Card],
+                      pass_direction: PassDirection, receiving_player: PlayerTagSession) -> List[Card]:
+        return player.get_cards_to_pass(pass_direction, receiving_player)
+
+    def move(self, pts: PlayerTagSession, player: Player, trick: 'TableTrick',
+             legal_moves: List[Card]) -> Card:
+        return player.get_move(trick, legal_moves)
+
+
+LIVE_DECISIONS = LiveDecisions()
+
+
 class TableSetupError(RuntimeError):
     """Raised when dealing/passing produced an inconsistent model of who holds
     what — a card recorded twice (in one hand, or in two different hands) or a
@@ -151,6 +184,8 @@ class TableGame(Game):
         self.table_player: Optional[PlayerTag] = first_ai.player_tag if first_ai else None
 
         self.cli = TableGameCLI(self)
+        # Swappable so a caller can rebuild a recorded game (see LiveDecisions).
+        self.decisions: LiveDecisions = LIVE_DECISIONS
 
     def run_game(self):
         labels = [
@@ -331,11 +366,12 @@ class TableRound(Round):
         self.ai_hands[receiver].extend(received)  # donated already removed
         self.ai_players[receiver].receive_passed_cards(received, self.pass_direction, donor)
 
-    def _setup_hands_and_pass(self):
+    def _setup_hands_and_pass(self, game: Optional['TableGame'] = None):
         """Deal every AI hand and resolve passing, interleaved in pass-chain order
         so the operator handles one physical hand at a time. Human passes whose
         cards aren't in hand yet can be deferred (``DEFER``) and are collected at
         the end, once every hand is entered and every AI pass is known."""
+        decisions = getattr(game, "decisions", LIVE_DECISIONS)
         deferred: List[Tuple[PlayerTagSession, PlayerTagSession]] = []  # (receiver, donor)
         passed: set = set()  # AIs whose pass has been decided
 
@@ -360,7 +396,8 @@ class TableRound(Round):
             # 2. Decide + instruct this AI's pass, removing the donated cards from
             #    its hand at once so the model never counts a card in two hands.
             receiving = self.pass_direction.get_receiving_player(self.player_order, pts)
-            donating = self.ai_players[pts].get_cards_to_pass(self.pass_direction, receiving)
+            donating = decisions.cards_to_pass(pts, self.ai_players[pts], self.ai_hands[pts],
+                                               self.pass_direction, receiving)
             self.ai_donating_cards[pts] = list(donating)
             for c in donating:
                 if c in self.ai_hands[pts]:
@@ -400,7 +437,7 @@ class TableRound(Round):
             self.cards_in_hand = next(iter(self.ai_hands.values()))
 
     def run_round(self, game: 'TableGame'):
-        self._setup_hands_and_pass()
+        self._setup_hands_and_pass(game)
 
         for pts in self.ai_hands:
             self.ai_hands_at_tricks_start[pts] = list(self.ai_hands[pts])
@@ -487,6 +524,7 @@ class TableTrick(Trick):
         return max((m for m in self.moves if m.card.suit == suit), key=lambda m: m.card.rank).player
 
     def run_trick(self, game: 'TableGame', round_ref: 'TableRound'):
+        decisions = getattr(game, "decisions", LIVE_DECISIONS)
         for p in self.ai_players.values():
             p.handle_new_trick(self)
 
@@ -500,7 +538,7 @@ class TableTrick(Trick):
                 ai = self.ai_players[seat]
                 hand = self.ai_hands[seat]
                 legal = self.compute_legal_moves(hand)
-                card = ai.get_move(self, legal)
+                card = decisions.move(seat, ai, self, legal)
                 self.cli.instruct(f"{seat.player_tag}: play {card}")
                 hand.remove(card)
                 # AI move is reported immediately to all AIs — not buffered

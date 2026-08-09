@@ -51,6 +51,11 @@ jobs:
         export PYTHONPATH="$(pwd):${PYTHONPATH}"
         python3 tests/table_game_e2e_test.py
 
+    - name: Run table game undo test
+      run: |
+        export PYTHONPATH="$(pwd):${PYTHONPATH}"
+        python3 tests/table_game_undo_test.py
+
     - name: Run SDK resilience test
       run: |
         export PYTHONPATH="$(pwd):${PYTHONPATH}"

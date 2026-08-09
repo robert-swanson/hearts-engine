@@ -22,6 +22,10 @@ export type TableSendAction =
   | { action: 'configure'; seats: TableSeatDraft[] }
   | { action: 'start' }
   | { action: 'respond'; value: unknown }
+  // Take back the most recent entry, whatever it was. The server rebuilds the
+  // whole game from its journal, so this is valid at any moment — mid-prompt,
+  // between prompts, after the game ended, or after an engine error.
+  | { action: 'undo' }
 
 export interface TableConnection {
   snapshot: TableSnapshot | null

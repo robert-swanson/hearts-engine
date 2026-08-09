@@ -233,6 +233,11 @@ function TablePlayView({ snapshot, send }: { snapshot: TableSnapshot; send: (a: 
           once so a run of consecutive AI moves takes no per-move tap. */}
       <AiActionsPanel actions={snapshot.ai_actions} pending={pending} respond={respond} />
 
+      {/* Always available, whatever the engine is doing: mis-entries are the
+          normal failure mode at a physical table, and the operator must be able
+          to walk one back without restarting the table. */}
+      <UndoBar snapshot={snapshot} onUndo={() => send({ action: 'undo' })} />
+
       {/* The prompt the engine is waiting on — the operator's main interaction. */}
       <PromptPanel key={promptKey(pending)} pending={pending} respond={respond} status={snapshot.status} />
 
@@ -308,6 +313,34 @@ function AiActionsPanel({
           Placed them →
         </button>
       )}
+    </div>
+  )
+}
+
+// --- Undo: always on screen ---------------------------------------------------
+// The operator enters everything by hand at a real table, so a wrong tap is the
+// normal failure — and it can happen at any prompt, not just a play. The server
+// keeps a journal of every entry and rebuilds the whole game (fresh AI players,
+// replayed history) whenever one is taken back, so this control is offered
+// unconditionally: mid-prompt, between prompts, after the game has ended, and
+// after an engine error, where backing out the bad entry is the only way on.
+
+function UndoBar({ snapshot, onUndo }: { snapshot: TableSnapshot; onUndo: () => void }) {
+  const rebuilding = !!snapshot.rebuilding
+  const disabled = rebuilding || !snapshot.can_undo
+  return (
+    <div className="table-undo">
+      <button className="btn btn--ghost table-undo__btn" onClick={onUndo} disabled={disabled}>
+        {rebuilding ? 'Rebuilding…' : '↶ Undo last entry'}
+      </button>
+      <span className="muted table-undo__what">
+        {rebuilding
+          ? 'Replaying the game into fresh AI players…'
+          : snapshot.can_undo
+            ? `Takes back ${snapshot.undo_label ?? 'the last entry'}.`
+            : 'Nothing entered yet.'}
+      </span>
+      {snapshot.note && <span className="table-undo__note">{snapshot.note}</span>}
     </div>
   )
 }
@@ -412,8 +445,6 @@ function PromptPanel({
           cards={pending.cards}
           count={1}
           submitLabel="Report play"
-          allowUndo={pending.allow_undo}
-          onUndo={() => respond({ undo: true })}
           onSubmit={(codes) => respond({ card: codes[0] })}
           error={pending.error}
           defaultSuit={lead}
@@ -453,8 +484,6 @@ function CardPicker({
   count,
   submitLabel,
   onSubmit,
-  allowUndo,
-  onUndo,
   allowDefer,
   onDefer,
   error,
@@ -464,8 +493,6 @@ function CardPicker({
   count: number
   submitLabel: string
   onSubmit: (codes: string[]) => void
-  allowUndo?: boolean
-  onUndo?: () => void
   allowDefer?: boolean
   onDefer?: () => void
   error?: string | null
@@ -570,12 +597,6 @@ function CardPicker({
           <button className="btn" disabled={selected.length !== count} onClick={() => onSubmit(selected)}>
             {selected.length === count ? submitLabel : `Pick ${count - selected.length} more`}
           </button>
-        </div>
-      )}
-
-      {allowUndo && (
-        <div className="card-picker__undo">
-          <button className="btn btn--ghost" onClick={onUndo}>↶ Undo last move</button>
         </div>
       )}
 

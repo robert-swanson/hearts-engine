@@ -245,8 +245,10 @@ def run():
             # On Bob's first prompt of trick 0, exercise undo instead of playing.
             if seat == 1 and not did_undo:
                 did_undo = True
+                assert session.can_undo(), "undo should be offered at a play prompt"
+                assert "Alice" in (session.undo_label() or ""), session.undo_label()
                 ref.undo_last()  # restore Alice's card on our side too
-                session.submit({"undo": True})
+                assert session.undo() is None
                 expect_alice_replay = True
                 continue
 
