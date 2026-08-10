@@ -34,7 +34,7 @@ UNIQUE_CARDS_VALIDATOR = UniqueCardsValidator()
 def _is_valid_card_str(card_str: str, validators: List[CardsValidator],
                        validate_with: Optional[List[Card]] = None) -> bool:
     try:
-        card = Card(card_str)
+        card = Card.FromString(card_str)
     except Exception as e:
         print(f"Error parsing '{card_str}': {e}")
         return False

@@ -221,7 +221,7 @@ class ActiveTrick(PassingMessenger, Trick):
             move_report_msg = self.receive_type(ServerMsgTypes.MOVE_REPORT)
             report_received_at = _now_ms()
             reported_player = MakePlayerTagSession(move_report_msg[Tags.PLAYER_TAG])
-            reported_card = Card(move_report_msg[Tags.CARD])
+            reported_card = Card.FromString(move_report_msg[Tags.CARD])
             auto_moved = move_report_msg.get(Tags.MOVE_SOURCE) == MoveSource.SERVER
 
             # Latency of this move_report (s2c)

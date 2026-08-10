@@ -1,4 +1,5 @@
 import os
+import random
 import sys
 import time
 from pathlib import Path
@@ -59,7 +60,6 @@ class RobProbPlayer(Player):
 
     def __init__(self, player_tag_session: PlayerTagSession):
         super().__init__(player_tag_session)
-        self.hand = []
         self.current_round: Optional[Round] = None
         self.probability_table: Optional[ProbabilityTable] = None
     # Game
@@ -71,10 +71,10 @@ class RobProbPlayer(Player):
 
     # Round
     def handle_new_round(self, round: Round) -> None:
-        self.hand = round.cards_in_hand
+        self.starting_hand = round.cards_in_hand
         self.current_round = round
         self.probability_table = ProbabilityTable(self.current_round.player_order)
-        for card in self.hand:
+        for card in self.starting_hand:
             self.probability_table.assign(self.player_tag_session, card)
 
     def handle_finished_round(self, round: Round, round_points: Dict[PlayerTagSession, int]) -> None:
@@ -84,9 +84,9 @@ class RobProbPlayer(Player):
         cards_to_pass = []
 
         # First, get rid of AS, KS, QS if we have any.
-        cards_to_pass += [c for c in self.hand if c in [Card("AS"), Card("KS"), Card("QS")]]
+        cards_to_pass += [c for c in self.starting_hand if c in [Card(Rank.ACE, Suit.SPADES), Card(Rank.KING, Suit.SPADES), Card(Rank.QUEEN, Suit.SPADES)]]
 
-        suit_cards = sorted(GroupCardsBySuit(SortCardsByRank(self.hand, reverse=True)).items(), key=lambda kv: len(kv[1]))
+        suit_cards = sorted(GroupCardsBySuit(SortCardsByRank(self.starting_hand, reverse=True)).items(), key=lambda kv: len(kv[1]))
         present_suits = [sc[0] for sc in suit_cards]
         voided_suits = [s for s in Suit if s not in present_suits]
 
@@ -103,7 +103,7 @@ class RobProbPlayer(Player):
                 cards_to_pass += cards[:num_suit_cards_to_pass]
                 
 
-        ranked_cards = SortCardsByRank(self.hand, reverse=True)
+        ranked_cards = SortCardsByRank(self.starting_hand, reverse=True)
         cards_to_pass += [c for c in ranked_cards if c not in cards_to_pass][:(3-len(cards_to_pass))]
 
         assert len(cards_to_pass) == 3
@@ -133,7 +133,7 @@ class RobProbPlayer(Player):
         if trick_suit is not None and trick_suit != card.suit:
             # Player couldn't follow suit, so they hold no card of the trick suit.
             for rank in Rank:
-                self.probability_table.rule_out(player, Card(f"{rank.value}{trick_suit.value}"))
+                self.probability_table.rule_out(player, Card(rank, trick_suit))
         self.probability_table.play(player, card)
 
     def get_move(self, trick: Trick, legal_moves: List[Card], move_request_latency_ms=None) -> Card:
@@ -147,7 +147,7 @@ class RobProbPlayer(Player):
             risk_tolerance = ACCEPTABLE_FAILURES[trick.trick_idx]
             # Take the trick if playing last, no points are played, and we have a reasonable card to lead with.
             if len(trick.moves) == 3 and sum([m.card.get_point_value() for m in trick.moves]) == 0:
-                min_rank = min([c.rank.to_int() for c in self.hand])
+                min_rank = min([c.rank.to_int() for c in self.current_round.cards_in_hand])
                 if min_rank <= 6: 
                     risk_tolerance = 1.0
             return self.get_move_unlikely_to_win_trick(self.current_round, trick, self.player_tag_session, legal_moves, risk_tolerance)
@@ -159,13 +159,21 @@ class RobProbPlayer(Player):
             dump_value: float
             win_probability: float
             min_score: int
+            notes = ""
 
         moves_analysis: List[MoveAnalysis] = []
         points_played = sum([m.card.get_point_value() for m in trick.moves])
-        queen_played = Card("QS") in round.get_played_cards()
+        queen_played = Card(Rank.QUEEN, Suit.SPADES) in round.get_played_cards()
+        has_high_spade = len({Card(Rank.QUEEN, Suit.SPADES),Card(Rank.KING, Suit.SPADES),Card(Rank.ACE, Suit.SPADES)}.intersection(round.cards_in_hand)) > 0
 
-        move_under_risk_found = False
-        best_move_under_risk_dump_value = 0
+        suit_to_num_in_hand = {s: len([c for c in round.cards_in_hand if c.suit == s]) for s in Suit}
+        suit_to_num_unplayed_others = {s: len([r for r in Rank if Card(r, s) not in round.get_played_cards() and not Card(r,s) in round.cards_in_hand]) for s in Suit}
+        print(f"num_in_hand={suit_to_num_in_hand}")
+        print(f"num_others={suit_to_num_unplayed_others}")
+
+        if len(trick.moves) == 0 and len({c.suit for c in round.cards_in_hand}) == 1:
+            print("Leading with single suit hand: play lowest")
+            return SortCardsByRank(legal_moves)[0]
 
         played = round.get_played_cards()
         for move in legal_moves:
@@ -177,34 +185,38 @@ class RobProbPlayer(Player):
             trick_suit = trick.get_suit() or move.suit
             # Determine the value of getting rid of this card.
             a.dump_value = move.rank.to_int()
-            if move.suit == Suit.SPADES:
-                if move.rank.to_int() <= Rank.JACK.to_int() and not queen_played:
-                    a.dump_value = 0
-                elif move == Card("QS"):
+            if move.suit == Suit.SPADES and not queen_played and has_high_spade:
+                if move.rank.to_int() <= Rank.JACK.to_int():
+                    a.dump_value = move.rank.to_int()/20.0
+                    a.notes += "removing dump value due to spade risk, "
+                elif move == Card(Rank.QUEEN, Suit.SPADES):
                     a.dump_value = 100
-                elif move == Card("KS"):
+                elif move == Card(Rank.KING, Suit.SPADES):
                     a.dump_value = 50
-                elif move == Card("AS"):
+                elif move == Card(Rank.ACE, Suit.SPADES):
                     a.dump_value = 60
-            # Incentivize voiding
-            num_cards_of_suit = len([c for c in self.hand if c.suit == move.suit])
-            moves_left = 12 - trick.trick_idx
-            a.dump_value += max(0, moves_left - num_cards_of_suit)
+            else:
+                cards_after_void = max(0, suit_to_num_unplayed_others[move.suit] - (suit_to_num_in_hand[move.suit] - 1)*2 - (3-len(trick.moves)))
+                a.notes += f"cards_after_void={cards_after_void}, unplayed_others={suit_to_num_unplayed_others[move.suit]}, num_in_hand={suit_to_num_in_hand[move.suit]}, trick_left={3-len(trick.moves)}, "
+
+                a.dump_value += cards_after_void * 2
 
             current_winning_rank = max([0] + [m.card.rank.to_int() for m in trick.moves if m.card.suit == trick_suit])
             if move.suit != trick_suit or move.rank.to_int() < current_winning_rank:
                 a.win_probability = 0.0
+                a.notes += "below existing"
             elif len(trick.moves) == 3:
                 a.win_probability = 1.0  # last move would definitely win
+                a.notes += "last move win"
             else:
-                suit_cards = [Card(f"{r.value}{trick_suit.value}") for r in Rank]
+                suit_cards = [Card(r, trick_suit) for r in Rank]
                 unplayed_suit = [c for c in suit_cards if c not in played and c != move]
 
                 player_idx = round.player_order.index(this_player)
                 players_after = [round.player_order[(player_idx + i) % 4]
                                  for i in range(1, 4 - len(trick.moves))]
 
-                def would_win(deal: Deal) -> bool:
+                def could_win(deal: Deal) -> bool:
                     # I win unless a player still to act holds a higher card of the led suit.
                     potential_takers = players_after
                     for c in unplayed_suit:
@@ -218,28 +230,74 @@ class RobProbPlayer(Player):
                                     return True
                     return True
 
-                a.win_probability = self.probability_table.estimate(would_win, n=100)
+
+                def random_would_win(deal: Deal) -> bool:
+                    # For use in situations where its not obvious that a player would play lowest card.
+                    # Assume other players will choose a random card from their hand.
+                    players_to_cards: Dict[PlayerTagSession, List[Card]] = {p: [] for p in round.player_order}
+                    for c in unplayed_suit:
+                        p = deal[c]
+                        if p:
+                            players_to_cards[p].append(c)
+
+                    any_points_played = False
+                    for player in players_after:
+                        cards = players_to_cards[player]
+                        if any_points_played and cards:
+                            if cards[0].rank > move.rank:
+                                return False
+                        else:
+                            if cards and random.choice(cards).rank > move.rank:
+                                return False
+                            elif deal[Card(Rank.QUEEN, Suit.SPADES)] == player:
+                                any_points_played  = True
+                            else:
+                                for rank in Rank:
+                                    if deal[Card(rank, Suit.HEARTS)] == player:
+                                        any_points_played = True
+                                        break
+
+                    return True
+
+
+                if a.min_score > 0 or trick_suit == Suit.HEARTS or (trick_suit == Suit.SPADES and move.rank.to_int() >= Rank.QUEEN.to_int() and not queen_played):
+                    a.win_probability = self.probability_table.estimate(could_win, n=100)
+                    a.notes += "carlo=could_win"
+                else:
+                    a.win_probability = self.probability_table.estimate(random_would_win, n=100)
+                    a.notes += "carlo=random_win"
 
                 if a.win_probability > 0 and a.win_probability < 1:
                     # Odds of saftey cut in half by each point
                     points_at_risk = points_played + move.get_point_value()
-                    if move == Card("KS") or move == Card("QS"):
+                    if move == Card(Rank.KING, Suit.SPADES) or move == Card(Rank.QUEEN, Suit.SPADES):
                         points_at_risk = min(points_at_risk, 13)
                     if (move.suit == Suit.HEARTS):
                         points_at_risk += 3-len(trick.moves)
-                    a.win_probability = 1.0 - ((1.0 - a.win_probability) / (2 ** points_at_risk))
+                    if points_at_risk:
+                        a.notes += f", original prob={a.win_probability:.2%}"
+                        a.win_probability = 1.0 - ((1.0 - a.win_probability) / (2 ** points_at_risk))
 
         # Choose Move
         moves_under_risk = [a for a in moves_analysis if a.win_probability <= max_acceptable_win_probability]
         rv = None
+        print(f"{len(moves_under_risk)} moves under risk {max_acceptable_win_probability:.0%}")
+        print("Move\tWin Probability\tDump Value\tNotes")
+        ranked_moves = []
         if moves_under_risk:
-            # From moves under risk: Choose highest dump value, then lowest win probability.
-            rv = sorted(moves_under_risk, key=lambda a: (100-a.dump_value, a.win_probability))[0]
+            # From moves under risk: Avoid points if we can, choose highest dump value, then lowest win probability.
+            ranked_moves = sorted(moves_under_risk, key=lambda a: (a.min_score * (a.win_probability > 0), 100-a.dump_value, a.win_probability))
+            for move in ranked_moves:
+                print(f"{move.move}\t{move.win_probability:.1%}\t\t\t{move.dump_value}\t\t{move.notes}")
+            moves_over_risk = [m for m in moves_analysis if m.win_probability > max_acceptable_win_probability]
+            for move in sorted(moves_over_risk, key=lambda a: (a.win_probability, 100-a.dump_value, a.min_score)):
+                print(f"{move.move} (X)\t{move.win_probability:.1%}\t\t\t{move.dump_value}\t\t{move.notes}")
         else:
-            # Choose move with lowest score, then lowest win probability, then highest dump value
-            rv = sorted(moves_analysis, key=lambda a: (a.min_score, a.win_probability, 100-a.dump_value))[0]
-        print(f"Under risk={len(moves_under_risk) > 0}, move={rv.move}, dump_value={rv.dump_value}, win_probability={rv.win_probability*100.0}%, risk_tolerance={max_acceptable_win_probability*100.0}%")
-        return rv.move
+            # Choose move that isn't certainly going to win, with lowest score, then lowest win probability, then highest dump value
+            ranked_moves = sorted(moves_analysis, key=lambda a: (a.win_probability == 1.0, a.min_score, a.win_probability, 100-a.dump_value))
+            for move in ranked_moves:
+                print(f"{move.move}\t{move.win_probability:.1%}\t\t\t{move.dump_value}\t\t{move.notes}")
+        return ranked_moves[0].move
 
 
     @staticmethod
@@ -253,7 +311,7 @@ class RobProbPlayer(Player):
         if num_players_with_points != 1:
             return False
 
-        queen_played = Card("QS") in self.current_round.get_played_cards()
+        queen_played = Card(Rank.QUEEN, Suit.SPADES) in self.current_round.get_played_cards()
         points = list(player_points.values())[0]
 
         return queen_played and points > 18 or not queen_played and points > 8

@@ -68,12 +68,12 @@ from clients.python.api.Game import Game  # noqa: E402
 from clients.python.api.Player import Player  # noqa: E402
 from clients.python.api.Round import Round  # noqa: E402
 from clients.python.api.Trick import Trick, Move  # noqa: E402
-from clients.python.api.types.Card import Card, Suit, SortCardsBySuit  # noqa: E402
+from clients.python.api.types.Card import Card, Suit, Rank, SortCardsBySuit  # noqa: E402
 from clients.python.api.types.PassDirection import PassDirection  # noqa: E402
 from clients.python.api.types.PlayerTagSession import PlayerTag, PlayerTagSession  # noqa: E402
 
-STARTING_CARD = Card("2C")
-QUEEN_OF_SPADES = Card("QS")
+STARTING_CARD = Card(Rank.TWO, Suit.CLUBS)
+QUEEN_OF_SPADES = Card(Rank.QUEEN, Suit.SPADES)
 
 
 # ─── URL / game-source parsing ────────────────────────────────────────────────
@@ -354,9 +354,9 @@ def post_pass_hand(round_json: dict, player_order: List[str], player_id: str) ->
     hands = round_json.get("hands_after_passing") or {}
     recorded = hands.get(player_id)
     if recorded:
-        return [Card(c) for c in recorded]
+        return [Card.FromString(c) for c in recorded]
     played = [card_played_by(t, player_order, player_id) for t in round_json.get("tricks", [])]
-    return [Card(c) for c in played if c]
+    return [Card.FromString(c) for c in played if c]
 
 
 def dealt_hand(round_json: dict, player_order: List[str], player_id: str,
@@ -370,9 +370,9 @@ def dealt_hand(round_json: dict, player_order: List[str], player_id: str,
     if pass_dir == PassDirection.KEEPER:
         return post
     passed_map = round_json.get("cards_passed") or {}
-    passed = [Card(c) for c in passed_map.get(player_id, [])]
+    passed = [Card.FromString(c) for c in passed_map.get(player_id, [])]
     donor = pass_dir.get_donating_player(player_order, player_id)
-    received = [Card(c) for c in passed_map.get(donor, [])]
+    received = [Card.FromString(c) for c in passed_map.get(donor, [])]
     received_set = set(received)
     pre = [c for c in post if c not in received_set] + passed
     return pre
@@ -575,9 +575,9 @@ class ReplayDebugger:
         rnd.donating_player = pass_dir.get_donating_player(self.seat_sessions, self.target_session)
 
         passed_map = round_json.get("cards_passed") or {}
-        historical_passed = [Card(c) for c in passed_map.get(target_id, [])]
+        historical_passed = [Card.FromString(c) for c in passed_map.get(target_id, [])]
         donor_id = pass_dir.get_donating_player(order, target_id)
-        received = [Card(c) for c in passed_map.get(donor_id, [])]
+        received = [Card.FromString(c) for c in passed_map.get(donor_id, [])]
 
         agent_pass = self._call("get_cards_to_pass", self.player.get_cards_to_pass,
                                  pass_dir, rnd.receiving_player)
@@ -629,11 +629,11 @@ class ReplayDebugger:
         for pos, seat_id in enumerate(rotated_ids):
             if pos >= len(moves):
                 break  # trick recorded incomplete
-            historical_card = Card(moves[pos])
+            historical_card = Card.FromString(moves[pos])
 
             if seat_id == target_id:
                 remaining = _remaining_hand(round_json, order, target_id, played_by_target)
-                led_suit = Card(moves[0]).suit if pos > 0 else None
+                led_suit = Card.FromString(moves[0]).suit if pos > 0 else None
                 legal = legal_moves_for_hand(remaining, tidx, led_suit, hearts_broken)
                 self._simulate_move(rnd, tidx, trick, legal, historical_card,
                                     sources, pos, verbose, quiet)

@@ -51,7 +51,7 @@ class RobPlayer(Player):
         cards_to_pass = []
 
         # First, get rid of AS, KS, QS if we have any.
-        cards_to_pass += [c for c in self.hand if c in [Card("AS"), Card("KS"), Card("QS")]]
+        cards_to_pass += [c for c in self.hand if c in [Card(Rank.ACE, Suit.SPADES), Card(Rank.KING, Suit.SPADES), Card(Rank.QUEEN, Suit.SPADES)]]
 
         suit_cards = sorted(GroupCardsBySuit(self.hand).items(), key=lambda kv: len(kv[1]))
         present_suits = [sc[0] for sc in suit_cards]
@@ -96,7 +96,7 @@ class RobPlayer(Player):
         if trick_suit is not None and trick_suit != card.suit:
             # Player couldn't follow suit, so they hold no card of the trick suit.
             for rank in Rank:
-                self.probability_table.rule_out(player, Card(f"{rank.value}{trick_suit.value}"))
+                self.probability_table.rule_out(player, Card(rank, trick_suit))
         self.probability_table.play(player, card)
 
     def get_move(self, trick: Trick, legal_moves: List[Card], move_request_latency_ms=None) -> Card:
@@ -129,7 +129,7 @@ class RobPlayer(Player):
             else:
                 # We're voided on this trick, dump our worst card, first a high spade, then the highest ranking card,
                 # preferring hearts.
-                high_spades = [c for c in [Card("QS"), Card("AS"), Card("KS")] if c in legal_moves]
+                high_spades = [c for c in [Card(Rank.QUEEN, Suit.SPADES), Card(Rank.ACE, Suit.SPADES), Card(Rank.KING, Suit.SPADES)] if c in legal_moves]
                 if len(high_spades) > 0:
                     return high_spades[0]
                 high_hearts = [c for c in legal_moves if c.rank == legal_moves[-1].rank and c.suit == Suit.HEARTS]
@@ -148,7 +148,7 @@ class RobPlayer(Player):
         if num_players_with_points != 1:
             return False
 
-        queen_played = Card("QS") in self.current_round.get_played_cards()
+        queen_played = Card(Rank.QUEEN, Suit.SPADES) in self.current_round.get_played_cards()
         points = list(player_points.values())[0]
 
         return queen_played and points > 18 or not queen_played and points > 8

@@ -21,7 +21,7 @@ from clients.python.api.networking.ManagedConnection import ManagedConnection
 from clients.python.api.networking.SessionHelpers import RunMultipleGames
 from clients.python.api.Player import Player
 from clients.python.api.Round import Round
-from clients.python.api.types.Card import Card, Suit, SortCardsByRank, GroupCardsBySuit
+from clients.python.api.types.Card import Card, Suit, Rank, SortCardsByRank, GroupCardsBySuit
 from clients.python.api.types.PassDirection import PassDirection
 from clients.python.api.types.PlayerTagSession import PlayerTagSession
 from clients.python.players.random_player import RandomPlayer
@@ -60,12 +60,12 @@ class RobClaudePlayer(Player):
         """Pass the 3 most dangerous cards. Protect QS if 3+ low spades cover it."""
         by_suit = GroupCardsBySuit(self.hand)
         spades = by_suit.get(Suit.SPADES, [])
-        has_qs = Card("QS") in self.hand
+        has_qs = Card(Rank.QUEEN, Suit.SPADES) in self.hand
         low_spades_count = sum(1 for c in spades if c.rank.to_int() < 12)
         qs_well_protected = has_qs and low_spades_count >= 3
 
         def adjusted_danger(card: Card) -> float:
-            if card == Card("QS") and qs_well_protected:
+            if card == Card(Rank.QUEEN, Suit.SPADES) and qs_well_protected:
                 return 15
             return self._danger_score(card)
 
@@ -114,13 +114,13 @@ class RobClaudePlayer(Player):
           - High hearts guarantee points AND win tricks; low hearts are nearly harmless
           - Low hearts (≤7) should be less dangerous than high safe-suit cards
         """
-        if card == Card("QS"):
+        if card == Card(Rank.QUEEN, Suit.SPADES):
             return 100
-        if card == Card("AS"):
+        if card == Card(Rank.ACE, Suit.SPADES):
             return 42
-        if card == Card("KS"):
+        if card == Card(Rank.KING, Suit.SPADES):
             return 35
-        if card == Card("JS"):
+        if card == Card(Rank.JACK, Suit.SPADES):
             return 18
 
         if card.suit == Suit.SPADES:
@@ -177,8 +177,8 @@ class RobClaudePlayer(Player):
                 return sorted_legal[0]
         else:
             # Off-suit: dump QS immediately (free 13-pt disposal), else most dangerous card
-            if Card("QS") in legal_moves:
-                return Card("QS")
+            if Card(Rank.QUEEN, Suit.SPADES) in legal_moves:
+                return Card(Rank.QUEEN, Suit.SPADES)
             return sorted(legal_moves, key=self._danger_score, reverse=True)[0]
 
     def _lead_card(self, legal_moves: List[Card]) -> Card:
@@ -189,7 +189,7 @@ class RobClaudePlayer(Player):
         """
         by_suit = GroupCardsBySuit(legal_moves)
         played = self.current_round.get_played_cards() if self.current_round else set()
-        qs_played = Card("QS") in played
+        qs_played = Card(Rank.QUEEN, Suit.SPADES) in played
 
         def risky_to_lead(suit: Suit) -> bool:
             if qs_played:
@@ -209,7 +209,7 @@ class RobClaudePlayer(Player):
             spade_cards = SortCardsByRank(by_suit[Suit.SPADES])
             if qs_played:
                 return spade_cards[0]
-            low_spades = [c for c in spade_cards if c != Card("QS")]
+            low_spades = [c for c in spade_cards if c != Card(Rank.QUEEN, Suit.SPADES)]
             if low_spades:
                 return low_spades[0]
 
@@ -243,7 +243,7 @@ class RobClaudePlayer(Player):
         if shooter == self.player_tag_session:
             return False  # we are the (potential) shooter — keep going!
 
-        queen_played = Card("QS") in self.current_round.get_played_cards()
+        queen_played = Card(Rank.QUEEN, Suit.SPADES) in self.current_round.get_played_cards()
         return (queen_played and points > 18) or (not queen_played and points > 8)
 
 

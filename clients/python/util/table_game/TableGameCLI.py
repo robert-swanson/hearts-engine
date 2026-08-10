@@ -155,7 +155,7 @@ class TableGameCLI:
                 raise UndoMove()
             if not _is_valid_card_str(card_str, validators, validate_with):
                 continue
-            return Card(card_str)
+            return Card.FromString(card_str)
 
     CARD_LIST_PATTERN = r"^(\w{2}[\s\t\,]*)+$"
     SUIT_GROUP_PATTERN = rf"([CDHS]):\s*(.*)"
@@ -184,7 +184,7 @@ class TableGameCLI:
                 card_str = card_str.strip(" \t") + suit
                 if not _is_valid_card_str(card_str, validators, validate_with + line_cards + self.card_selection):
                     break
-                line_cards.append(Card(card_str))
+                line_cards.append(Card.FromString(card_str))
             else:
                 if len(self.card_selection) > num_cards:
                     print(f"Expected {num_cards} cards, got {len(self.card_selection)}")

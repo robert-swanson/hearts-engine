@@ -1,5 +1,6 @@
 from collections import defaultdict
 from enum import Enum
+import string
 from typing import NamedTuple, Dict, Collection, List
 
 
@@ -56,10 +57,16 @@ class Rank(Enum):
 
 
 class Card:
-    def __init__(self, card_str: str):
+    def __init__(self, rank: Rank, suit: Suit):
+        self.rank = rank
+        self.suit = suit
+
+    @classmethod
+    def FromString(cls, card_str: str):
         assert len(card_str) == 2, f"Card str must be 2 chars but was '{card_str}'"
-        self.rank = Rank(card_str[0].upper())
-        self.suit = Suit(card_str[1].upper())
+        rank = Rank(card_str[0].upper())
+        suit = Suit(card_str[1].upper())
+        return Card(rank, suit)
 
     def __repr__(self):
         return f"{self.rank.value}{self.suit.value}"
@@ -77,17 +84,17 @@ class Card:
         return hash((self.rank, self.suit))
 
     def get_point_value(self)->int:
-        if self == Card("QS"):
+        if self == Card(Rank.QUEEN, Suit.SPADES):
             return 13
         return 1 if self.suit == Suit.HEARTS else 0
 
     @staticmethod
     def make_deck() -> List["Card"]:
-        return [Card(f"{rank.value}{suit.value}") for rank in Rank for suit in Suit]
+        return [Card(rank, suit) for rank in Rank for suit in Suit]
 
 
 def StrListToCards(cards: Collection[str]) -> List[Card]:
-    return [Card(c) for c in cards]
+    return [Card.FromString(c) for c in cards]
 
 
 def SortCardsByRank(cards: Collection[Card], reverse=False) -> List[Card]:
