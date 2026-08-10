@@ -164,11 +164,19 @@ class ActiveRound(PassingMessenger, Round):
             self.donating_cards = actual_donated
 
             self.donating_player = self.get_donating_player()
+            # Swap the donated cards out for the received ones so `cards_in_hand`
+            # reflects the hand actually being played. Players capture this list
+            # by reference in handle_new_round and rely on the framework to keep
+            # it current, so it must be mutated in place, never reassigned.
+            for card in self.donating_cards:
+                if card in self.cards_in_hand:
+                    self.cards_in_hand.remove(card)
+            self.cards_in_hand.extend(self.received_cards)
             _set_log_ctx(player, self.round_idx, None, own_seat, "round")
             self.player.receive_passed_cards(self.received_cards, self.pass_direction, self.donating_player)
 
         for trick_idx in range(13):
-            trick = ActiveTrick(self.messenger, self.player, self.round_idx)
+            trick = ActiveTrick(self.messenger, self.player, self.round_idx, self)
             self.tricks.append(trick)
             trick.run_trick(player)
 
@@ -179,10 +187,12 @@ class ActiveRound(PassingMessenger, Round):
 
 
 class ActiveTrick(PassingMessenger, Trick):
-    def __init__(self, messenger: Messenger, player: Player, round_idx: int = 0):
+    def __init__(self, messenger: Messenger, player: Player, round_idx: int = 0,
+                 round: Optional[Round] = None):
         PassingMessenger.__init__(self, messenger)
         self.player = player
         self.round_idx = round_idx
+        self.round = round
 
         trick_msg = self.receive_type(ServerMsgTypes.START_TRICK)
         trick_idx = int(trick_msg[Tags.TRICK_INDEX])
@@ -234,6 +244,12 @@ class ActiveTrick(PassingMessenger, Trick):
             # Notify the affected player that the server acted on their behalf.
             if auto_moved and current_player == self.player.player_tag_session:
                 player.handle_auto_move()
+
+            # Our own card leaves our hand the moment it's on the table, before
+            # any player hook observes the move (matches TableGameFlow).
+            if self.round is not None and reported_player == self.player.player_tag_session:
+                if reported_card in self.round.cards_in_hand:
+                    self.round.cards_in_hand.remove(reported_card)
 
             self.moves.append(Move(reported_player, reported_card))
             # A log the player emits while observing another seat's move is

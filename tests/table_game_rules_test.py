@@ -40,13 +40,13 @@ def _trick(trick_idx, player_order, moves, played):
 
 
 def _cards(*codes):
-    return [Card(c) for c in codes]
+    return [Card.FromString(c) for c in codes]
 
 
 def test_first_trick_must_lead_two_of_clubs():
     hand = _cards("2C", "5C", "AD", "KS", "3H")
     legal = _trick(0, SEATS, moves=[], played=[]).compute_legal_moves(hand)
-    assert legal == [Card("2C")], f"expected only 2C, got {legal}"
+    assert legal == [Card.FromString("2C")], f"expected only 2C, got {legal}"
     print("  PASS: first trick is forced to lead the 2 of clubs")
 
 
@@ -54,17 +54,17 @@ def test_no_points_on_first_trick_when_following():
     # Following on the first trick, void in the led suit (clubs): may not sluff
     # a heart or the Q of spades while a non-point card is available.
     hand = _cards("AD", "QS", "3H", "7H")
-    moves = [Move(SEATS[0], Card("2C"))]
+    moves = [Move(SEATS[0], Card.FromString("2C"))]
     played = _cards("2C")
     legal = _trick(0, SEATS, moves=moves, played=played).compute_legal_moves(hand)
-    assert set(legal) == {Card("AD")}, f"expected only AD, got {legal}"
+    assert set(legal) == {Card.FromString("AD")}, f"expected only AD, got {legal}"
     print("  PASS: no point cards on the first trick unless forced")
 
 
 def test_forced_points_on_first_trick():
     # Following on the first trick with nothing but point cards -> must play one.
     hand = _cards("QS", "3H", "7H")
-    moves = [Move(SEATS[0], Card("2C"))]
+    moves = [Move(SEATS[0], Card.FromString("2C"))]
     legal = _trick(0, SEATS, moves=moves, played=_cards("2C")).compute_legal_moves(hand)
     assert set(legal) == set(hand), f"expected all point cards, got {legal}"
     print("  PASS: forced to play a point card on the first trick when only points remain")
@@ -73,7 +73,7 @@ def test_forced_points_on_first_trick():
 def test_cannot_lead_hearts_until_broken():
     hand = _cards("AD", "KS", "3H")
     legal = _trick(3, SEATS, moves=[], played=_cards("2C", "5C")).compute_legal_moves(hand)
-    assert Card("3H") not in legal and set(legal) == {Card("AD"), Card("KS")}, legal
+    assert Card.FromString("3H") not in legal and set(legal) == {Card.FromString("AD"), Card.FromString("KS")}, legal
     print("  PASS: hearts can't be led before they're broken")
 
 
@@ -81,7 +81,7 @@ def test_can_lead_hearts_once_broken():
     hand = _cards("AD", "3H")
     # A heart was played on a previous trick -> hearts are broken.
     legal = _trick(3, SEATS, moves=[], played=_cards("2C", "5H")).compute_legal_moves(hand)
-    assert set(legal) == {Card("AD"), Card("3H")}, legal
+    assert set(legal) == {Card.FromString("AD"), Card.FromString("3H")}, legal
     print("  PASS: hearts may be led once broken")
 
 
@@ -89,7 +89,7 @@ def test_can_discard_hearts_when_following_before_broken():
     # Void in the led suit (spades), hearts not yet broken: discarding a heart is
     # legal (this is how hearts get broken). Matches server/game/trick.h.
     hand = _cards("3H", "7H", "AD")
-    moves = [Move(SEATS[0], Card("KS"))]
+    moves = [Move(SEATS[0], Card.FromString("KS"))]
     legal = _trick(4, SEATS, moves=moves, played=_cards("KS")).compute_legal_moves(hand)
     assert set(legal) == set(hand), f"discarding a heart should be legal, got {legal}"
     print("  PASS: hearts may be discarded when following, even before broken")
@@ -97,9 +97,9 @@ def test_can_discard_hearts_when_following_before_broken():
 
 def test_must_follow_suit():
     hand = _cards("2C", "9C", "AD", "KH")
-    moves = [Move(SEATS[0], Card("5C"))]
+    moves = [Move(SEATS[0], Card.FromString("5C"))]
     legal = _trick(4, SEATS, moves=moves, played=_cards("5C")).compute_legal_moves(hand)
-    assert set(legal) == {Card("2C"), Card("9C")}, f"must follow clubs, got {legal}"
+    assert set(legal) == {Card.FromString("2C"), Card.FromString("9C")}, f"must follow clubs, got {legal}"
     print("  PASS: follow-suit is enforced")
 
 
@@ -284,7 +284,7 @@ def test_corrupted_donation_halts_cleanly_instead_of_crashing_midgame():
         # have it, so this stays in our hand too — the receiver ends up with
         # two copies of it once "received", exactly like the live crash.
         receiver_seat = int(receiving_player.player_tag.tag.replace("Bot", ""))
-        stolen = Card(hands[receiver_seat][0])
+        stolen = Card.FromString(hands[receiver_seat][0])
         return [stolen] + real[1:]
 
     RandomPlayer.get_cards_to_pass = bad_get_cards_to_pass

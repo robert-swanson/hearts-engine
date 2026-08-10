@@ -30,7 +30,7 @@ from clients.python.api.types.PlayerTagSession import PlayerTag as _PlayerTag
 
 
 def C(s):
-    return Card(s)
+    return Card.FromString(s)
 
 
 # ─── URL parsing ──────────────────────────────────────────────────────────────

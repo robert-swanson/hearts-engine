@@ -499,6 +499,12 @@ class TableTrick(Trick):
                 self._flush_buffer()
                 ai = self.ai_players[seat]
                 hand = self.ai_hands[seat]
+                # One Round object is shared by every AI at the table, so point
+                # cards_in_hand at *this* seat's hand before it decides —
+                # otherwise a player that reads round.cards_in_hand at decision
+                # time (rather than caching it in handle_new_round) sees whichever
+                # seat was bound last.
+                round_ref.cards_in_hand = hand
                 legal = self.compute_legal_moves(hand)
                 card = ai.get_move(self, legal)
                 self.cli.instruct(f"{seat.player_tag}: play {card}")

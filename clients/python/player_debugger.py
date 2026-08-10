@@ -603,6 +603,10 @@ class ReplayDebugger:
         # player can correct its own bookkeeping instead of drifting out of sync.
         rnd.donating_cards = historical_passed
         rnd.received_cards = received
+        # The seat plays on historical rails, so its hand is the recorded
+        # post-pass hand — keep cards_in_hand in step with that.
+        _set_hand_in_place(rnd.cards_in_hand,
+                           post_pass_hand(round_json, order, target_id))
         if differs and type(self.player).handle_auto_pass is not Player.handle_auto_pass:
             self._call("handle_auto_pass", self.player.handle_auto_pass, historical_passed)
         self._call("receive_passed_cards", self.player.receive_passed_cards,
@@ -633,11 +637,18 @@ class ReplayDebugger:
 
             if seat_id == target_id:
                 remaining = _remaining_hand(round_json, order, target_id, played_by_target)
+                # The record is authoritative for what the seat still holds, so
+                # resync from it rather than trusting incremental bookkeeping.
+                _set_hand_in_place(rnd.cards_in_hand, remaining)
                 led_suit = Card.FromString(moves[0]).suit if pos > 0 else None
                 legal = legal_moves_for_hand(remaining, tidx, led_suit, hearts_broken)
                 self._simulate_move(rnd, tidx, trick, legal, historical_card,
                                     sources, pos, verbose, quiet)
                 played_by_target.append(moves[pos])
+                # Our card leaves the hand as soon as it's on the table, so the
+                # remaining hooks this trick see a consistent hand.
+                if historical_card in rnd.cards_in_hand:
+                    rnd.cards_in_hand.remove(historical_card)
 
             trick.moves.append(Move(self._sid(seat_id), historical_card))
             self._call("handle_move", self.player.handle_move,
@@ -723,6 +734,18 @@ def _remaining_hand(round_json: dict, order: List[str], player_id: str,
             continue
         remaining.append(c)
     return remaining
+
+
+def _set_hand_in_place(hand: List[Card], cards: List[Card]) -> None:
+    """Replace the *contents* of ``hand`` without swapping the list object.
+
+    Players capture ``round.cards_in_hand`` by reference in ``handle_new_round``
+    and rely on the framework to keep that same list current, so the hand must be
+    mutated in place rather than reassigned — otherwise the player keeps reading
+    the dealt hand for the rest of the round.
+    """
+    hand.clear()
+    hand.extend(cards)
 
 
 def _hearts_broken_before(round_json: dict, trick_idx: int) -> bool:
