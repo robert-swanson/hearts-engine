@@ -309,6 +309,65 @@ def test_exact_beats_independence_for_correlated_query():
     print("PASS: exact joint query (1.0) beats independence approx (~0.889)")
 
 
+def test_expected_value_matches_brute_force():
+    """A numeric score's sampled mean matches the exact mean over feasible deals."""
+    players = ["A", "B"]
+    cards = [C("2C"), C("3C"), C("4C"), C("5C")]
+    t = ProbabilityTable(players, cards, {"A": 2, "B": 2})
+    t.rule_out("A", C("2C"))                     # same 3-deal universe as above
+
+    # Score a deal the way a player would: points A takes, hearts=1, QS-style=13.
+    points = {C("2C"): 1, C("3C"): 2, C("4C"): 4, C("5C"): 8}
+
+    def score(deal):
+        return sum(v for c, v in points.items() if deal[c] == "A")
+
+    deals = _brute_force_deals(players, cards, {"A": 2, "B": 2}, {C("2C"): {"A"}})
+    exact = sum(score(d) for d in deals) / len(deals)
+
+    rng = random.Random(4242)
+    est = t.expected_value(score, n=8000, rng=rng)
+    assert approx(est, exact, tol=0.15), (est, exact)
+    print("PASS: expected_value matches brute-force mean (%.3f vs %.3f)" % (est, exact))
+
+
+def test_expected_value_of_indicator_is_a_probability():
+    """expected_value of a 0/1 score is estimate of the same event (shared machinery)."""
+    t = ProbabilityTable(PLAYERS, CARDS, CAPS)
+    t.rule_out("left", C("QS"))
+
+    def holds_qs(deal):
+        return deal[C("QS")] == "across"
+
+    est = t.estimate(holds_qs, n=4000, rng=random.Random(11))
+    ev = t.expected_value(lambda d: 1.0 if holds_qs(d) else 0.0, n=4000, rng=random.Random(11))
+    assert approx(ev, est), (ev, est)            # same seed, same samples -> identical
+    assert approx(ev, 0.5, tol=0.03), ev         # QS split between across and right
+
+    # Constants come back exactly, and scaling the score scales the mean.
+    assert approx(t.expected_value(lambda d: 7.0, n=200, rng=random.Random(3)), 7.0)
+    rng_a, rng_b = random.Random(5), random.Random(5)
+    single = t.expected_value(lambda d: float(holds_qs(d)), n=2000, rng=rng_a)
+    tripled = t.expected_value(lambda d: 3.0 * holds_qs(d), n=2000, rng=rng_b)
+    assert approx(tripled, 3.0 * single), (tripled, single)
+    print("PASS: expected_value agrees with estimate on indicators and scales linearly")
+
+
+def test_expected_value_respects_known_cards():
+    """Certainties dominate the mean: an assigned card always contributes its value."""
+    t = ProbabilityTable(PLAYERS, CARDS, CAPS)
+    t.assign("right", C("QS"))
+    t.play("left", C("AS"))                      # out of play -> contributes nothing
+
+    def score(deal):
+        v = 13.0 if deal[C("QS")] == "right" else 0.0
+        return v + (5.0 if deal[C("AS")] == "right" else 0.0)
+
+    ev = t.expected_value(score, n=1000, rng=random.Random(8))
+    assert approx(ev, 13.0), ev
+    print("PASS: expected_value honours assigned and played cards")
+
+
 def test_sampled_deals_are_valid():
     """Every sampled deal respects capacities and ruled-out cells."""
     t = ProbabilityTable(PLAYERS, CARDS, CAPS)
@@ -360,6 +419,9 @@ def run():
     test_play_contradictions()
     test_monte_carlo_matches_brute_force()
     test_exact_beats_independence_for_correlated_query()
+    test_expected_value_matches_brute_force()
+    test_expected_value_of_indicator_is_a_probability()
+    test_expected_value_respects_known_cards()
     test_sampled_deals_are_valid()
     test_reassign_for_passing()
     test_reassign_edge_cases()

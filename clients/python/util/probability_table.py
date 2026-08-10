@@ -276,7 +276,8 @@ class ProbabilityTable:
         biased, so each deal carries weight ``1 / P(generated)``. Feeding (deal,
         weight) pairs to ``estimate`` yields a self-normalized importance-sampling
         estimate of the *uniform* distribution over feasible deals. See
-        ``estimate`` for the typical entry point.
+        ``estimate`` (probability of a predicate) and ``expected_value`` (mean of
+        a numeric score) for the typical entry points.
         """
         rng = rng or random.Random()
         out: List[Tuple[Deal, float]] = []
@@ -301,11 +302,31 @@ class ProbabilityTable:
         cards exactly (in the Monte Carlo limit), e.g.
         ``estimate(lambda d: d[QS] == p and d[KS] == p)``.
         """
+        return self.expected_value(lambda deal: 1.0 if predicate(deal) else 0.0, n, rng)
+
+    def expected_value(self, value_fn: Callable[[Deal], float],
+                       n: int = 10000, rng: Optional[random.Random] = None) -> float:
+        """Expected value of ``value_fn(deal)`` over uniform feasible deals.
+
+        The numeric counterpart to ``estimate``: where that scores each sampled
+        deal with a yes/no predicate and returns a probability, this scores it
+        with a number and returns the (importance-weighted) mean — e.g. the
+        points you expect to take on a trick::
+
+            table.expected_value(lambda deal: points_taken(deal, my_card))
+
+        ``estimate(pred)`` is exactly ``expected_value`` of the 0/1 indicator of
+        ``pred``, so correlations between cards are captured the same way. Like
+        every Monte Carlo query here the answer carries sampling noise of order
+        ``sd(value_fn) / sqrt(n)``; raise ``n`` when the values have a wide
+        spread (a 26-point moon shot next to 0-point deals) and the caller needs
+        a tight estimate. Returns 0.0 when the weights vanish.
+        """
         samples = self.sample_deals(n, rng)
         denom = sum(w for _, w in samples)
         if denom <= 0.0:
             return 0.0
-        numer = sum(w for deal, w in samples if predicate(deal))
+        numer = sum(w * value_fn(deal) for deal, w in samples)
         return numer / denom
 
     def prob_has_at_least_one_exact(self, player: PlayerTagSession, cards: List[Card],
