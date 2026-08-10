@@ -146,7 +146,7 @@ class RobProbPlayer(Player):
         if len(legal_moves) == 1:
             return legal_moves[0]
         if self.is_worried_about_shooting_the_moon():
-            log("Is worried about moon shot")
+            self.log("Is worried about moon shot")
             return self.get_move_likely_to_win_trick(trick, legal_moves)
         else:
             risk_tolerance = ACCEPTABLE_FAILURES[trick.trick_idx]
@@ -174,7 +174,7 @@ class RobProbPlayer(Player):
         suit_to_num_in_hand = {s: len([c for c in round.cards_in_hand if c.suit == s]) for s in Suit}
         suit_to_num_unplayed_others = {s: len([r for r in Rank if Card(r, s) not in round.get_played_cards() and not Card(r,s) in round.cards_in_hand]) for s in Suit}
         if len(trick.moves) == 0 and len({c.suit for c in round.cards_in_hand}) == 1:
-            log("Leading with single suit hand: play lowest")
+            self.log("Leading with single suit hand: play lowest")
             return SortCardsByRank(legal_moves)[0]
 
         played = round.get_played_cards()
@@ -283,24 +283,24 @@ class RobProbPlayer(Player):
         # Choose Move
         moves_under_risk = [a for a in moves_analysis if a.win_probability <= max_acceptable_win_probability]
         rv = None
-        log(f"{len(moves_under_risk)} moves under risk {max_acceptable_win_probability:.0%}")
-        log("Move\tWin Probability\tDump Value\tNotes")
+        self.log(f"{len(moves_under_risk)} moves under risk {max_acceptable_win_probability:.0%}")
+        self.log("Move\tWin Probability\tDump Value\tNotes")
         ranked_moves = []
         if moves_under_risk:
             # From moves under risk: Avoid points if we can, choose highest dump value, then lowest win probability.
             ranked_moves = sorted(moves_under_risk, key=lambda a: (a.min_score * (a.win_probability > 0), 100-a.dump_value, a.win_probability))
             for move in ranked_moves:
-                log(f"{move.move}\t{move.win_probability:.1%}\t\t\t{move.dump_value}\t\t{move.notes}")
+                self.log(f"{move.move}\t{move.win_probability:.1%}\t\t\t{move.dump_value}\t\t{move.notes}")
             if self.move_logging_enabled:
                 moves_over_risk = [m for m in moves_analysis if m.win_probability > max_acceptable_win_probability]
                 for move in sorted(moves_over_risk, key=lambda a: (a.win_probability, 100-a.dump_value, a.min_score)):
-                    log(f"{move.move} (X)\t{move.win_probability:.1%}\t\t\t{move.dump_value}\t\t{move.notes}")
+                    self.log(f"{move.move} (X)\t{move.win_probability:.1%}\t\t\t{move.dump_value}\t\t{move.notes}")
         else:
             # Choose move that isn't certainly going to win, with lowest score, then lowest win probability, then highest dump value
             ranked_moves = sorted(moves_analysis, key=lambda a: (a.win_probability == 1.0, a.min_score, a.win_probability, 100-a.dump_value))
             if self.move_logging_enabled:
                 for move in ranked_moves:
-                    log(f"{move.move}\t{move.win_probability:.1%}\t\t\t{move.dump_value}\t\t{move.notes}")
+                    self.log(f"{move.move}\t{move.win_probability:.1%}\t\t\t{move.dump_value}\t\t{move.notes}")
         return ranked_moves[0].move
 
 
