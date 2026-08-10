@@ -68,12 +68,12 @@ from clients.python.api.Game import Game  # noqa: E402
 from clients.python.api.Player import Player  # noqa: E402
 from clients.python.api.Round import Round  # noqa: E402
 from clients.python.api.Trick import Trick, Move  # noqa: E402
-from clients.python.api.types.Card import Card, Suit, SortCardsBySuit  # noqa: E402
+from clients.python.api.types.Card import Card, Suit, Rank, SortCardsBySuit  # noqa: E402
 from clients.python.api.types.PassDirection import PassDirection  # noqa: E402
 from clients.python.api.types.PlayerTagSession import PlayerTag, PlayerTagSession  # noqa: E402
 
-STARTING_CARD = Card("2C")
-QUEEN_OF_SPADES = Card("QS")
+STARTING_CARD = Card(Rank.TWO, Suit.CLUBS)
+QUEEN_OF_SPADES = Card(Rank.QUEEN, Suit.SPADES)
 
 
 # ─── URL / game-source parsing ────────────────────────────────────────────────
@@ -354,9 +354,9 @@ def post_pass_hand(round_json: dict, player_order: List[str], player_id: str) ->
     hands = round_json.get("hands_after_passing") or {}
     recorded = hands.get(player_id)
     if recorded:
-        return [Card(c) for c in recorded]
+        return [Card.FromString(c) for c in recorded]
     played = [card_played_by(t, player_order, player_id) for t in round_json.get("tricks", [])]
-    return [Card(c) for c in played if c]
+    return [Card.FromString(c) for c in played if c]
 
 
 def dealt_hand(round_json: dict, player_order: List[str], player_id: str,
@@ -370,9 +370,9 @@ def dealt_hand(round_json: dict, player_order: List[str], player_id: str,
     if pass_dir == PassDirection.KEEPER:
         return post
     passed_map = round_json.get("cards_passed") or {}
-    passed = [Card(c) for c in passed_map.get(player_id, [])]
+    passed = [Card.FromString(c) for c in passed_map.get(player_id, [])]
     donor = pass_dir.get_donating_player(player_order, player_id)
-    received = [Card(c) for c in passed_map.get(donor, [])]
+    received = [Card.FromString(c) for c in passed_map.get(donor, [])]
     received_set = set(received)
     pre = [c for c in post if c not in received_set] + passed
     return pre
@@ -575,9 +575,9 @@ class ReplayDebugger:
         rnd.donating_player = pass_dir.get_donating_player(self.seat_sessions, self.target_session)
 
         passed_map = round_json.get("cards_passed") or {}
-        historical_passed = [Card(c) for c in passed_map.get(target_id, [])]
+        historical_passed = [Card.FromString(c) for c in passed_map.get(target_id, [])]
         donor_id = pass_dir.get_donating_player(order, target_id)
-        received = [Card(c) for c in passed_map.get(donor_id, [])]
+        received = [Card.FromString(c) for c in passed_map.get(donor_id, [])]
 
         agent_pass = self._call("get_cards_to_pass", self.player.get_cards_to_pass,
                                  pass_dir, rnd.receiving_player)
@@ -603,6 +603,10 @@ class ReplayDebugger:
         # player can correct its own bookkeeping instead of drifting out of sync.
         rnd.donating_cards = historical_passed
         rnd.received_cards = received
+        # The seat plays on historical rails, so its hand is the recorded
+        # post-pass hand — keep cards_in_hand in step with that.
+        _set_hand_in_place(rnd.cards_in_hand,
+                           post_pass_hand(round_json, order, target_id))
         if differs and type(self.player).handle_auto_pass is not Player.handle_auto_pass:
             self._call("handle_auto_pass", self.player.handle_auto_pass, historical_passed)
         self._call("receive_passed_cards", self.player.receive_passed_cards,
@@ -629,15 +633,22 @@ class ReplayDebugger:
         for pos, seat_id in enumerate(rotated_ids):
             if pos >= len(moves):
                 break  # trick recorded incomplete
-            historical_card = Card(moves[pos])
+            historical_card = Card.FromString(moves[pos])
 
             if seat_id == target_id:
                 remaining = _remaining_hand(round_json, order, target_id, played_by_target)
-                led_suit = Card(moves[0]).suit if pos > 0 else None
+                # The record is authoritative for what the seat still holds, so
+                # resync from it rather than trusting incremental bookkeeping.
+                _set_hand_in_place(rnd.cards_in_hand, remaining)
+                led_suit = Card.FromString(moves[0]).suit if pos > 0 else None
                 legal = legal_moves_for_hand(remaining, tidx, led_suit, hearts_broken)
                 self._simulate_move(rnd, tidx, trick, legal, historical_card,
                                     sources, pos, verbose, quiet)
                 played_by_target.append(moves[pos])
+                # Our card leaves the hand as soon as it's on the table, so the
+                # remaining hooks this trick see a consistent hand.
+                if historical_card in rnd.cards_in_hand:
+                    rnd.cards_in_hand.remove(historical_card)
 
             trick.moves.append(Move(self._sid(seat_id), historical_card))
             self._call("handle_move", self.player.handle_move,
@@ -723,6 +734,18 @@ def _remaining_hand(round_json: dict, order: List[str], player_id: str,
             continue
         remaining.append(c)
     return remaining
+
+
+def _set_hand_in_place(hand: List[Card], cards: List[Card]) -> None:
+    """Replace the *contents* of ``hand`` without swapping the list object.
+
+    Players capture ``round.cards_in_hand`` by reference in ``handle_new_round``
+    and rely on the framework to keep that same list current, so the hand must be
+    mutated in place rather than reassigned — otherwise the player keeps reading
+    the dealt hand for the rest of the round.
+    """
+    hand.clear()
+    hand.extend(cards)
 
 
 def _hearts_broken_before(round_json: dict, trick_idx: int) -> bool:

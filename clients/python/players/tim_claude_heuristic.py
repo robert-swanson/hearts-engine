@@ -37,14 +37,14 @@ from clients.python.players.random_player import RandomPlayer
 from clients.python.util.Constants import GameType
 
 
-QS = Card("QS")
-AS_ = Card("AS")
-KS = Card("KS")
-JS = Card("JS")
-AH = Card("AH")
-KH = Card("KH")
-QH = Card("QH")
-TWO_C = Card("2C")
+QS = Card(Rank.QUEEN, Suit.SPADES)
+AS_ = Card(Rank.ACE, Suit.SPADES)
+KS = Card(Rank.KING, Suit.SPADES)
+JS = Card(Rank.JACK, Suit.SPADES)
+AH = Card(Rank.ACE, Suit.HEARTS)
+KH = Card(Rank.KING, Suit.HEARTS)
+QH = Card(Rank.QUEEN, Suit.HEARTS)
+TWO_C = Card(Rank.TWO, Suit.CLUBS)
 
 
 class TimClaudeHeuristic(Player):
@@ -298,19 +298,14 @@ class TimClaudeHeuristic(Player):
         return SortCardsByRank(best)[0]
 
     def _is_lowest_live(self, card: Card, suit: Suit) -> bool:
-        for r in range(2, card.rank.to_int()):
-            candidate = Card(f"{self._rank_str(r)}{suit.value}")
+        for r in Rank:
+            if r.to_int() >= card.rank.to_int():
+                continue
+            candidate = Card(r, suit)
             if candidate in self.played_cards or candidate in self.hand:
                 continue
             return False
         return True
-
-    @staticmethod
-    def _rank_str(rank_int: int) -> str:
-        for r in Rank:
-            if r.to_int() == rank_int:
-                return r.value
-        raise ValueError(rank_int)
 
     # ── following ──────────────────────────────────────────────────────────
     def _follow(self, trick: Trick, legal: List[Card]) -> Card:

@@ -52,7 +52,7 @@ from clients.python.util.table_game.CardValidation import (  # noqa: E402
     BlacklistedCardsValidator,
     _is_valid_card_str,
 )
-from clients.python.api.types.Card import Card, Suit  # noqa: E402
+from clients.python.api.types.Card import Card, Suit, Rank  # noqa: E402
 from clients.python.api.types.PassDirection import PassDirection  # noqa: E402
 from clients.python.api.types.PlayerTagSession import PlayerTagSession  # noqa: E402
 
@@ -321,7 +321,7 @@ class WebTableIO:
             code = code.upper()
             if not _is_valid_card_str(code, validators, validate_with + result):
                 return None
-            result.append(Card(code))
+            result.append(Card.FromString(code))
         return result
 
     def ask_for_card(self, prompt: str, validators, validate_with=None, allow_undo: bool = False) -> Card:
@@ -354,7 +354,7 @@ class WebTableIO:
             code = resp.get("card") if isinstance(resp, dict) else None
             if isinstance(code, str) and _is_valid_card_str(code.upper(), validators, validate_with):
                 self._resolve()
-                return Card(code.upper())
+                return Card.FromString(code.upper())
             error = "That card can't have been played there."
 
     def _play_disabled(self, game: TableGame, player: PlayerTagSession) -> Dict[str, str]:
@@ -399,17 +399,17 @@ class WebTableIO:
             # First trick: no point cards (hearts / Q♠) may be played unless the
             # player is known to hold nothing but points.
             if trick.trick_idx == 0 and any(
-                c.suit != Suit.HEARTS and c != Card("QS") for c in me["guaranteed"]
+                c.suit != Suit.HEARTS and c != Card(Rank.QUEEN, Suit.SPADES) for c in me["guaranteed"]
             ):
                 for card in holdable:
-                    if (card.suit == Suit.HEARTS or card == Card("QS")) and str(card) not in disabled:
+                    if (card.suit == Suit.HEARTS or card == Card(Rank.QUEEN, Suit.SPADES)) and str(card) not in disabled:
                         disabled[str(card)] = "No point cards may be played on the first trick"
         else:
             # Leading a trick.
             if trick.trick_idx == 0:
                 # The first trick must be led with the 2 of clubs (the leader is,
                 # by construction, the player holding it).
-                two_c = Card("2C")
+                two_c = Card(Rank.TWO, Suit.CLUBS)
                 for card in holdable:
                     if card != two_c and str(card) not in disabled:
                         disabled[str(card)] = "The first trick must be led with the 2 of clubs"
@@ -534,7 +534,7 @@ def _trick_view(trick) -> dict:
     moves = [str(m.card) for m in trick.moves]
     first_player = str(trick.moves[0].player) if trick.moves else None
     hearts = sum(1 for m in trick.moves if m.card.suit == Suit.HEARTS)
-    had_qs = any(m.card == Card("QS") for m in trick.moves)
+    had_qs = any(m.card == Card(Rank.QUEEN, Suit.SPADES) for m in trick.moves)
     return {
         "trick_idx": trick.trick_idx,
         "first_player": first_player,

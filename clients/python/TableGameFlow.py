@@ -5,7 +5,7 @@ from clients.python.api.Game import Game
 from clients.python.api.Player import Player
 from clients.python.api.Round import Round
 from clients.python.api.Trick import Trick, Move
-from clients.python.api.types.Card import Card, Suit
+from clients.python.api.types.Card import Card, Suit, Rank
 from clients.python.api.types.PassDirection import PassDirection
 from clients.python.api.types.PlayerTagSession import PlayerTagSession, PlayerTag
 from clients.python.util.table_game.TableGameCLI import TableGameCLI, UndoMove, DEFER
@@ -226,7 +226,7 @@ class TableRound(Round):
             # AI (which we can prove doesn't have it). With a single human at the
             # table that human is the only possible holder, so skip the question
             # entirely and lead with them (they'll simply be asked to play the 2C).
-            first = next((pts for pts, hand in self.ai_hands.items() if Card("2C") in hand), None)
+            first = next((pts for pts, hand in self.ai_hands.items() if Card(Rank.TWO, Suit.CLUBS) in hand), None)
             if first is None:
                 humans = [p for p in self.player_order if p not in self.ai_hands]
                 if len(humans) == 1:
@@ -243,7 +243,7 @@ class TableRound(Round):
             if trick.winner is None:
                 continue
             hearts = sum(1 for m in trick.moves if m.card.suit == Suit.HEARTS)
-            had_qs = any(m.card == Card("QS") for m in trick.moves)
+            had_qs = any(m.card == Card(Rank.QUEEN, Suit.SPADES) for m in trick.moves)
             player_to_points[trick.winner] += hearts + (13 if had_qs else 0)
 
         # Shoot the moon: a player who takes all 26 points scores 0 while every
@@ -472,11 +472,11 @@ class TableTrick(Trick):
         if self.trick_idx == 0:
             if leading:
                 # The very first trick of a round must be led with the 2 of clubs.
-                two_of_clubs = Card("2C")
+                two_of_clubs = Card(Rank.TWO, Suit.CLUBS)
                 return [two_of_clubs] if two_of_clubs in legal else legal
             # No point cards (hearts or the Queen of Spades) may be played on the
             # first trick unless a player has nothing else that's legal.
-            non_points = [c for c in legal if c.suit != Suit.HEARTS and c != Card("QS")]
+            non_points = [c for c in legal if c.suit != Suit.HEARTS and c != Card(Rank.QUEEN, Suit.SPADES)]
             if non_points:
                 legal = non_points
 
@@ -499,6 +499,12 @@ class TableTrick(Trick):
                 self._flush_buffer()
                 ai = self.ai_players[seat]
                 hand = self.ai_hands[seat]
+                # One Round object is shared by every AI at the table, so point
+                # cards_in_hand at *this* seat's hand before it decides —
+                # otherwise a player that reads round.cards_in_hand at decision
+                # time (rather than caching it in handle_new_round) sees whichever
+                # seat was bound last.
+                round_ref.cards_in_hand = hand
                 legal = self.compute_legal_moves(hand)
                 card = ai.get_move(self, legal)
                 self.cli.instruct(f"{seat.player_tag}: play {card}")

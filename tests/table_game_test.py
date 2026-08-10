@@ -71,9 +71,9 @@ def _legal_moves(hand: List[Card], moves: List[Tuple], played: List[Card], trick
             legal = non_hearts
     if trick_idx == 0:
         if leading:
-            two_c = Card("2C")
+            two_c = Card.FromString("2C")
             return [two_c] if two_c in legal else legal
-        non_points = [c for c in legal if c.suit != Suit.HEARTS and c != Card("QS")]
+        non_points = [c for c in legal if c.suit != Suit.HEARTS and c != Card.FromString("QS")]
         if non_points:
             legal = non_points
     return legal
@@ -148,7 +148,7 @@ def simulate_game(num_ai: int) -> Tuple[List[str], Dict[PlayerTagSession, int]]:
                 )
 
         # First trick: who leads (holds 2C)?
-        two_c = Card("2C")
+        two_c = Card.FromString("2C")
         ai_with_2c: Optional[PlayerTagSession] = next(
             (s for s in ai_seats if two_c in hands[s]), None
         )
@@ -186,7 +186,7 @@ def simulate_game(num_ai: int) -> Tuple[List[str], Dict[PlayerTagSession, int]]:
             )
             last_winner = winner_pair[0]
             hearts = sum(1 for _, c in moves if c.suit == Suit.HEARTS)
-            qs = any(c == Card("QS") for _, c in moves)
+            qs = any(c == Card.FromString("QS") for _, c in moves)
             round_pts[last_winner] += hearts + (13 if qs else 0)
 
         # Shoot the moon: a player taking all 26 points scores 0; everyone else 26.

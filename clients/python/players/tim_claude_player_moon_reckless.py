@@ -38,7 +38,7 @@ from clients.python.api.networking.ManagedConnection import ManagedConnection
 from clients.python.api.networking.SessionHelpers import RunMultipleGames
 from clients.python.api.Player import Player
 from clients.python.api.Round import Round
-from clients.python.api.types.Card import Card, Suit, SortCardsByRank, GroupCardsBySuit
+from clients.python.api.types.Card import Card, Suit, Rank, SortCardsByRank, GroupCardsBySuit
 from clients.python.api.types.PassDirection import PassDirection
 from clients.python.api.types.PlayerTagSession import PlayerTagSession
 from clients.python.players.rob_claude_player import RobClaudePlayer
@@ -46,12 +46,12 @@ from clients.python.players.random_player import RandomPlayer
 from clients.python.util.Constants import GameType
 
 
-QS = Card("QS")
-AS_ = Card("AS")
-KS = Card("KS")
-AH = Card("AH")
-KH = Card("KH")
-QH = Card("QH")
+QS = Card(Rank.QUEEN, Suit.SPADES)
+AS_ = Card(Rank.ACE, Suit.SPADES)
+KS = Card(Rank.KING, Suit.SPADES)
+AH = Card(Rank.ACE, Suit.HEARTS)
+KH = Card(Rank.KING, Suit.HEARTS)
+QH = Card(Rank.QUEEN, Suit.HEARTS)
 
 
 class TimClaudePlayerMoonReckless(RobClaudePlayer):

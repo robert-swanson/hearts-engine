@@ -439,7 +439,7 @@ class WebHumanPlayer(Player):
     def _coerce_move(chosen, legal_moves: List[Card]) -> Card:
         if isinstance(chosen, str):
             try:
-                card = Card(chosen)
+                card = Card.FromString(chosen)
                 if card in legal_moves:
                     return card
             except Exception:
@@ -452,7 +452,7 @@ class WebHumanPlayer(Player):
             picked: List[Card] = []
             for c in chosen:
                 try:
-                    card = Card(c)
+                    card = Card.FromString(c)
                 except Exception:
                     continue
                 if card in hand and card not in picked:

@@ -31,7 +31,7 @@ def approx(a, b, tol=1e-6):
 
 
 def C(s):
-    return Card(s)
+    return Card.FromString(s)
 
 
 # A fixed Hearts-style universe: 3 opponents, 9 unknown cards, 3 cards each.
