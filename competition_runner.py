@@ -636,7 +636,7 @@ def main():
                              'title (e.g. a tuning-step description). Made filesystem-safe and '
                              'uniquified against existing results. The UI still sorts by real '
                              'start time (recorded separately). Defaults to a timestamp.')
-    parser.add_argument('--num-tournaments', type=int, default=1, metavar='N',
+    parser.add_argument('--num-tournaments', type=int, default=None, metavar='N',
                         help='Run exactly N tournaments in this competition then exit '
                              '(default: loop forever). Use --num-tournaments=1 for a single run.')
     args = parser.parse_args()
